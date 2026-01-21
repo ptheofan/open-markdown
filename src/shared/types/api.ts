@@ -28,6 +28,10 @@ export const IPC_CHANNELS = {
     GET_VERSION: 'app:get-version',
     GET_PLATFORM: 'app:get-platform',
   },
+  WINDOW: {
+    ON_FULLSCREEN_CHANGE: 'window:on-fullscreen-change',
+    GET_FULLSCREEN: 'window:get-fullscreen',
+  },
 } as const;
 
 /**
@@ -36,7 +40,15 @@ export const IPC_CHANNELS = {
 export type IpcChannel =
   | (typeof IPC_CHANNELS.FILE)[keyof typeof IPC_CHANNELS.FILE]
   | (typeof IPC_CHANNELS.THEME)[keyof typeof IPC_CHANNELS.THEME]
-  | (typeof IPC_CHANNELS.APP)[keyof typeof IPC_CHANNELS.APP];
+  | (typeof IPC_CHANNELS.APP)[keyof typeof IPC_CHANNELS.APP]
+  | (typeof IPC_CHANNELS.WINDOW)[keyof typeof IPC_CHANNELS.WINDOW];
+
+/**
+ * Fullscreen change event data
+ */
+export interface FullscreenChangeEvent {
+  isFullscreen: boolean;
+}
 
 /**
  * File operations API exposed to renderer
@@ -75,12 +87,23 @@ export interface AppAPI {
 }
 
 /**
+ * Window state API exposed to renderer
+ */
+export interface WindowAPI {
+  getFullscreen: () => Promise<boolean>;
+  onFullscreenChange: (
+    callback: (event: FullscreenChangeEvent) => void
+  ) => () => void;
+}
+
+/**
  * Complete Electron API exposed via contextBridge
  */
 export interface ElectronAPI {
   file: FileAPI;
   theme: ThemeAPI;
   app: AppAPI;
+  window: WindowAPI;
 }
 
 /**

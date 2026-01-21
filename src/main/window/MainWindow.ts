@@ -1,10 +1,11 @@
 /**
  * Main window management
  */
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, ipcMain } from 'electron';
 import path from 'node:path';
 
 import { DEFAULT_WINDOW } from '@shared/constants';
+import { IPC_CHANNELS } from '@shared/types/api';
 
 /**
  * Main application window
@@ -51,6 +52,24 @@ export class MainWindow {
     // Handle window close
     this.window.on('closed', () => {
       this.window = null;
+    });
+
+    // Handle fullscreen changes
+    this.window.on('enter-full-screen', () => {
+      this.window?.webContents.send(IPC_CHANNELS.WINDOW.ON_FULLSCREEN_CHANGE, {
+        isFullscreen: true,
+      });
+    });
+
+    this.window.on('leave-full-screen', () => {
+      this.window?.webContents.send(IPC_CHANNELS.WINDOW.ON_FULLSCREEN_CHANGE, {
+        isFullscreen: false,
+      });
+    });
+
+    // Register IPC handler for getting fullscreen state
+    ipcMain.handle(IPC_CHANNELS.WINDOW.GET_FULLSCREEN, () => {
+      return this.window?.isFullScreen() ?? false;
     });
 
     return this.window;

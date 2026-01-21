@@ -1,14 +1,14 @@
 /**
  * FileWatcherService - Watches files for changes using chokidar
  */
-import { watch } from 'chokidar';
 import { readFile, stat } from 'node:fs/promises';
 
-import { FileWatchError } from '@shared/errors';
 import { FILE_WATCH_DEBOUNCE_MS } from '@shared/constants';
+import { FileWatchError } from '@shared/errors';
+import { watch } from 'chokidar';
 
-import type { FSWatcher } from 'chokidar';
 import type { FileChangeEvent, FileDeleteEvent, FileStats } from '@shared/types';
+import type { FSWatcher } from 'chokidar';
 
 /**
  * Callback types for file events
@@ -133,41 +133,48 @@ export class FileWatcherService {
   /**
    * Handle file change event with debouncing
    */
-  private async handleFileChange(filePath: string): Promise<void> {
+  private handleFileChange(filePath: string): void {
     // Clear existing debounce timer
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
     }
 
     // Debounce the change notification
-    this.debounceTimer = setTimeout(async () => {
-      try {
-        const [content, stats] = await Promise.all([
-          readFile(filePath, 'utf-8'),
-          this.getFileStats(filePath),
-        ]);
-
-        if (!stats) {
-          return;
-        }
-
-        const event: FileChangeEvent = {
-          filePath,
-          content,
-          stats,
-        };
-
-        this.changeCallbacks.forEach((callback) => {
-          try {
-            callback(event);
-          } catch (error) {
-            console.error('Error in file change callback:', error);
-          }
-        });
-      } catch (error) {
-        console.error('Error reading changed file:', error);
-      }
+    this.debounceTimer = setTimeout(() => {
+      void this.processFileChange(filePath);
     }, FILE_WATCH_DEBOUNCE_MS);
+  }
+
+  /**
+   * Process the file change after debounce
+   */
+  private async processFileChange(filePath: string): Promise<void> {
+    try {
+      const [content, stats] = await Promise.all([
+        readFile(filePath, 'utf-8'),
+        this.getFileStats(filePath),
+      ]);
+
+      if (!stats) {
+        return;
+      }
+
+      const event: FileChangeEvent = {
+        filePath,
+        content,
+        stats,
+      };
+
+      this.changeCallbacks.forEach((callback) => {
+        try {
+          callback(event);
+        } catch (error) {
+          console.error('Error in file change callback:', error);
+        }
+      });
+    } catch (error) {
+      console.error('Error reading changed file:', error);
+    }
   }
 
   /**

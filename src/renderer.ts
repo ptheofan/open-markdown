@@ -9,13 +9,15 @@ import {
   createDropZone,
   createToolbar,
   createStatusBar,
+  createZoomController,
   type MarkdownViewer,
   type DropZone,
   type Toolbar,
   type StatusBar,
+  type ZoomController,
 } from './renderer/components';
 
-import type { ThemeMode, FileChangeEvent, FileDeleteEvent } from '@shared/types';
+import type { ThemeMode, FileChangeEvent, FileDeleteEvent, FullscreenChangeEvent } from '@shared/types';
 
 /**
  * Application state
@@ -24,6 +26,7 @@ interface AppState {
   currentFilePath: string | null;
   currentTheme: ThemeMode;
   isWatching: boolean;
+  isFullscreen: boolean;
 }
 
 /**
@@ -34,11 +37,13 @@ class App {
   private dropZone: DropZone | null = null;
   private toolbar: Toolbar | null = null;
   private statusBar: StatusBar | null = null;
+  private zoomController: ZoomController | null = null;
 
   private state: AppState = {
     currentFilePath: null,
     currentTheme: 'system',
     isWatching: false,
+    isFullscreen: false,
   };
 
   private cleanupFunctions: Array<() => void> = [];
@@ -50,6 +55,7 @@ class App {
     try {
       await this.initializeComponents();
       await this.initializeTheme();
+      await this.initializeFullscreenState();
       this.setupEventListeners();
       this.showWelcomeScreen();
     } catch (error) {
@@ -59,16 +65,30 @@ class App {
   }
 
   /**
+   * Initialize fullscreen state
+   */
+  private async initializeFullscreenState(): Promise<void> {
+    try {
+      const isFullscreen = await window.electronAPI.window.getFullscreen();
+      this.state.isFullscreen = isFullscreen;
+      this.updateToolbarForFullscreen(isFullscreen);
+    } catch (error) {
+      console.error('Failed to get fullscreen state:', error);
+    }
+  }
+
+  /**
    * Initialize all UI components
    */
   private async initializeComponents(): Promise<void> {
     // Get DOM elements
     const viewerContainer = document.getElementById('markdown-content');
+    const viewerElement = document.getElementById('markdown-viewer');
     const dropZoneElement = document.getElementById('drop-zone');
     const toolbarElement = document.getElementById('toolbar');
     const statusBarElement = document.getElementById('status-bar');
 
-    if (!viewerContainer || !dropZoneElement || !toolbarElement || !statusBarElement) {
+    if (!viewerContainer || !viewerElement || !dropZoneElement || !toolbarElement || !statusBarElement) {
       throw new Error('Required DOM elements not found');
     }
 
@@ -78,17 +98,39 @@ class App {
     this.toolbar = createToolbar(toolbarElement);
     this.statusBar = createStatusBar(statusBarElement);
 
+    // Create zoom controller for the markdown content
+    // Target: markdown-content (the element to scale)
+    // Scroll container: markdown-viewer (the scrollable wrapper)
+    this.zoomController = createZoomController(viewerContainer, viewerElement, {
+      minZoom: 0.5,
+      maxZoom: 3.0,
+      zoomStep: 0.1,
+    });
+
+    // Update status bar when zoom changes
+    this.zoomController.setOnZoomChange((zoomLevel) => {
+      this.statusBar?.setZoomLevel(zoomLevel);
+    });
+
     // Initialize the markdown viewer
     await this.markdownViewer.initialize();
 
     // Set up component callbacks
     this.toolbar.setCallbacks({
-      onOpenFile: () => this.handleOpenFile(),
-      onToggleTheme: () => this.handleToggleTheme(),
+      onOpenFile: () => {
+        void this.handleOpenFile();
+      },
+      onToggleTheme: () => {
+        void this.handleToggleTheme();
+      },
     });
 
-    this.dropZone.setOnFileDrop((filePath) => this.handleFileDrop(filePath));
-    this.dropZone.setOnOpenLinkClick(() => this.handleOpenFile());
+    this.dropZone.setOnFileDrop((filePath) => {
+      void this.handleFileDrop(filePath);
+    });
+    this.dropZone.setOnOpenLinkClick(() => {
+      void this.handleOpenFile();
+    });
   }
 
   /**
@@ -102,7 +144,7 @@ class App {
     } catch (error) {
       console.error('Failed to get theme:', error);
       // Default to system theme
-      this.applyTheme('system');
+      void this.applyTheme('system');
     }
   }
 
@@ -135,7 +177,9 @@ class App {
   private setupEventListeners(): void {
     // File change listener
     const cleanupFileChange = window.electronAPI.file.onFileChange(
-      (event: FileChangeEvent) => this.handleFileChange(event)
+      (event: FileChangeEvent) => {
+        void this.handleFileChange(event);
+      }
     );
     this.cleanupFunctions.push(cleanupFileChange);
 
@@ -155,6 +199,29 @@ class App {
       }
     );
     this.cleanupFunctions.push(cleanupThemeChange);
+
+    // Fullscreen change listener
+    const cleanupFullscreenChange = window.electronAPI.window.onFullscreenChange(
+      (event: FullscreenChangeEvent) => {
+        this.state.isFullscreen = event.isFullscreen;
+        this.updateToolbarForFullscreen(event.isFullscreen);
+      }
+    );
+    this.cleanupFunctions.push(cleanupFullscreenChange);
+  }
+
+  /**
+   * Update toolbar layout based on fullscreen state
+   */
+  private updateToolbarForFullscreen(isFullscreen: boolean): void {
+    const toolbarElement = document.getElementById('toolbar');
+    if (toolbarElement) {
+      if (isFullscreen) {
+        toolbarElement.classList.add('fullscreen');
+      } else {
+        toolbarElement.classList.remove('fullscreen');
+      }
+    }
   }
 
   /**
@@ -397,6 +464,7 @@ class App {
 
     // Destroy components
     this.dropZone?.destroy();
+    this.zoomController?.destroy();
   }
 }
 

@@ -3,9 +3,9 @@
  */
 import { ipcMain, BrowserWindow } from 'electron';
 
-import { IPC_CHANNELS } from '../channels';
 import { getFileService } from '../../services/FileService';
 import { getFileWatcherService } from '../../services/FileWatcherService';
+import { IPC_CHANNELS } from '../channels';
 
 import type { FileOpenResult, FileReadResult } from '@shared/types';
 

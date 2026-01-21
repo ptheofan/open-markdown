@@ -29,3 +29,11 @@ export {
   createStatusBar,
   type StatusBarState,
 } from './StatusBar';
+
+// ZoomController
+export {
+  ZoomController,
+  createZoomController,
+  type ZoomConfig,
+  type ZoomChangeCallback,
+} from './ZoomController';

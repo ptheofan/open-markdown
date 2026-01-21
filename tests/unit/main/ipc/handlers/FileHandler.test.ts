@@ -1,14 +1,14 @@
 /**
  * FileHandler unit tests
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ipcMain, BrowserWindow } from 'electron';
 
+import { IPC_CHANNELS } from '@main/ipc/channels';
 import {
   registerFileHandlers,
   unregisterFileHandlers,
 } from '@main/ipc/handlers/FileHandler';
-import { IPC_CHANNELS } from '@main/ipc/channels';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import type { FileOpenResult, FileReadResult, FileChangeEvent, FileDeleteEvent } from '@shared/types';
 

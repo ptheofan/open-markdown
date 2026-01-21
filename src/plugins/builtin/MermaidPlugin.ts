@@ -3,8 +3,8 @@
  */
 import { BUILTIN_PLUGINS } from '@shared/constants';
 
-import type MarkdownIt from 'markdown-it';
 import type { MarkdownPlugin, PluginMetadata, PluginOptions } from '@shared/types';
+import type MarkdownIt from 'markdown-it';
 
 /**
  * Options for the MermaidPlugin
@@ -224,7 +224,7 @@ export class MermaidPlugin implements MarkdownPlugin {
     `;
   }
 
-  async destroy(): Promise<void> {
+  destroy(): void {
     // Reset counter
     this.diagramCounter = 0;
   }

@@ -1,16 +1,27 @@
 /**
  * ThemeHandler unit tests
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ipcMain, BrowserWindow } from 'electron';
 
 import {
   registerThemeHandlers,
   unregisterThemeHandlers,
 } from '@main/ipc/handlers/ThemeHandler';
-import type { ThemeService } from '@main/services/ThemeService';
 import { IPC_CHANNELS } from '@shared/types/api';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
+import type { ThemeService } from '@main/services/ThemeService';
 import type { ThemeMode, ResolvedTheme, ThemeChangeEvent } from '@shared/types';
+
+interface MockThemeService {
+  getCurrentTheme: ReturnType<typeof vi.fn>;
+  setTheme: ReturnType<typeof vi.fn>;
+  getSystemTheme: ReturnType<typeof vi.fn>;
+  onSystemThemeChange: ReturnType<typeof vi.fn>;
+  _triggerSystemThemeChange: (theme: ResolvedTheme) => void;
+  _setCurrentTheme: (theme: ThemeMode) => void;
+  _setSystemTheme: (theme: ResolvedTheme) => void;
+}
 
 // Mock Electron modules
 vi.mock('electron', () => {
@@ -34,14 +45,15 @@ vi.mock('electron', () => {
 });
 
 // Create mock ThemeService
-function createMockThemeService() {
+function createMockThemeService(): MockThemeService {
   let currentTheme: ThemeMode = 'system';
   let systemThemeChangeCallback: ((theme: ResolvedTheme) => void) | null = null;
 
   return {
     getCurrentTheme: vi.fn(() => currentTheme),
-    setTheme: vi.fn(async (theme: ThemeMode) => {
+    setTheme: vi.fn((theme: ThemeMode) => {
       currentTheme = theme;
+      return Promise.resolve();
     }),
     getSystemTheme: vi.fn((): ResolvedTheme => 'light'),
     onSystemThemeChange: vi.fn((callback: (theme: ResolvedTheme) => void) => {

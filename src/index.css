@@ -100,6 +100,12 @@ body {
   border-bottom: 1px solid var(--toolbar-border);
   -webkit-app-region: drag;
   flex-shrink: 0;
+  transition: padding-left 0.2s ease;
+}
+
+/* Toolbar in fullscreen mode (no traffic lights) */
+.toolbar.fullscreen {
+  padding-left: 16px;
 }
 
 .toolbar-left,
@@ -426,6 +432,18 @@ body {
 
 .status-watch.watching svg {
   opacity: 1;
+}
+
+.status-zoom {
+  font-variant-numeric: tabular-nums;
+  min-width: 45px;
+  text-align: right;
+  cursor: default;
+}
+
+.status-zoom.zoomed {
+  color: var(--link-color);
+  font-weight: 500;
 }
 
 /* Utility classes */

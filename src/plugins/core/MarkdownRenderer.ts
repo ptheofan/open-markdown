@@ -1,9 +1,9 @@
 /**
  * MarkdownRenderer - Wrapper around markdown-it with plugin support
  */
+import { PluginInitError, PluginRenderError } from '@shared/errors';
 import MarkdownIt from 'markdown-it';
 
-import { PluginInitError, PluginRenderError } from '@shared/errors';
 
 import type { MarkdownPlugin, PluginMetadata } from '@shared/types';
 

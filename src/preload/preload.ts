@@ -12,6 +12,7 @@ import type {
   FileDeleteEvent,
   FileOpenResult,
   FileReadResult,
+  FullscreenChangeEvent,
   ResolvedTheme,
   ThemeChangeEvent,
   ThemeMode,
@@ -110,6 +111,33 @@ const electronAPI: ElectronAPI = {
 
     getPlatform: (): NodeJS.Platform => {
       return process.platform;
+    },
+  },
+
+  window: {
+    getFullscreen: (): Promise<boolean> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.WINDOW.GET_FULLSCREEN);
+    },
+
+    onFullscreenChange: (
+      callback: (event: FullscreenChangeEvent) => void
+    ): (() => void) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        data: FullscreenChangeEvent
+      ): void => {
+        callback(data);
+      };
+
+      ipcRenderer.on(IPC_CHANNELS.WINDOW.ON_FULLSCREEN_CHANGE, handler);
+
+      // Return cleanup function
+      return () => {
+        ipcRenderer.removeListener(
+          IPC_CHANNELS.WINDOW.ON_FULLSCREEN_CHANGE,
+          handler
+        );
+      };
     },
   },
 };

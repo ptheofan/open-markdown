@@ -5,6 +5,7 @@ import { PluginAlreadyRegisteredError } from '@shared/errors';
 
 import { MarkdownRenderer, createMarkdownRenderer } from './MarkdownRenderer';
 
+import type { MarkdownRendererOptions } from './MarkdownRenderer';
 import type {
   MarkdownPlugin,
   PluginMetadata,
@@ -12,7 +13,6 @@ import type {
   PluginManagerConfig,
   PluginLoadResult,
 } from '@shared/types';
-import type { MarkdownRendererOptions } from './MarkdownRenderer';
 
 /**
  * Plugin factory function type

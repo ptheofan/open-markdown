@@ -111,7 +111,7 @@ export class Toolbar {
   setEnabled(enabled: boolean): void {
     const buttons = this.element.querySelectorAll('button');
     buttons.forEach((btn) => {
-      (btn as HTMLButtonElement).disabled = !enabled;
+      (btn).disabled = !enabled;
     });
   }
 }

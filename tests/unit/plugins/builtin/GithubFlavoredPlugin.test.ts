@@ -1,13 +1,13 @@
 /**
  * GithubFlavoredPlugin unit tests
  */
-import { describe, it, expect, beforeEach } from 'vitest';
 import {
   GithubFlavoredPlugin,
   createGithubFlavoredPlugin,
 } from '@plugins/builtin/GithubFlavoredPlugin';
 import { MarkdownRenderer } from '@plugins/core/MarkdownRenderer';
 import { BUILTIN_PLUGINS } from '@shared/constants';
+import { describe, it, expect, beforeEach } from 'vitest';
 
 describe('GithubFlavoredPlugin', () => {
   let plugin: GithubFlavoredPlugin;

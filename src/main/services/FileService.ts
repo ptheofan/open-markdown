@@ -5,12 +5,12 @@ import { dialog, BrowserWindow } from 'electron';
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 
+import { MARKDOWN_EXTENSIONS, MAX_FILE_SIZE_BYTES } from '@shared/constants';
 import {
   FileNotFoundError,
   FileReadError,
   InvalidFileTypeError,
 } from '@shared/errors';
-import { MARKDOWN_EXTENSIONS, MAX_FILE_SIZE_BYTES } from '@shared/constants';
 
 import type { FileOpenResult, FileReadResult, FileStats } from '@shared/types';
 

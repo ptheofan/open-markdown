@@ -3,16 +3,17 @@
  *
  * Provides utilities for launching and interacting with the Electron app in E2E tests.
  */
+import path from 'node:path';
+
 import { test as base, type ElectronApplication, type Page } from '@playwright/test';
 import { _electron as electron } from 'playwright';
-import path from 'node:path';
 
 // Extend the base test with Electron app fixture
 export const test = base.extend<{
   electronApp: ElectronApplication;
   mainWindow: Page;
 }>({
-  electronApp: async ({}, use) => {
+  electronApp: async (_, use) => {
     // Launch Electron using the development build
     const mainPath = path.join(__dirname, '../../.vite/build/index.js');
 

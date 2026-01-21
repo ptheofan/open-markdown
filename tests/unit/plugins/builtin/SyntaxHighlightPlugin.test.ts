@@ -1,13 +1,13 @@
 /**
  * SyntaxHighlightPlugin unit tests
  */
-import { describe, it, expect, beforeEach } from 'vitest';
 import {
   SyntaxHighlightPlugin,
   createSyntaxHighlightPlugin,
 } from '@plugins/builtin/SyntaxHighlightPlugin';
 import { MarkdownRenderer } from '@plugins/core/MarkdownRenderer';
 import { BUILTIN_PLUGINS } from '@shared/constants';
+import { describe, it, expect, beforeEach } from 'vitest';
 
 describe('SyntaxHighlightPlugin', () => {
   let plugin: SyntaxHighlightPlugin;

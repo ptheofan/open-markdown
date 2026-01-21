@@ -1,12 +1,12 @@
 /**
  * SyntaxHighlightPlugin - Adds code syntax highlighting using highlight.js
  */
+import { BUILTIN_PLUGINS } from '@shared/constants';
 import hljs from 'highlight.js';
 
-import { BUILTIN_PLUGINS } from '@shared/constants';
 
-import type MarkdownIt from 'markdown-it';
 import type { MarkdownPlugin, PluginMetadata, PluginOptions } from '@shared/types';
+import type MarkdownIt from 'markdown-it';
 
 /**
  * Options for the SyntaxHighlightPlugin

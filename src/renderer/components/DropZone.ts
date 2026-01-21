@@ -29,6 +29,7 @@ export class DropZone {
   private boundHandleDragLeave: (e: DragEvent) => void;
   private boundHandleDrop: (e: DragEvent) => void;
   private boundHandleOpenLinkClick: (e: MouseEvent) => void;
+  private boundPreventDefaults: (e: Event) => void;
   private openLink: HTMLElement | null = null;
 
   constructor(element: HTMLElement) {
@@ -40,6 +41,7 @@ export class DropZone {
     this.boundHandleDragLeave = this.handleDragLeave.bind(this);
     this.boundHandleDrop = this.handleDrop.bind(this);
     this.boundHandleOpenLinkClick = this.handleOpenLinkClick.bind(this);
+    this.boundPreventDefaults = this.preventDefaults.bind(this);
 
     this.setupEventListeners();
   }
@@ -54,8 +56,8 @@ export class DropZone {
     this.element.addEventListener('drop', this.boundHandleDrop);
 
     // Also handle window-level drag events to prevent default browser behavior
-    window.addEventListener('dragover', this.preventDefaults);
-    window.addEventListener('drop', this.preventDefaults);
+    window.addEventListener('dragover', this.boundPreventDefaults);
+    window.addEventListener('drop', this.boundPreventDefaults);
 
     // Set up Open link click handler
     this.openLink = this.element.querySelector('#drop-zone-open-link');
@@ -72,8 +74,8 @@ export class DropZone {
     this.element.removeEventListener('dragover', this.boundHandleDragOver);
     this.element.removeEventListener('dragleave', this.boundHandleDragLeave);
     this.element.removeEventListener('drop', this.boundHandleDrop);
-    window.removeEventListener('dragover', this.preventDefaults);
-    window.removeEventListener('drop', this.preventDefaults);
+    window.removeEventListener('dragover', this.boundPreventDefaults);
+    window.removeEventListener('drop', this.boundPreventDefaults);
     if (this.openLink) {
       this.openLink.removeEventListener('click', this.boundHandleOpenLinkClick);
     }

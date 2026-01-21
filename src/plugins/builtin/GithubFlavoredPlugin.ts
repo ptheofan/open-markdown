@@ -1,12 +1,13 @@
 /**
  * GithubFlavoredPlugin - Adds GitHub Flavored Markdown support
  */
-import type MarkdownIt from 'markdown-it';
-import type Token from 'markdown-it/lib/token.mjs';
-
 import { BUILTIN_PLUGINS } from '@shared/constants';
 
 import type { MarkdownPlugin, PluginMetadata } from '@shared/types';
+import type MarkdownIt from 'markdown-it';
+import type Token from 'markdown-it/lib/token.mjs';
+
+
 
 /**
  * Type definitions for markdown-it render rules

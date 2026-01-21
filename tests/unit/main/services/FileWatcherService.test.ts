@@ -1,15 +1,15 @@
 /**
  * FileWatcherService unit tests
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { promises as fs } from 'fs';
-import path from 'path';
 import os from 'os';
+import path from 'path';
 
 import {
   FileWatcherService,
   getFileWatcherService,
 } from '@main/services/FileWatcherService';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Mock chokidar
 const mockWatcher = {

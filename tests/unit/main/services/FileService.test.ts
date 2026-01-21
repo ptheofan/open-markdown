@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { dialog } from 'electron';
 import * as fs from 'node:fs/promises';
+
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { FileService } from '../../../../src/main/services/FileService';
 import { MAX_FILE_SIZE_BYTES } from '../../../../src/shared/constants';

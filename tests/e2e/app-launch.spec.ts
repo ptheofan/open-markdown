@@ -74,7 +74,7 @@ test.describe('Theme Toggling', () => {
 });
 
 test.describe('Window Properties', () => {
-  test('should have reasonable window size', async ({ mainWindow }) => {
+  test('should have reasonable window size', ({ mainWindow }) => {
     // Get viewport size from the page
     const viewportSize = mainWindow.viewportSize();
 

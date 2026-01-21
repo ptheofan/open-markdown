@@ -34,8 +34,6 @@ jobs:
 
       - name: Run linter
         run: pnpm lint
-        env:
-          ESLINT_USE_FLAT_CONFIG: false
 
       - name: Run type check
         run: pnpm typecheck

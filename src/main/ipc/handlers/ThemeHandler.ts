@@ -3,8 +3,8 @@
  */
 import { ipcMain, BrowserWindow } from 'electron';
 
-import { IPC_CHANNELS } from '@shared/types/api';
 import { getThemeService, ThemeService } from '@main/services/ThemeService';
+import { IPC_CHANNELS } from '@shared/types/api';
 
 import type { ThemeMode, ResolvedTheme, ThemeChangeEvent } from '@shared/types';
 

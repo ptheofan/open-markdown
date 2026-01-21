@@ -1,15 +1,16 @@
 /**
  * PluginManager unit tests
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { MarkdownRenderer } from '@plugins/core/MarkdownRenderer';
 import {
   PluginManager,
   createPluginManager,
   type PluginFactory,
 } from '@plugins/core/PluginManager';
-import { MarkdownRenderer } from '@plugins/core/MarkdownRenderer';
-import type { MarkdownPlugin, PluginMetadata, PluginOptions } from '@shared/types';
 import { PluginAlreadyRegisteredError } from '@shared/errors';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import type { MarkdownPlugin, PluginMetadata, PluginOptions } from '@shared/types';
 import type MarkdownIt from 'markdown-it';
 
 // Mock plugin factory for testing

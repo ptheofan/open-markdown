@@ -9,6 +9,7 @@ export interface StatusBarState {
   filePath: string | null;
   modifiedTime: Date | null;
   isWatching: boolean;
+  zoomLevel: number;
 }
 
 /**
@@ -20,10 +21,12 @@ export class StatusBar {
   private modifiedElement: HTMLElement | null = null;
   private watchElement: HTMLElement | null = null;
   private watchTextElement: HTMLElement | null = null;
+  private zoomElement: HTMLElement | null = null;
   private state: StatusBarState = {
     filePath: null,
     modifiedTime: null,
     isWatching: false,
+    zoomLevel: 1.0,
   };
 
   constructor(element: HTMLElement) {
@@ -39,6 +42,7 @@ export class StatusBar {
     this.modifiedElement = this.element.querySelector('#status-modified');
     this.watchElement = this.element.querySelector('#status-watch');
     this.watchTextElement = this.element.querySelector('#status-watch-text');
+    this.zoomElement = this.element.querySelector('#status-zoom');
   }
 
   /**
@@ -121,12 +125,33 @@ export class StatusBar {
   }
 
   /**
+   * Update the zoom level display
+   */
+  setZoomLevel(zoomLevel: number): void {
+    this.state.zoomLevel = zoomLevel;
+
+    if (this.zoomElement) {
+      const percentage = Math.round(zoomLevel * 100);
+      this.zoomElement.textContent = `${percentage}%`;
+      this.zoomElement.title = `Zoom: ${percentage}% (Cmd/Ctrl +/- to zoom, Cmd/Ctrl 0 to reset)`;
+
+      // Highlight when not at 100%
+      if (percentage !== 100) {
+        this.zoomElement.classList.add('zoomed');
+      } else {
+        this.zoomElement.classList.remove('zoomed');
+      }
+    }
+  }
+
+  /**
    * Clear all status information
    */
   clear(): void {
     this.setFilePath(null);
     this.setModifiedTime(null);
     this.setWatching(false);
+    this.setZoomLevel(1.0);
   }
 
   /**

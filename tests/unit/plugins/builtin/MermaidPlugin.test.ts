@@ -1,13 +1,13 @@
 /**
  * MermaidPlugin unit tests
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   MermaidPlugin,
   createMermaidPlugin,
 } from '@plugins/builtin/MermaidPlugin';
 import { MarkdownRenderer } from '@plugins/core/MarkdownRenderer';
 import { BUILTIN_PLUGINS } from '@shared/constants';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // Mock mermaid module
 vi.mock('mermaid', () => ({
@@ -237,12 +237,12 @@ describe('MermaidPlugin', () => {
   });
 
   describe('destroy', () => {
-    it('should reset diagram counter', async () => {
+    it('should reset diagram counter', () => {
       // Render some diagrams to increment counter
       renderer.render('```mermaid\ngraph TD;\nA-->B;\n```');
       renderer.render('```mermaid\nsequenceDiagram\nA->>B: Hi\n```');
 
-      await plugin.destroy();
+      plugin.destroy();
 
       // Counter should be reset
       const result = renderer.render('```mermaid\ngraph LR;\nX-->Y;\n```');

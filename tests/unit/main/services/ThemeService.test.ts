@@ -1,10 +1,9 @@
 /**
  * ThemeService unit tests
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { promises as fs } from 'fs';
-import path from 'path';
 import os from 'os';
+import path from 'path';
 
 import {
   ThemeService,
@@ -12,6 +11,7 @@ import {
   getThemeService,
   resetThemeService,
 } from '@main/services/ThemeService';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Use a platform-agnostic mock path
 const MOCK_USER_DATA = path.join('mock', 'user', 'data');

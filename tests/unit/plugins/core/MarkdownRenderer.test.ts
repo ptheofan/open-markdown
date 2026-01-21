@@ -1,13 +1,14 @@
 /**
  * MarkdownRenderer unit tests
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   MarkdownRenderer,
   createMarkdownRenderer,
 } from '@plugins/core/MarkdownRenderer';
-import type { MarkdownPlugin, PluginMetadata } from '@shared/types';
 import { PluginInitError } from '@shared/errors';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+import type { MarkdownPlugin, PluginMetadata } from '@shared/types';
 import type MarkdownIt from 'markdown-it';
 
 // Mock plugin for testing

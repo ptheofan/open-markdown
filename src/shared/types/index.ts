@@ -34,5 +34,7 @@ export type {
   FileAPI,
   ThemeAPI,
   AppAPI,
+  WindowAPI,
   ElectronAPI,
+  FullscreenChangeEvent,
 } from './api';

@@ -2,11 +2,12 @@
  * Main process entry point
  */
 import { app, BrowserWindow } from 'electron';
+
 import started from 'electron-squirrel-startup';
 
 import { registerAllHandlers } from './ipc/handlers';
-import { getMainWindow } from './window/MainWindow';
 import { getThemeService } from './services/ThemeService';
+import { getMainWindow } from './window/MainWindow';
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
@@ -44,7 +45,7 @@ async function initialize(): Promise<void> {
 
 app.whenReady()
   .then(() => {
-    initialize();
+    void initialize();
 
     // macOS: re-create window when dock icon is clicked
     app.on('activate', () => {

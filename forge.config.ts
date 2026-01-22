@@ -18,6 +18,7 @@ const config: ForgeConfig = {
     // macOS code signing - enabled when APPLE_API_KEY_PATH is set
     osxSign: process.env['APPLE_API_KEY_PATH']
       ? {
+          identity: process.env['APPLE_SIGNING_IDENTITY'] || 'Developer ID Application',
           optionsForFile: () => ({
             entitlements: './resources/entitlements.mac.plist',
             hardenedRuntime: true,

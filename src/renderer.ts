@@ -10,15 +10,25 @@ import {
   createToolbar,
   createStatusBar,
   createZoomController,
+  createPreferencesPanel,
   type MarkdownViewer,
   type DropZone,
   type Toolbar,
   type StatusBar,
   type ZoomController,
+  type PreferencesPanel,
 } from './renderer/components';
 import { applyTheme as applyThemeCSS } from './themes';
 
-import type { ThemeMode, FileChangeEvent, FileDeleteEvent, FullscreenChangeEvent } from '@shared/types';
+import type {
+  ThemeMode,
+  FileChangeEvent,
+  FileDeleteEvent,
+  FullscreenChangeEvent,
+  AppPreferences,
+  DeepPartial,
+  CorePreferences,
+} from '@shared/types';
 import type { ResolvedTheme } from './themes/types';
 
 /**
@@ -27,6 +37,7 @@ import type { ResolvedTheme } from './themes/types';
 interface AppState {
   currentFilePath: string | null;
   currentTheme: ThemeMode;
+  currentPreferences: CorePreferences | null;
   isWatching: boolean;
   isFullscreen: boolean;
 }
@@ -40,10 +51,12 @@ class App {
   private toolbar: Toolbar | null = null;
   private statusBar: StatusBar | null = null;
   private zoomController: ZoomController | null = null;
+  private preferencesPanel: PreferencesPanel | null = null;
 
   private state: AppState = {
     currentFilePath: null,
     currentTheme: 'system',
+    currentPreferences: null,
     isWatching: false,
     isFullscreen: false,
   };
@@ -57,6 +70,7 @@ class App {
     try {
       await this.initializeComponents();
       await this.initializeTheme();
+      await this.initializePreferences();
       await this.initializeFullscreenState();
       this.setupEventListeners();
       this.showWelcomeScreen();
@@ -125,6 +139,9 @@ class App {
       onToggleTheme: () => {
         void this.handleToggleTheme();
       },
+      onOpenPreferences: () => {
+        this.handleOpenPreferences();
+      },
     });
 
     this.dropZone.setOnFileDrop((filePath) => {
@@ -151,6 +168,56 @@ class App {
   }
 
   /**
+   * Initialize preferences panel
+   */
+  private async initializePreferences(): Promise<void> {
+    try {
+      // Create preferences panel
+      this.preferencesPanel = createPreferencesPanel();
+
+      // Set up callbacks
+      this.preferencesPanel.setCallbacks({
+        onPreferencesChange: (updates: DeepPartial<AppPreferences>) => {
+          void this.handlePreferencesChange(updates);
+        },
+      });
+
+      // Load initial preferences
+      const preferences = await window.electronAPI.preferences.get();
+      this.state.currentPreferences = preferences.core;
+      this.preferencesPanel.updateValues(preferences);
+
+      // Load plugin preference schemas
+      const pluginSchemas = this.markdownViewer?.getPluginPreferencesSchemas();
+      if (pluginSchemas) {
+        this.preferencesPanel.setPluginSchemas(pluginSchemas);
+      }
+
+      // Notify plugins of their initial preferences
+      if (this.markdownViewer) {
+        this.markdownViewer.notifyAllPluginsPreferencesChange(preferences.plugins);
+      }
+
+      // Subscribe to preference changes from other windows
+      const cleanupPreferencesChange = window.electronAPI.preferences.onChange(
+        (prefs: AppPreferences) => {
+          this.state.currentPreferences = prefs.core;
+          this.preferencesPanel?.updateValues(prefs);
+
+          // Notify plugins of preference changes
+          this.markdownViewer?.notifyAllPluginsPreferencesChange(prefs.plugins);
+
+          // Re-apply theme with updated preferences
+          void this.applyTheme(this.state.currentTheme);
+        }
+      );
+      this.cleanupFunctions.push(cleanupPreferencesChange);
+    } catch (error) {
+      console.error('Failed to initialize preferences:', error);
+    }
+  }
+
+  /**
    * Apply theme to the document
    */
   private async applyTheme(theme: ThemeMode): Promise<void> {
@@ -169,8 +236,12 @@ class App {
     // Get plugin theme declarations
     const pluginDeclarations = this.markdownViewer?.getPluginThemeDeclarations() ?? {};
 
-    // Apply theme CSS variables
-    applyThemeCSS(resolvedTheme, pluginDeclarations);
+    // Apply theme CSS variables with preferences
+    applyThemeCSS(
+      resolvedTheme,
+      pluginDeclarations,
+      this.state.currentPreferences ?? undefined
+    );
 
     // Update toolbar theme indicator
     this.toolbar?.setTheme(resolvedTheme);
@@ -202,7 +273,11 @@ class App {
       (event) => {
         if (this.state.currentTheme === 'system') {
           const pluginDeclarations = this.markdownViewer?.getPluginThemeDeclarations() ?? {};
-          applyThemeCSS(event.theme, pluginDeclarations);
+          applyThemeCSS(
+            event.theme,
+            pluginDeclarations,
+            this.state.currentPreferences ?? undefined
+          );
           this.toolbar?.setTheme(event.theme);
         }
       }
@@ -415,6 +490,48 @@ class App {
       await this.applyTheme(newTheme);
     } catch (error) {
       console.error('Failed to toggle theme:', error);
+    }
+  }
+
+  /**
+   * Handle open preferences panel
+   */
+  private handleOpenPreferences(): void {
+    this.preferencesPanel?.open();
+  }
+
+  /**
+   * Handle preferences change from panel
+   */
+  private async handlePreferencesChange(
+    updates: DeepPartial<AppPreferences>
+  ): Promise<void> {
+    try {
+      const updatedPrefs = await window.electronAPI.preferences.set(updates);
+      this.preferencesPanel?.updateValues(updatedPrefs);
+
+      // Update current preferences state
+      this.state.currentPreferences = updatedPrefs.core;
+
+      // Update theme mode if changed
+      if (updates.core?.theme?.mode) {
+        this.state.currentTheme = updates.core.theme.mode;
+      }
+
+      // Notify plugins of preference changes
+      if (updates.plugins) {
+        for (const pluginId of Object.keys(updates.plugins)) {
+          this.markdownViewer?.notifyPluginPreferencesChange(
+            pluginId,
+            updatedPrefs.plugins[pluginId]
+          );
+        }
+      }
+
+      // Re-apply theme with updated preferences for live preview
+      await this.applyTheme(this.state.currentTheme);
+    } catch (error) {
+      console.error('Failed to update preferences:', error);
     }
   }
 

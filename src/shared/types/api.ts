@@ -5,6 +5,7 @@ import type {
   FileDeleteEvent,
 } from './file';
 import type { ThemeMode, ResolvedTheme, ThemeChangeEvent } from './theme';
+import type { AppPreferences, DeepPartial } from './preferences';
 
 /**
  * IPC Channel names for type-safe communication
@@ -41,6 +42,14 @@ export const IPC_CHANNELS = {
     WRITE_IMAGE: 'clipboard:write-image',
     SAVE_FILE: 'clipboard:save-file',
   },
+  PREFERENCES: {
+    GET: 'preferences:get',
+    SET: 'preferences:set',
+    RESET: 'preferences:reset',
+    GET_PLUGIN: 'preferences:get-plugin',
+    SET_PLUGIN: 'preferences:set-plugin',
+    ON_CHANGE: 'preferences:on-change',
+  },
 } as const;
 
 /**
@@ -52,7 +61,8 @@ export type IpcChannel =
   | (typeof IPC_CHANNELS.APP)[keyof typeof IPC_CHANNELS.APP]
   | (typeof IPC_CHANNELS.WINDOW)[keyof typeof IPC_CHANNELS.WINDOW]
   | (typeof IPC_CHANNELS.CONTEXT_MENU)[keyof typeof IPC_CHANNELS.CONTEXT_MENU]
-  | (typeof IPC_CHANNELS.CLIPBOARD)[keyof typeof IPC_CHANNELS.CLIPBOARD];
+  | (typeof IPC_CHANNELS.CLIPBOARD)[keyof typeof IPC_CHANNELS.CLIPBOARD]
+  | (typeof IPC_CHANNELS.PREFERENCES)[keyof typeof IPC_CHANNELS.PREFERENCES];
 
 /**
  * Fullscreen change event data
@@ -153,6 +163,18 @@ export interface ClipboardAPI {
 }
 
 /**
+ * Preferences operations API exposed to renderer
+ */
+export interface PreferencesAPI {
+  get: () => Promise<AppPreferences>;
+  set: (updates: DeepPartial<AppPreferences>) => Promise<AppPreferences>;
+  reset: () => Promise<AppPreferences>;
+  getPluginPreferences: <T>(pluginId: string) => Promise<T | null>;
+  setPluginPreferences: <T>(pluginId: string, preferences: T) => Promise<void>;
+  onChange: (callback: (preferences: AppPreferences) => void) => () => void;
+}
+
+/**
  * Complete Electron API exposed via contextBridge
  */
 export interface ElectronAPI {
@@ -162,6 +184,7 @@ export interface ElectronAPI {
   window: WindowAPI;
   contextMenu: ContextMenuAPI;
   clipboard: ClipboardAPI;
+  preferences: PreferencesAPI;
 }
 
 /**

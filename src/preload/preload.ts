@@ -18,6 +18,8 @@ import type {
   ThemeMode,
   ContextMenuShowRequest,
   SaveFileResult,
+  AppPreferences,
+  DeepPartial,
 } from '@shared/types';
 
 /**
@@ -168,6 +170,50 @@ const electronAPI: ElectronAPI = {
         base64,
         filename
       );
+    },
+  },
+
+  preferences: {
+    get: (): Promise<AppPreferences> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.PREFERENCES.GET);
+    },
+
+    set: (updates: DeepPartial<AppPreferences>): Promise<AppPreferences> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.PREFERENCES.SET, updates);
+    },
+
+    reset: (): Promise<AppPreferences> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.PREFERENCES.RESET);
+    },
+
+    getPluginPreferences: <T>(pluginId: string): Promise<T | null> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.PREFERENCES.GET_PLUGIN, pluginId);
+    },
+
+    setPluginPreferences: <T>(pluginId: string, preferences: T): Promise<void> => {
+      return ipcRenderer.invoke(
+        IPC_CHANNELS.PREFERENCES.SET_PLUGIN,
+        pluginId,
+        preferences
+      );
+    },
+
+    onChange: (
+      callback: (preferences: AppPreferences) => void
+    ): (() => void) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        data: AppPreferences
+      ): void => {
+        callback(data);
+      };
+
+      ipcRenderer.on(IPC_CHANNELS.PREFERENCES.ON_CHANGE, handler);
+
+      // Return cleanup function
+      return () => {
+        ipcRenderer.removeListener(IPC_CHANNELS.PREFERENCES.ON_CHANGE, handler);
+      };
     },
   },
 };

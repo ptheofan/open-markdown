@@ -5,6 +5,10 @@ import { toPng } from 'html-to-image';
 import pako from 'pako';
 
 import { BUILTIN_PLUGINS } from '@shared/constants';
+import {
+  DEFAULT_MERMAID_PREFERENCES,
+  type MermaidPreferences,
+} from '../../preferences/defaults';
 
 import type {
   MarkdownPlugin,
@@ -12,6 +16,7 @@ import type {
   PluginOptions,
   ContextMenuItem,
   ContextMenuData,
+  PluginPreferencesSchema,
 } from '@shared/types';
 import type { PluginThemeDeclaration } from '../../themes/types';
 import type MarkdownIt from 'markdown-it';
@@ -40,6 +45,7 @@ export class MermaidPlugin implements MarkdownPlugin {
   private options: MermaidOptions;
   private mermaid: typeof import('mermaid').default | null = null;
   private diagramCounter = 0;
+  private preferences: MermaidPreferences;
 
   constructor(options: MermaidOptions = {}) {
     this.options = {
@@ -47,6 +53,7 @@ export class MermaidPlugin implements MarkdownPlugin {
       securityLevel: 'loose',
       ...options,
     };
+    this.preferences = { ...DEFAULT_MERMAID_PREFERENCES };
   }
 
   async initialize(): Promise<void> {
@@ -194,11 +201,118 @@ export class MermaidPlugin implements MarkdownPlugin {
   getThemeVariables(): PluginThemeDeclaration {
     return {
       'mermaid-label-bg': {
-        light: '#ffffff',
-        dark: '#2d2d2d',
+        light: this.preferences.colors.labelBackground.light,
+        dark: this.preferences.colors.labelBackground.dark,
         description: 'Background color for edge labels in diagrams',
       },
+      'mermaid-node-fill': {
+        light: this.preferences.colors.nodeFill.light,
+        dark: this.preferences.colors.nodeFill.dark,
+        description: 'Fill color for diagram nodes',
+      },
+      'mermaid-node-stroke': {
+        light: this.preferences.colors.nodeStroke.light,
+        dark: this.preferences.colors.nodeStroke.dark,
+        description: 'Stroke color for diagram nodes',
+      },
+      'mermaid-edge-stroke': {
+        light: this.preferences.colors.edgeStroke.light,
+        dark: this.preferences.colors.edgeStroke.dark,
+        description: 'Stroke color for diagram edges',
+      },
     };
+  }
+
+  /**
+   * Get preferences schema for the UI
+   */
+  getPreferencesSchema(): PluginPreferencesSchema {
+    return {
+      version: 1,
+      sections: [
+        {
+          id: 'export',
+          title: 'Export Settings',
+          fields: [
+            {
+              key: 'export.background',
+              type: 'select',
+              label: 'Export Background',
+              description: 'Background style when exporting diagrams as images',
+              options: [
+                { value: 'solid', label: 'Solid White' },
+                { value: 'transparent', label: 'Transparent' },
+              ],
+              defaultValue: DEFAULT_MERMAID_PREFERENCES.export.background,
+            },
+          ],
+        },
+        {
+          id: 'colors',
+          title: 'Diagram Colors',
+          fields: [
+            {
+              key: 'colors.labelBackground',
+              type: 'color-pair',
+              label: 'Label Background',
+              description: 'Background color for edge labels',
+              defaultValue: DEFAULT_MERMAID_PREFERENCES.colors.labelBackground,
+            },
+            {
+              key: 'colors.nodeFill',
+              type: 'color-pair',
+              label: 'Node Fill',
+              description: 'Fill color for diagram nodes',
+              defaultValue: DEFAULT_MERMAID_PREFERENCES.colors.nodeFill,
+            },
+            {
+              key: 'colors.nodeStroke',
+              type: 'color-pair',
+              label: 'Node Stroke',
+              description: 'Border color for diagram nodes',
+              defaultValue: DEFAULT_MERMAID_PREFERENCES.colors.nodeStroke,
+            },
+            {
+              key: 'colors.edgeStroke',
+              type: 'color-pair',
+              label: 'Edge Stroke',
+              description: 'Color for diagram edges/arrows',
+              defaultValue: DEFAULT_MERMAID_PREFERENCES.colors.edgeStroke,
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  /**
+   * Handle preference changes from the UI
+   */
+  onPreferencesChange(preferences: unknown): void {
+    if (preferences && typeof preferences === 'object') {
+      const prefs = preferences as Partial<MermaidPreferences>;
+
+      // Update export settings
+      if (prefs.export?.background) {
+        this.preferences.export.background = prefs.export.background;
+      }
+
+      // Update color preferences
+      if (prefs.colors) {
+        if (prefs.colors.labelBackground) {
+          this.preferences.colors.labelBackground = prefs.colors.labelBackground;
+        }
+        if (prefs.colors.nodeFill) {
+          this.preferences.colors.nodeFill = prefs.colors.nodeFill;
+        }
+        if (prefs.colors.nodeStroke) {
+          this.preferences.colors.nodeStroke = prefs.colors.nodeStroke;
+        }
+        if (prefs.colors.edgeStroke) {
+          this.preferences.colors.edgeStroke = prefs.colors.edgeStroke;
+        }
+      }
+    }
   }
 
   getStyles(): string {
@@ -352,8 +466,14 @@ export class MermaidPlugin implements MarkdownPlugin {
     const bbox = svg.getBoundingClientRect();
     const padding = 20;
 
+    // Determine background color based on preferences
+    const backgroundColor =
+      this.preferences.export.background === 'transparent'
+        ? undefined
+        : 'white';
+
     const dataUrl = await toPng(svg as unknown as HTMLElement, {
-      backgroundColor: 'white',
+      backgroundColor,
       pixelRatio: 2, // Retina quality
       width: Math.ceil(bbox.width) + padding * 2,
       height: Math.ceil(bbox.height) + padding * 2,

@@ -5,6 +5,7 @@ import { app, BrowserWindow } from 'electron';
 
 import { registerAllHandlers } from './ipc/handlers';
 import { getThemeService } from './services/ThemeService';
+import { getPreferencesService } from './services/PreferencesService';
 import { getMainWindow } from './window/MainWindow';
 
 /**
@@ -26,6 +27,7 @@ function createWindow(): void {
 async function initialize(): Promise<void> {
   // Initialize services
   await getThemeService().initialize();
+  await getPreferencesService().initialize();
 
   // Register IPC handlers before creating windows
   registerAllHandlers();

@@ -37,3 +37,47 @@ export {
   type ZoomConfig,
   type ZoomChangeCallback,
 } from './ZoomController';
+
+// CollapsibleSection
+export {
+  CollapsibleSection,
+  createCollapsibleSection,
+  type CollapsibleSectionOptions,
+} from './CollapsibleSection';
+
+// FormControls
+export {
+  Select,
+  createSelect,
+  type SelectOptions,
+  NumberInput,
+  createNumberInput,
+  type NumberInputOptions,
+  Toggle,
+  createToggle,
+  type ToggleOptions,
+  TextInput,
+  createTextInput,
+  type TextInputOptions,
+} from './FormControls';
+
+// ColorPicker
+export {
+  ColorPicker,
+  createColorPicker,
+  type ColorPickerOptions,
+} from './ColorPicker';
+
+// ColorPairPicker
+export {
+  ColorPairPicker,
+  createColorPairPicker,
+  type ColorPairPickerOptions,
+} from './ColorPairPicker';
+
+// PreferencesPanel
+export {
+  PreferencesPanel,
+  createPreferencesPanel,
+  type PreferencesPanelCallbacks,
+} from './PreferencesPanel';

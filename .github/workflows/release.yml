@@ -12,21 +12,8 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest
-            platform: darwin
-            arch: universal
-          - os: ubuntu-latest
-            platform: linux
-            arch: x64
-          - os: windows-latest
-            platform: win32
-            arch: x64
+  build-macos:
+    runs-on: macos-latest
 
     steps:
       - name: Checkout
@@ -51,7 +38,7 @@ jobs:
 
       # macOS code signing (optional - requires secrets)
       - name: Import macOS signing certificate
-        if: matrix.platform == 'darwin' && env.MACOS_CERTIFICATE != ''
+        if: env.MACOS_CERTIFICATE != ''
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
@@ -70,47 +57,19 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          if [ "${{ matrix.platform }}" = "darwin" ]; then
-            # Skip DMG on CI due to native module issues, only build ZIP
-            pnpm make --targets @electron-forge/maker-zip
-          else
-            pnpm make
-          fi
-        shell: bash
+        run: pnpm make
 
       - name: List build artifacts
         run: |
           echo "Build artifacts:"
-          ls -la out/make/ || true
-          find out/make -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.exe" -o -name "*.deb" -o -name "*.rpm" \) 2>/dev/null || true
-        shell: bash
+          find out/make -type f \( -name "*.dmg" -o -name "*.zip" \)
 
-      # Upload macOS artifacts (ZIP only - DMG skipped due to native module issues in CI)
+      - name: Upload macOS DMG
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/make/*.dmg
+
       - name: Upload macOS ZIP
-        if: matrix.platform == 'darwin'
         uses: softprops/action-gh-release@v2
         with:
           files: out/make/zip/darwin/**/*.zip
-
-      # Upload Windows artifacts
-      - name: Upload Windows installer
-        if: matrix.platform == 'win32'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            out/make/squirrel.windows/**/*.exe
-            out/make/squirrel.windows/**/*.nupkg
-
-      # Upload Linux artifacts
-      - name: Upload Linux DEB
-        if: matrix.platform == 'linux'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: out/make/deb/x64/*.deb
-
-      - name: Upload Linux RPM
-        if: matrix.platform == 'linux'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: out/make/rpm/x64/*.rpm

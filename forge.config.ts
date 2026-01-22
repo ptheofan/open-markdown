@@ -1,9 +1,6 @@
 import type { ForgeConfig } from '@electron-forge/shared-types';
-import { MakerSquirrel } from '@electron-forge/maker-squirrel';
 import { MakerZIP } from '@electron-forge/maker-zip';
 import { MakerDMG } from '@electron-forge/maker-dmg';
-import { MakerDeb } from '@electron-forge/maker-deb';
-import { MakerRpm } from '@electron-forge/maker-rpm';
 import { VitePlugin } from '@electron-forge/plugin-vite';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
@@ -72,27 +69,6 @@ const config: ForgeConfig = {
     }),
     // macOS ZIP for direct distribution
     new MakerZIP({}, ['darwin']),
-    // Windows installer
-    new MakerSquirrel({
-      name: 'markdown-viewer',
-      iconUrl: 'https://raw.githubusercontent.com/ptheofan/markdown-viewer/main/resources/icons/icon.ico',
-      setupIcon: './resources/icons/icon.ico',
-    }),
-    // Linux packages
-    new MakerRpm({
-      options: {
-        icon: './resources/icons/icon.png',
-        categories: ['Development', 'Utility'],
-        mimeType: ['text/markdown', 'text/x-markdown'],
-      },
-    }),
-    new MakerDeb({
-      options: {
-        icon: './resources/icons/icon.png',
-        categories: ['Development', 'Utility'],
-        mimeType: ['text/markdown', 'text/x-markdown'],
-      },
-    }),
   ],
   plugins: [
     new VitePlugin({

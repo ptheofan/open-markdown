@@ -3,16 +3,9 @@
  */
 import { app, BrowserWindow } from 'electron';
 
-import started from 'electron-squirrel-startup';
-
 import { registerAllHandlers } from './ipc/handlers';
 import { getThemeService } from './services/ThemeService';
 import { getMainWindow } from './window/MainWindow';
-
-// Handle creating/removing shortcuts on Windows when installing/uninstalling.
-if (started) {
-  app.quit();
-}
 
 /**
  * Create application window

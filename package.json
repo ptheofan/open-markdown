@@ -38,15 +38,12 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "electron",
-      "electron-winstaller"
+      "macos-alias"
     ]
   },
   "devDependencies": {
     "@electron-forge/cli": "^7.11.1",
-    "@electron-forge/maker-deb": "^7.11.1",
     "@electron-forge/maker-dmg": "^7.11.1",
-    "@electron-forge/maker-rpm": "^7.11.1",
-    "@electron-forge/maker-squirrel": "^7.11.1",
     "@electron-forge/maker-zip": "^7.11.1",
     "@electron-forge/plugin-auto-unpack-natives": "^7.11.1",
     "@electron-forge/plugin-fuses": "^7.11.1",
@@ -54,7 +51,6 @@
     "@electron/fuses": "^1.8.0",
     "@eslint/js": "^9.39.2",
     "@playwright/test": "^1.57.0",
-    "@types/electron-squirrel-startup": "^1.0.2",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^22.15.0",
     "@types/pako": "^2.0.4",
@@ -73,7 +69,6 @@
   },
   "dependencies": {
     "chokidar": "^4.0.0",
-    "electron-squirrel-startup": "^1.0.1",
     "highlight.js": "^11.11.0",
     "html-to-image": "^1.11.13",
     "markdown-it": "^14.1.0",

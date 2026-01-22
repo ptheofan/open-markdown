@@ -1,12 +1,8 @@
 import type { ForgeConfig } from '@electron-forge/shared-types';
-import { MakerSquirrel } from '@electron-forge/maker-squirrel';
 import { MakerZIP } from '@electron-forge/maker-zip';
 import { MakerDMG } from '@electron-forge/maker-dmg';
-import { MakerDeb } from '@electron-forge/maker-deb';
-import { MakerRpm } from '@electron-forge/maker-rpm';
 import { VitePlugin } from '@electron-forge/plugin-vite';
-import { FusesPlugin } from '@electron-forge/plugin-fuses';
-import { FuseV1Options, FuseVersion } from '@electron/fuses';
+import { execSync } from 'child_process';
 
 const config: ForgeConfig = {
   packagerConfig: {
@@ -65,6 +61,19 @@ const config: ForgeConfig = {
     },
   },
   rebuildConfig: {},
+  hooks: {
+    postPackage: async (_config, packageResult) => {
+      // Re-sign the app with ad-hoc signature to fix "app is damaged" error
+      // This is needed because Electron's default linker signature doesn't include
+      // all nested frameworks, causing Gatekeeper to reject the app
+      if (process.platform === 'darwin' && !process.env['APPLE_ID']) {
+        const outputDir = packageResult.outputPaths[0];
+        const appPath = `${outputDir}/Markdown Viewer.app`;
+        console.log(`Re-signing app with ad-hoc signature: ${appPath}`);
+        execSync(`codesign --force --deep --sign - "${appPath}"`, { stdio: 'inherit' });
+      }
+    },
+  },
   makers: [
     // macOS DMG installer
     new MakerDMG({
@@ -72,27 +81,6 @@ const config: ForgeConfig = {
     }),
     // macOS ZIP for direct distribution
     new MakerZIP({}, ['darwin']),
-    // Windows installer
-    new MakerSquirrel({
-      name: 'markdown-viewer',
-      iconUrl: 'https://raw.githubusercontent.com/ptheofan/markdown-viewer/main/resources/icons/icon.ico',
-      setupIcon: './resources/icons/icon.ico',
-    }),
-    // Linux packages
-    new MakerRpm({
-      options: {
-        icon: './resources/icons/icon.png',
-        categories: ['Development', 'Utility'],
-        mimeType: ['text/markdown', 'text/x-markdown'],
-      },
-    }),
-    new MakerDeb({
-      options: {
-        icon: './resources/icons/icon.png',
-        categories: ['Development', 'Utility'],
-        mimeType: ['text/markdown', 'text/x-markdown'],
-      },
-    }),
   ],
   plugins: [
     new VitePlugin({
@@ -116,17 +104,8 @@ const config: ForgeConfig = {
         },
       ],
     }),
-    // Fuses are used to enable/disable various Electron functionality
-    // at package time, before code signing the application
-    new FusesPlugin({
-      version: FuseVersion.V1,
-      [FuseV1Options.RunAsNode]: false,
-      [FuseV1Options.EnableCookieEncryption]: true,
-      [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
-      [FuseV1Options.EnableNodeCliInspectArguments]: false,
-      [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
-      [FuseV1Options.OnlyLoadAppFromAsar]: true,
-    }),
+    // NOTE: FusesPlugin disabled - it invalidates ad-hoc code signature without Apple Developer credentials
+    // Re-enable when code signing is configured (see Technical Debt in docs)
   ],
 };
 

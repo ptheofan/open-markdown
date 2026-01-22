@@ -158,6 +158,13 @@ export class MarkdownViewer {
   }
 
   /**
+   * Get the plugin manager for accessing plugins
+   */
+  getPluginManager(): PluginManager {
+    return this.pluginManager;
+  }
+
+  /**
    * Check if viewer is initialized
    */
   isInitialized(): boolean {

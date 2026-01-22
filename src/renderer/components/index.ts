@@ -81,3 +81,13 @@ export {
   createPreferencesPanel,
   type PreferencesPanelCallbacks,
 } from './PreferencesPanel';
+
+// CopyDropdown
+export {
+  CopyDropdown,
+  createCopyDropdown,
+  type CopyDropdownCallbacks,
+} from './CopyDropdown';
+
+// Toast
+export { Toast, type ToastType } from './Toast';

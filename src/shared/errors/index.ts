@@ -36,3 +36,12 @@ export {
   ColorFormatError,
   PluginPreferencesError,
 } from './PreferencesError';
+
+// Document copy errors
+export {
+  DocumentCopyErrorCode,
+  NoDocumentError,
+  MermaidRenderError,
+  ImageCaptureError,
+  ClipboardWriteError,
+} from './DocumentCopyError';

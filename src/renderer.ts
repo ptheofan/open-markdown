@@ -11,13 +11,22 @@ import {
   createStatusBar,
   createZoomController,
   createPreferencesPanel,
+  createCopyDropdown,
+  Toast,
   type MarkdownViewer,
   type DropZone,
   type Toolbar,
   type StatusBar,
   type ZoomController,
   type PreferencesPanel,
+  type CopyDropdown,
 } from './renderer/components';
+import {
+  createDocumentCopyService,
+  type DocumentCopyService,
+  type CopyDocumentType,
+} from './renderer/services';
+import { isDomainError } from '@shared/errors';
 import { applyTheme as applyThemeCSS } from './themes';
 
 import type {
@@ -52,6 +61,9 @@ class App {
   private statusBar: StatusBar | null = null;
   private zoomController: ZoomController | null = null;
   private preferencesPanel: PreferencesPanel | null = null;
+  private copyDropdown: CopyDropdown | null = null;
+  private documentCopyService: DocumentCopyService | null = null;
+  private toast: Toast | null = null;
 
   private state: AppState = {
     currentFilePath: null,
@@ -103,6 +115,7 @@ class App {
     const dropZoneElement = document.getElementById('drop-zone');
     const toolbarElement = document.getElementById('toolbar');
     const statusBarElement = document.getElementById('status-bar');
+    const copyDropdownElement = document.getElementById('copy-dropdown');
 
     if (!viewerContainer || !viewerElement || !dropZoneElement || !toolbarElement || !statusBarElement) {
       throw new Error('Required DOM elements not found');
@@ -113,6 +126,19 @@ class App {
     this.dropZone = createDropZone(dropZoneElement);
     this.toolbar = createToolbar(toolbarElement);
     this.statusBar = createStatusBar(statusBarElement);
+    this.toast = new Toast();
+
+    // Create copy dropdown if element exists
+    if (copyDropdownElement) {
+      this.copyDropdown = createCopyDropdown(copyDropdownElement);
+      this.documentCopyService = createDocumentCopyService(window.electronAPI.clipboard);
+
+      this.copyDropdown.setCallbacks({
+        onSelect: (type: CopyDocumentType) => {
+          void this.handleCopyDocument(type);
+        },
+      });
+    }
 
     // Create zoom controller for the markdown content
     // Target: markdown-content (the element to scale)
@@ -317,6 +343,9 @@ class App {
 
     if (viewerElement) viewerElement.classList.add('hidden');
     if (dropZoneElement) dropZoneElement.classList.remove('hidden');
+
+    // Disable copy dropdown when no document
+    this.copyDropdown?.setEnabled(false);
   }
 
   /**
@@ -328,6 +357,9 @@ class App {
 
     if (viewerElement) viewerElement.classList.remove('hidden');
     if (dropZoneElement) dropZoneElement.classList.add('hidden');
+
+    // Enable copy dropdown when document is loaded
+    this.copyDropdown?.setEnabled(true);
   }
 
   /**
@@ -501,6 +533,62 @@ class App {
   }
 
   /**
+   * Handle copy document action from dropdown
+   */
+  private async handleCopyDocument(type: CopyDocumentType): Promise<void> {
+    if (!this.markdownViewer || !this.documentCopyService) {
+      return;
+    }
+
+    const viewerContainer = document.getElementById('markdown-content');
+    const viewerElement = document.getElementById('markdown-viewer');
+
+    if (!viewerContainer || !viewerElement) {
+      this.toast?.error('Document elements not found');
+      return;
+    }
+
+    // Set loading state
+    this.copyDropdown?.setLoading(true);
+
+    try {
+      const options = {
+        contentElement: viewerContainer,
+        scrollContainer: viewerElement,
+        pluginManager: this.markdownViewer.getPluginManager(),
+        zoomLevel: this.zoomController?.getZoom() ?? 1.0,
+      };
+
+      if (type === 'google-docs') {
+        const result = await this.documentCopyService.copyForGoogleDocs(options);
+        if (result.success) {
+          const diagramText = result.diagramCount && result.diagramCount > 0
+            ? ` (${result.diagramCount} diagram${result.diagramCount > 1 ? 's' : ''})`
+            : '';
+          this.toast?.success(`Copied for Google Docs${diagramText}`);
+        }
+      } else if (type === 'image') {
+        const result = await this.documentCopyService.copyAsImage(options);
+        if (result.success) {
+          const dimensions = result.dimensions
+            ? ` (${result.dimensions.width}x${result.dimensions.height})`
+            : '';
+          this.toast?.success(`Image copied to clipboard${dimensions}`);
+        }
+      }
+    } catch (error) {
+      const message = isDomainError(error)
+        ? error.toUserMessage()
+        : error instanceof Error
+          ? error.message
+          : 'Failed to copy document';
+      this.toast?.error(message);
+    } finally {
+      this.copyDropdown?.setLoading(false);
+    }
+  }
+
+  /**
    * Handle preferences change from panel
    */
   private async handlePreferencesChange(
@@ -591,6 +679,7 @@ class App {
     // Destroy components
     this.dropZone?.destroy();
     this.zoomController?.destroy();
+    this.copyDropdown?.destroy();
   }
 }
 

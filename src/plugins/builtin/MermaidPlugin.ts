@@ -177,9 +177,11 @@ export class MermaidPlugin implements MarkdownPlugin {
   }
 
   /**
-   * Decode string from HTML attribute
+   * Decode string from HTML attribute (base64 encoded source)
+   * @param str - Base64 encoded source from data-mermaid-source attribute
+   * @returns Original mermaid code
    */
-  private decodeFromAttribute(str: string): string {
+  decodeFromAttribute(str: string): string {
     return decodeURIComponent(atob(str));
   }
 
@@ -455,8 +457,10 @@ export class MermaidPlugin implements MarkdownPlugin {
 
   /**
    * Render the diagram SVG to a PNG base64 string using html-to-image
+   * @param container - The .mermaid-container element containing the rendered SVG
+   * @returns Base64 PNG string (without data: prefix)
    */
-  private async renderToPng(container: HTMLElement): Promise<string> {
+  async renderToPng(container: HTMLElement): Promise<string> {
     const svg = container.querySelector('svg');
     if (!svg) {
       throw new Error('SVG element not found');
@@ -577,9 +581,11 @@ export class MermaidPlugin implements MarkdownPlugin {
   }
 
   /**
-   * Generate a mermaid.live URL for the given code
+   * Generate a mermaid.live edit URL for the given code
+   * @param code - Raw mermaid diagram code
+   * @returns Full mermaid.live URL
    */
-  private generateMermaidLiveUrl(code: string): string {
+  generateMermaidLiveUrl(code: string): string {
     const state = {
       code,
       mermaid: { theme: this.options.theme || 'default' },

@@ -13,6 +13,7 @@ import type {
   PluginManagerConfig,
   PluginLoadResult,
 } from '@shared/types';
+import type { PluginThemeDeclaration } from '../../themes/types';
 
 /**
  * Plugin factory function type
@@ -153,6 +154,13 @@ export class PluginManager {
    */
   getPluginStyles(): string[] {
     return this.renderer.getPluginStyles();
+  }
+
+  /**
+   * Get aggregated theme variable declarations from all enabled plugins
+   */
+  getPluginThemeDeclarations(): PluginThemeDeclaration {
+    return this.renderer.getPluginThemeDeclarations();
   }
 
   /**

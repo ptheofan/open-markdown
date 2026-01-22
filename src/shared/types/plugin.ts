@@ -1,4 +1,6 @@
 import type MarkdownIt from 'markdown-it';
+import type { ContextMenuItem } from './api';
+import type { PluginThemeDeclaration } from '../../themes/types';
 
 /**
  * Plugin metadata for identification and display
@@ -15,6 +17,16 @@ export interface PluginMetadata {
  * Plugin configuration options
  */
 export type PluginOptions = Record<string, unknown>;
+
+/**
+ * Data returned by plugin for context menu action
+ */
+export interface ContextMenuData {
+  type: 'text' | 'html' | 'image' | 'file-save';
+  content: string;
+  mimeType?: string;
+  filename?: string;
+}
 
 /**
  * Interface that all markdown plugins must implement
@@ -44,6 +56,13 @@ export interface MarkdownPlugin {
   getStyles?: () => string | string[];
 
   /**
+   * Declare theme variables this plugin uses
+   * These will be included in the theme system and update with theme changes
+   * @returns Map of variable names to their light/dark values
+   */
+  getThemeVariables?: () => PluginThemeDeclaration;
+
+  /**
    * Post-render processing hook
    * Called after HTML is rendered and inserted into DOM
    * Use for plugins that need to modify rendered content (e.g., Mermaid)
@@ -56,6 +75,24 @@ export interface MarkdownPlugin {
    * Use for releasing resources
    */
   destroy?: () => Promise<void> | void;
+
+  /**
+   * Get context menu items for a right-clicked element
+   * @param element - The element that was right-clicked
+   * @returns Menu items if plugin owns element, null otherwise
+   */
+  getContextMenuItems?: (element: HTMLElement) => ContextMenuItem[] | null;
+
+  /**
+   * Generate data for a selected menu item
+   * @param element - The element that was right-clicked
+   * @param menuItemId - The ID of the selected menu item
+   * @returns Data to write to clipboard or save to file
+   */
+  getContextMenuData?: (
+    element: HTMLElement,
+    menuItemId: string
+  ) => Promise<ContextMenuData>;
 }
 
 /**

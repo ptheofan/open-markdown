@@ -13,7 +13,8 @@ export const test = base.extend<{
   electronApp: ElectronApplication;
   mainWindow: Page;
 }>({
-  electronApp: async (_, use) => {
+  // eslint-disable-next-line no-empty-pattern
+  electronApp: async ({}, use) => {
     // Launch Electron using the development build
     const mainPath = path.join(__dirname, '../../.vite/build/index.js');
 

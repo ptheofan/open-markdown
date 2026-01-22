@@ -16,8 +16,10 @@ import {
   type StatusBar,
   type ZoomController,
 } from './renderer/components';
+import { applyTheme as applyThemeCSS } from './themes';
 
 import type { ThemeMode, FileChangeEvent, FileDeleteEvent, FullscreenChangeEvent } from '@shared/types';
+import type { ResolvedTheme } from './themes/types';
 
 /**
  * Application state
@@ -152,7 +154,7 @@ class App {
    * Apply theme to the document
    */
   private async applyTheme(theme: ThemeMode): Promise<void> {
-    let resolvedTheme: 'light' | 'dark';
+    let resolvedTheme: ResolvedTheme;
 
     if (theme === 'system') {
       try {
@@ -164,7 +166,13 @@ class App {
       resolvedTheme = theme;
     }
 
-    document.documentElement.setAttribute('data-theme', resolvedTheme);
+    // Get plugin theme declarations
+    const pluginDeclarations = this.markdownViewer?.getPluginThemeDeclarations() ?? {};
+
+    // Apply theme CSS variables
+    applyThemeCSS(resolvedTheme, pluginDeclarations);
+
+    // Update toolbar theme indicator
     this.toolbar?.setTheme(resolvedTheme);
 
     // Update theme-aware plugins (like Mermaid)
@@ -193,7 +201,8 @@ class App {
     const cleanupThemeChange = window.electronAPI.theme.onSystemChange(
       (event) => {
         if (this.state.currentTheme === 'system') {
-          document.documentElement.setAttribute('data-theme', event.theme);
+          const pluginDeclarations = this.markdownViewer?.getPluginThemeDeclarations() ?? {};
+          applyThemeCSS(event.theme, pluginDeclarations);
           this.toolbar?.setTheme(event.theme);
         }
       }

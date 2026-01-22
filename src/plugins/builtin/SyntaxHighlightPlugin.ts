@@ -4,8 +4,8 @@
 import { BUILTIN_PLUGINS } from '@shared/constants';
 import hljs from 'highlight.js';
 
-
 import type { MarkdownPlugin, PluginMetadata, PluginOptions } from '@shared/types';
+import type { PluginThemeDeclaration } from '../../themes/types';
 import type MarkdownIt from 'markdown-it';
 
 /**
@@ -97,8 +97,102 @@ export class SyntaxHighlightPlugin implements MarkdownPlugin {
       .replace(/'/g, '&#039;');
   }
 
+  /**
+   * Declare theme variables for syntax highlighting
+   */
+  getThemeVariables(): PluginThemeDeclaration {
+    return {
+      // Base colors
+      'hljs-color': {
+        light: '#24292f',
+        dark: '#c9d1d9',
+        description: 'Default text color in code blocks',
+      },
+      'hljs-bg': {
+        light: '#f6f8fa',
+        dark: '#161b22',
+        description: 'Background color for code blocks',
+      },
+      // Keywords: doctag, keyword, template-tag, template-variable, type, variable.language_
+      'hljs-keyword': {
+        light: '#cf222e',
+        dark: '#ff7b72',
+        description: 'Keywords, types, and template syntax',
+      },
+      // Titles: function names, class names
+      'hljs-title': {
+        light: '#8250df',
+        dark: '#d2a8ff',
+        description: 'Function and class names',
+      },
+      // Attributes: attr, attribute, literal, meta, number, operator, variable, selectors
+      'hljs-attr': {
+        light: '#0550ae',
+        dark: '#79c0ff',
+        description: 'Attributes, numbers, operators, and variables',
+      },
+      // Strings: regexp, string
+      'hljs-string': {
+        light: '#0a3069',
+        dark: '#a5d6ff',
+        description: 'Strings and regular expressions',
+      },
+      // Built-ins: built_in, symbol
+      'hljs-builtin': {
+        light: '#e36209',
+        dark: '#ffa657',
+        description: 'Built-in functions and symbols',
+      },
+      // Comments: comment, code, formula
+      'hljs-comment': {
+        light: '#6e7781',
+        dark: '#8b949e',
+        description: 'Comments and code annotations',
+      },
+      // Names: name, quote, selector-tag, selector-pseudo
+      'hljs-name': {
+        light: '#116329',
+        dark: '#7ee787',
+        description: 'Tag names and quotes',
+      },
+      // Section headers
+      'hljs-section': {
+        light: '#0550ae',
+        dark: '#79c0ff',
+        description: 'Section headers (bold)',
+      },
+      // Bullets
+      'hljs-bullet': {
+        light: '#953800',
+        dark: '#ffa657',
+        description: 'List bullets',
+      },
+      // Addition diff
+      'hljs-addition-color': {
+        light: '#116329',
+        dark: '#aff5b4',
+        description: 'Diff addition text color',
+      },
+      'hljs-addition-bg': {
+        light: '#dafbe1',
+        dark: '#033a16',
+        description: 'Diff addition background',
+      },
+      // Deletion diff
+      'hljs-deletion-color': {
+        light: '#82071e',
+        dark: '#ffdcd7',
+        description: 'Diff deletion text color',
+      },
+      'hljs-deletion-bg': {
+        light: '#ffebe9',
+        dark: '#67060c',
+        description: 'Diff deletion background',
+      },
+    };
+  }
+
   getStyles(): string {
-    // Base styles - theme-specific styles should be loaded separately
     return `
       /* Syntax Highlighting Base Styles */
       pre.hljs {
@@ -106,7 +200,7 @@ export class SyntaxHighlightPlugin implements MarkdownPlugin {
         overflow: auto;
         font-size: 85%;
         line-height: 1.45;
-        background-color: var(--code-bg, #f6f8fa);
+        background-color: var(--hljs-bg);
         border-radius: 6px;
         margin: 1em 0;
       }
@@ -115,7 +209,7 @@ export class SyntaxHighlightPlugin implements MarkdownPlugin {
         background: transparent;
         padding: 0;
         border: none;
-        font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+        font-family: var(--font-mono);
       }
 
       /* Line numbers (optional) */
@@ -132,8 +226,8 @@ export class SyntaxHighlightPlugin implements MarkdownPlugin {
         width: 3em;
         text-align: right;
         padding-right: 0.5em;
-        color: var(--line-number-color, #6e7781);
-        border-right: 1px solid var(--border-color, #d0d7de);
+        color: var(--hljs-comment);
+        border-right: 1px solid var(--border);
         user-select: none;
         font-size: 85%;
         line-height: 1.45;
@@ -144,15 +238,15 @@ export class SyntaxHighlightPlugin implements MarkdownPlugin {
         padding: 0.2em 0.4em;
         margin: 0;
         font-size: 85%;
-        background-color: var(--inline-code-bg, rgba(175, 184, 193, 0.2));
+        background-color: var(--code-bg);
         border-radius: 6px;
-        font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+        font-family: var(--font-mono);
       }
 
-      /* GitHub Light Theme Colors */
+      /* Highlight.js Token Colors */
       .hljs {
-        color: #24292f;
-        background: #f6f8fa;
+        color: var(--hljs-color);
+        background: var(--hljs-bg);
       }
 
       .hljs-doctag,
@@ -162,14 +256,14 @@ export class SyntaxHighlightPlugin implements MarkdownPlugin {
       .hljs-template-variable,
       .hljs-type,
       .hljs-variable.language_ {
-        color: #cf222e;
+        color: var(--hljs-keyword);
       }
 
       .hljs-title,
       .hljs-title.class_,
       .hljs-title.class_.inherited__,
       .hljs-title.function_ {
-        color: #8250df;
+        color: var(--hljs-title);
       }
 
       .hljs-attr,
@@ -182,157 +276,64 @@ export class SyntaxHighlightPlugin implements MarkdownPlugin {
       .hljs-selector-attr,
       .hljs-selector-class,
       .hljs-selector-id {
-        color: #0550ae;
+        color: var(--hljs-attr);
       }
 
       .hljs-regexp,
       .hljs-string,
       .hljs-meta .hljs-string {
-        color: #0a3069;
+        color: var(--hljs-string);
       }
 
       .hljs-built_in,
       .hljs-symbol {
-        color: #e36209;
+        color: var(--hljs-builtin);
       }
 
       .hljs-comment,
       .hljs-code,
       .hljs-formula {
-        color: #6e7781;
+        color: var(--hljs-comment);
       }
 
       .hljs-name,
       .hljs-quote,
       .hljs-selector-tag,
       .hljs-selector-pseudo {
-        color: #116329;
+        color: var(--hljs-name);
       }
 
       .hljs-subst {
-        color: #24292f;
+        color: var(--hljs-color);
       }
 
       .hljs-section {
-        color: #0550ae;
+        color: var(--hljs-section);
         font-weight: bold;
       }
 
       .hljs-bullet {
-        color: #953800;
+        color: var(--hljs-bullet);
       }
 
       .hljs-emphasis {
-        color: #24292f;
+        color: var(--hljs-color);
         font-style: italic;
       }
 
       .hljs-strong {
-        color: #24292f;
+        color: var(--hljs-color);
         font-weight: bold;
       }
 
       .hljs-addition {
-        color: #116329;
-        background-color: #dafbe1;
+        color: var(--hljs-addition-color);
+        background-color: var(--hljs-addition-bg);
       }
 
       .hljs-deletion {
-        color: #82071e;
-        background-color: #ffebe9;
-      }
-
-      /* GitHub Dark Theme Colors */
-      [data-theme="dark"] .hljs {
-        color: #c9d1d9;
-        background: #161b22;
-      }
-
-      [data-theme="dark"] .hljs-doctag,
-      [data-theme="dark"] .hljs-keyword,
-      [data-theme="dark"] .hljs-meta .hljs-keyword,
-      [data-theme="dark"] .hljs-template-tag,
-      [data-theme="dark"] .hljs-template-variable,
-      [data-theme="dark"] .hljs-type,
-      [data-theme="dark"] .hljs-variable.language_ {
-        color: #ff7b72;
-      }
-
-      [data-theme="dark"] .hljs-title,
-      [data-theme="dark"] .hljs-title.class_,
-      [data-theme="dark"] .hljs-title.class_.inherited__,
-      [data-theme="dark"] .hljs-title.function_ {
-        color: #d2a8ff;
-      }
-
-      [data-theme="dark"] .hljs-attr,
-      [data-theme="dark"] .hljs-attribute,
-      [data-theme="dark"] .hljs-literal,
-      [data-theme="dark"] .hljs-meta,
-      [data-theme="dark"] .hljs-number,
-      [data-theme="dark"] .hljs-operator,
-      [data-theme="dark"] .hljs-variable,
-      [data-theme="dark"] .hljs-selector-attr,
-      [data-theme="dark"] .hljs-selector-class,
-      [data-theme="dark"] .hljs-selector-id {
-        color: #79c0ff;
-      }
-
-      [data-theme="dark"] .hljs-regexp,
-      [data-theme="dark"] .hljs-string,
-      [data-theme="dark"] .hljs-meta .hljs-string {
-        color: #a5d6ff;
-      }
-
-      [data-theme="dark"] .hljs-built_in,
-      [data-theme="dark"] .hljs-symbol {
-        color: #ffa657;
-      }
-
-      [data-theme="dark"] .hljs-comment,
-      [data-theme="dark"] .hljs-code,
-      [data-theme="dark"] .hljs-formula {
-        color: #8b949e;
-      }
-
-      [data-theme="dark"] .hljs-name,
-      [data-theme="dark"] .hljs-quote,
-      [data-theme="dark"] .hljs-selector-tag,
-      [data-theme="dark"] .hljs-selector-pseudo {
-        color: #7ee787;
-      }
-
-      [data-theme="dark"] .hljs-subst {
-        color: #c9d1d9;
-      }
-
-      [data-theme="dark"] .hljs-section {
-        color: #79c0ff;
-        font-weight: bold;
-      }
-
-      [data-theme="dark"] .hljs-bullet {
-        color: #ffa657;
-      }
-
-      [data-theme="dark"] .hljs-emphasis {
-        color: #c9d1d9;
-        font-style: italic;
-      }
-
-      [data-theme="dark"] .hljs-strong {
-        color: #c9d1d9;
-        font-weight: bold;
-      }
-
-      [data-theme="dark"] .hljs-addition {
-        color: #aff5b4;
-        background-color: #033a16;
-      }
-
-      [data-theme="dark"] .hljs-deletion {
-        color: #ffdcd7;
-        background-color: #67060c;
+        color: var(--hljs-deletion-color);
+        background-color: var(--hljs-deletion-bg);
       }
     `;
   }

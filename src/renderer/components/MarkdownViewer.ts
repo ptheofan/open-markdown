@@ -10,6 +10,10 @@ import {
   MermaidPlugin,
 } from '@plugins/index';
 import { BUILTIN_PLUGINS } from '@shared/constants';
+import { Toast } from './Toast';
+
+import type { MarkdownPlugin, ContextMenuData } from '@shared/types';
+import type { PluginThemeDeclaration } from '../../themes/types';
 
 /**
  * State for the markdown viewer
@@ -32,6 +36,8 @@ export class MarkdownViewer {
     isRendering: false,
   };
   private initialized = false;
+  private highlightedElement: HTMLElement | null = null;
+  private toast: Toast;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -40,6 +46,7 @@ export class MarkdownViewer {
       linkify: true,
       typographer: true,
     });
+    this.toast = new Toast();
   }
 
   /**
@@ -71,6 +78,9 @@ export class MarkdownViewer {
 
     // Apply plugin styles
     this.applyPluginStyles();
+
+    // Setup context menu handling
+    this.setupContextMenu();
 
     this.initialized = true;
   }
@@ -168,6 +178,13 @@ export class MarkdownViewer {
   }
 
   /**
+   * Get aggregated theme variable declarations from all plugins
+   */
+  getPluginThemeDeclarations(): PluginThemeDeclaration {
+    return this.pluginManager.getPluginThemeDeclarations();
+  }
+
+  /**
    * Set theme for theme-aware plugins (like Mermaid)
    * Re-renders content if there's any loaded
    */
@@ -181,6 +198,149 @@ export class MarkdownViewer {
     // Re-render if we have content
     if (this.state.content) {
       await this.render(this.state.content, this.state.filePath ?? undefined);
+    }
+  }
+
+  /**
+   * Setup context menu handling for plugin elements
+   */
+  private setupContextMenu(): void {
+    this.container.addEventListener('contextmenu', (e) => {
+      void this.handleContextMenu(e);
+    });
+  }
+
+  /**
+   * Handle context menu event
+   */
+  private async handleContextMenu(e: MouseEvent): Promise<void> {
+    const target = e.target as HTMLElement;
+
+    // Find plugin-rendered element
+    const pluginElement = target.closest('[data-plugin-id]');
+    if (!pluginElement || !(pluginElement instanceof HTMLElement)) {
+      // Let default menu show for non-plugin elements
+      return;
+    }
+
+    e.preventDefault();
+
+    // Highlight the element
+    this.highlightElement(pluginElement);
+
+    // Get plugin and menu items
+    const pluginId = pluginElement.getAttribute('data-plugin-id');
+    if (!pluginId) {
+      this.removeHighlight();
+      return;
+    }
+
+    const plugin = this.pluginManager.getPlugin(pluginId);
+    if (!plugin?.getContextMenuItems) {
+      this.removeHighlight();
+      return;
+    }
+
+    const items = plugin.getContextMenuItems(pluginElement);
+    if (!items || items.length === 0) {
+      this.removeHighlight();
+      return;
+    }
+
+    // Show native context menu
+    const selectedId = await window.electronAPI.contextMenu.show({
+      items,
+      x: e.screenX,
+      y: e.screenY,
+    });
+
+    // Remove highlight
+    this.removeHighlight();
+
+    // Execute selected action
+    if (selectedId && plugin.getContextMenuData) {
+      await this.executeContextMenuItem(plugin, pluginElement, selectedId);
+    }
+  }
+
+  /**
+   * Highlight an element being targeted by context menu
+   */
+  private highlightElement(element: HTMLElement): void {
+    this.removeHighlight();
+    element.classList.add('context-menu-target');
+    this.highlightedElement = element;
+  }
+
+  /**
+   * Remove highlight from current element
+   */
+  private removeHighlight(): void {
+    if (this.highlightedElement) {
+      this.highlightedElement.classList.remove('context-menu-target');
+      this.highlightedElement = null;
+    }
+  }
+
+  /**
+   * Execute a context menu action
+   */
+  private async executeContextMenuItem(
+    plugin: MarkdownPlugin,
+    element: HTMLElement,
+    menuItemId: string
+  ): Promise<void> {
+    if (!plugin.getContextMenuData) {
+      return;
+    }
+
+    try {
+      const data = await plugin.getContextMenuData(element, menuItemId);
+      await this.executeClipboardAction(data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      this.toast.error(`Failed: ${message}`);
+    }
+  }
+
+  /**
+   * Execute clipboard action based on data type
+   */
+  private async executeClipboardAction(data: ContextMenuData): Promise<void> {
+    switch (data.type) {
+      case 'text':
+        await window.electronAPI.clipboard.writeText(data.content);
+        this.toast.success('Copied to clipboard');
+        break;
+
+      case 'html':
+        await window.electronAPI.clipboard.writeHtml(data.content);
+        this.toast.success('Copied to clipboard');
+        break;
+
+      case 'image':
+        await window.electronAPI.clipboard.writeImage(data.content);
+        this.toast.success('Image copied to clipboard');
+        break;
+
+      case 'file-save': {
+        const result = await window.electronAPI.clipboard.saveFile(
+          data.content,
+          data.filename || 'image.png'
+        );
+        if (result.success) {
+          this.toast.success(`Saved to ${result.filePath}`);
+        } else if (!result.cancelled) {
+          this.toast.error(result.error || 'Failed to save file');
+        }
+        // No toast for cancelled
+        break;
+      }
+
+      default: {
+        const exhaustiveCheck: never = data.type;
+        throw new Error(`Unknown data type: ${String(exhaustiveCheck)}`);
+      }
     }
   }
 }

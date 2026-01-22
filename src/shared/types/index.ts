@@ -25,6 +25,7 @@ export type {
   PluginManagerConfig,
   PluginLoadResult,
   PluginRegistrationEvent,
+  ContextMenuData,
 } from './plugin';
 
 // API types
@@ -35,6 +36,11 @@ export type {
   ThemeAPI,
   AppAPI,
   WindowAPI,
+  ContextMenuAPI,
+  ClipboardAPI,
   ElectronAPI,
   FullscreenChangeEvent,
+  ContextMenuItem,
+  ContextMenuShowRequest,
+  SaveFileResult,
 } from './api';

@@ -32,6 +32,15 @@ export const IPC_CHANNELS = {
     ON_FULLSCREEN_CHANGE: 'window:on-fullscreen-change',
     GET_FULLSCREEN: 'window:get-fullscreen',
   },
+  CONTEXT_MENU: {
+    SHOW: 'context-menu:show',
+  },
+  CLIPBOARD: {
+    WRITE_TEXT: 'clipboard:write-text',
+    WRITE_HTML: 'clipboard:write-html',
+    WRITE_IMAGE: 'clipboard:write-image',
+    SAVE_FILE: 'clipboard:save-file',
+  },
 } as const;
 
 /**
@@ -41,7 +50,9 @@ export type IpcChannel =
   | (typeof IPC_CHANNELS.FILE)[keyof typeof IPC_CHANNELS.FILE]
   | (typeof IPC_CHANNELS.THEME)[keyof typeof IPC_CHANNELS.THEME]
   | (typeof IPC_CHANNELS.APP)[keyof typeof IPC_CHANNELS.APP]
-  | (typeof IPC_CHANNELS.WINDOW)[keyof typeof IPC_CHANNELS.WINDOW];
+  | (typeof IPC_CHANNELS.WINDOW)[keyof typeof IPC_CHANNELS.WINDOW]
+  | (typeof IPC_CHANNELS.CONTEXT_MENU)[keyof typeof IPC_CHANNELS.CONTEXT_MENU]
+  | (typeof IPC_CHANNELS.CLIPBOARD)[keyof typeof IPC_CHANNELS.CLIPBOARD];
 
 /**
  * Fullscreen change event data
@@ -97,6 +108,51 @@ export interface WindowAPI {
 }
 
 /**
+ * Context menu item definition
+ */
+export interface ContextMenuItem {
+  id: string;
+  label: string;
+  enabled: boolean;
+}
+
+/**
+ * Context menu show request
+ */
+export interface ContextMenuShowRequest {
+  items: ContextMenuItem[];
+  x: number;
+  y: number;
+}
+
+/**
+ * Result of save file operation
+ */
+export interface SaveFileResult {
+  success: boolean;
+  filePath?: string;
+  cancelled?: boolean;
+  error?: string;
+}
+
+/**
+ * Context menu API exposed to renderer
+ */
+export interface ContextMenuAPI {
+  show: (request: ContextMenuShowRequest) => Promise<string | null>;
+}
+
+/**
+ * Clipboard operations API exposed to renderer
+ */
+export interface ClipboardAPI {
+  writeText: (text: string) => Promise<void>;
+  writeHtml: (html: string) => Promise<void>;
+  writeImage: (base64: string) => Promise<void>;
+  saveFile: (base64: string, filename: string) => Promise<SaveFileResult>;
+}
+
+/**
  * Complete Electron API exposed via contextBridge
  */
 export interface ElectronAPI {
@@ -104,6 +160,8 @@ export interface ElectronAPI {
   theme: ThemeAPI;
   app: AppAPI;
   window: WindowAPI;
+  contextMenu: ContextMenuAPI;
+  clipboard: ClipboardAPI;
 }
 
 /**

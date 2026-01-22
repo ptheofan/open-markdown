@@ -202,16 +202,16 @@ export class GithubFlavoredPlugin implements MarkdownPlugin {
       table th,
       table td {
         padding: 6px 13px;
-        border: 1px solid var(--border-color, #dfe2e5);
+        border: 1px solid var(--table-border);
       }
 
       table th {
         font-weight: 600;
-        background-color: var(--table-header-bg, #f6f8fa);
+        background-color: var(--table-header-bg);
       }
 
       table tr:nth-child(2n) {
-        background-color: var(--table-row-alt-bg, #f6f8fa);
+        background-color: var(--table-row-alt-bg);
       }
     `;
   }

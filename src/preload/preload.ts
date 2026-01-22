@@ -16,6 +16,8 @@ import type {
   ResolvedTheme,
   ThemeChangeEvent,
   ThemeMode,
+  ContextMenuShowRequest,
+  SaveFileResult,
 } from '@shared/types';
 
 /**
@@ -138,6 +140,34 @@ const electronAPI: ElectronAPI = {
           handler
         );
       };
+    },
+  },
+
+  contextMenu: {
+    show: (request: ContextMenuShowRequest): Promise<string | null> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.CONTEXT_MENU.SHOW, request);
+    },
+  },
+
+  clipboard: {
+    writeText: (text: string): Promise<void> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.CLIPBOARD.WRITE_TEXT, text);
+    },
+
+    writeHtml: (html: string): Promise<void> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.CLIPBOARD.WRITE_HTML, html);
+    },
+
+    writeImage: (base64: string): Promise<void> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.CLIPBOARD.WRITE_IMAGE, base64);
+    },
+
+    saveFile: (base64: string, filename: string): Promise<SaveFileResult> => {
+      return ipcRenderer.invoke(
+        IPC_CHANNELS.CLIPBOARD.SAVE_FILE,
+        base64,
+        filename
+      );
     },
   },
 };

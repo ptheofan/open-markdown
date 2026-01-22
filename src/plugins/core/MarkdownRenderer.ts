@@ -6,6 +6,7 @@ import MarkdownIt from 'markdown-it';
 
 
 import type { MarkdownPlugin, PluginMetadata } from '@shared/types';
+import type { PluginThemeDeclaration } from '../../themes/types';
 
 /**
  * Options for the MarkdownRenderer
@@ -146,6 +147,29 @@ export class MarkdownRenderer {
     }
 
     return styles;
+  }
+
+  /**
+   * Get aggregated theme variable declarations from all plugins
+   */
+  getPluginThemeDeclarations(): PluginThemeDeclaration {
+    const aggregated: PluginThemeDeclaration = {};
+
+    for (const [pluginId, plugin] of this.plugins) {
+      if (plugin.getThemeVariables) {
+        const declarations = plugin.getThemeVariables();
+        for (const [name, values] of Object.entries(declarations)) {
+          if (aggregated[name]) {
+            console.warn(
+              `[MarkdownRenderer] Duplicate theme variable --${name} from plugin ${pluginId}`
+            );
+          }
+          aggregated[name] = values;
+        }
+      }
+    }
+
+    return aggregated;
   }
 
   /**

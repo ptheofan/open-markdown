@@ -1,9 +1,19 @@
 /**
  * MermaidPlugin - Renders Mermaid diagrams in markdown
  */
+import { toPng } from 'html-to-image';
+import pako from 'pako';
+
 import { BUILTIN_PLUGINS } from '@shared/constants';
 
-import type { MarkdownPlugin, PluginMetadata, PluginOptions } from '@shared/types';
+import type {
+  MarkdownPlugin,
+  PluginMetadata,
+  PluginOptions,
+  ContextMenuItem,
+  ContextMenuData,
+} from '@shared/types';
+import type { PluginThemeDeclaration } from '../../themes/types';
 import type MarkdownIt from 'markdown-it';
 
 /**
@@ -57,13 +67,12 @@ export class MermaidPlugin implements MarkdownPlugin {
       startOnLoad: false,
       theme: this.options.theme,
       securityLevel: this.options.securityLevel,
-      flowchart: {
-        useMaxWidth: true,
-        htmlLabels: true,
-      },
-      sequence: {
-        useMaxWidth: true,
-      },
+      flowchart: { useMaxWidth: true },
+      sequence: { useMaxWidth: true },
+      er: { useMaxWidth: true },
+      journey: { useMaxWidth: true },
+      gantt: { useMaxWidth: true },
+      pie: { useMaxWidth: true },
     });
   }
 
@@ -125,6 +134,10 @@ export class MermaidPlugin implements MarkdownPlugin {
         // Replace placeholder with rendered SVG
         placeholder.innerHTML = svg;
         placeholder.classList.add('mermaid-rendered');
+
+        // Store source for context menu and mark plugin ownership
+        placeholder.setAttribute('data-plugin-id', 'mermaid');
+        placeholder.setAttribute('data-mermaid-source', this.encodeForAttribute(code));
         placeholder.removeAttribute('data-mermaid-code');
       } catch (error) {
         // Show error message
@@ -141,6 +154,10 @@ export class MermaidPlugin implements MarkdownPlugin {
           </div>
         `;
         placeholder.classList.add('mermaid-error-container');
+
+        // Still store source for context menu (code copy still works for errors)
+        placeholder.setAttribute('data-plugin-id', 'mermaid');
+        placeholder.setAttribute('data-mermaid-source', this.encodeForAttribute(code));
       }
     }
   }
@@ -171,6 +188,19 @@ export class MermaidPlugin implements MarkdownPlugin {
       .replace(/'/g, '&#039;');
   }
 
+  /**
+   * Declare theme variables used by this plugin
+   */
+  getThemeVariables(): PluginThemeDeclaration {
+    return {
+      'mermaid-label-bg': {
+        light: '#ffffff',
+        dark: '#2d2d2d',
+        description: 'Background color for edge labels in diagrams',
+      },
+    };
+  }
+
   getStyles(): string {
     return `
       /* Mermaid Diagram Styles */
@@ -180,6 +210,11 @@ export class MermaidPlugin implements MarkdownPlugin {
         overflow-x: auto;
       }
 
+      /* Edge label backgrounds - override Mermaid's hardcoded 50% transparency */
+      .mermaid-container .labelBkg {
+        background-color: var(--mermaid-label-bg) !important;
+      }
+
       .mermaid-container svg {
         max-width: 100%;
         height: auto;
@@ -187,23 +222,23 @@ export class MermaidPlugin implements MarkdownPlugin {
 
       .mermaid-loading {
         padding: 2em;
-        color: var(--text-muted, #6e7781);
+        color: var(--text-muted);
         font-style: italic;
       }
 
       .mermaid-error {
         padding: 1em;
-        background-color: var(--error-bg, #ffebe9);
-        border: 1px solid var(--error-border, #ff8182);
+        background-color: var(--error-bg);
+        border: 1px solid var(--error-border);
         border-radius: 6px;
-        color: var(--error-text, #cf222e);
+        color: var(--error-text);
         text-align: left;
       }
 
       .mermaid-error pre {
         margin: 0.5em 0 0;
         padding: 0.5em;
-        background-color: var(--code-bg, rgba(0, 0, 0, 0.05));
+        background-color: var(--code-bg);
         border-radius: 4px;
         overflow-x: auto;
         font-size: 0.85em;
@@ -215,13 +250,137 @@ export class MermaidPlugin implements MarkdownPlugin {
 
       .mermaid-error summary {
         cursor: pointer;
-        color: var(--link-color, #0969da);
+        color: var(--link-color);
       }
 
       .mermaid-error summary:hover {
         text-decoration: underline;
       }
+
     `;
+  }
+
+  /**
+   * Get context menu items for a right-clicked element
+   */
+  getContextMenuItems(element: HTMLElement): ContextMenuItem[] | null {
+    const container = element.closest('.mermaid-container[data-mermaid-source]');
+    if (!container) return null;
+
+    const hasError = container.classList.contains('mermaid-error-container');
+
+    return [
+      { id: 'copy-code', label: 'Copy Mermaid Code', enabled: true },
+      { id: 'copy-image', label: 'Copy as Image', enabled: !hasError },
+      { id: 'copy-mermaid-live', label: 'Copy as Mermaid Live', enabled: true },
+      {
+        id: 'copy-image-with-link',
+        label: 'Copy as Image with Link',
+        enabled: !hasError,
+      },
+      { id: 'save-png', label: 'Save as PNG...', enabled: !hasError },
+    ];
+  }
+
+  /**
+   * Generate data for a selected context menu item
+   */
+  async getContextMenuData(
+    element: HTMLElement,
+    menuItemId: string
+  ): Promise<ContextMenuData> {
+    const container = element.closest(
+      '.mermaid-container[data-mermaid-source]'
+    ) as HTMLElement;
+    const encodedSource = container.getAttribute('data-mermaid-source');
+    if (!encodedSource) {
+      throw new Error('Mermaid source not found');
+    }
+
+    const code = this.decodeFromAttribute(encodedSource);
+
+    switch (menuItemId) {
+      case 'copy-code':
+        return { type: 'text', content: code };
+
+      case 'copy-image': {
+        const png = await this.renderToPng(container);
+        return { type: 'image', content: png };
+      }
+
+      case 'copy-mermaid-live': {
+        const url = this.generateMermaidLiveUrl(code);
+        return {
+          type: 'html',
+          content: `<a href="${url}">Mermaid Diagram</a>`,
+        };
+      }
+
+      case 'copy-image-with-link': {
+        const pngData = await this.renderToPng(container);
+        const liveUrl = this.generateMermaidLiveUrl(code);
+        return {
+          type: 'html',
+          content: `<img src="data:image/png;base64,${pngData}"/><br/><a href="${liveUrl}">Mermaid Diagram</a>`,
+        };
+      }
+
+      case 'save-png': {
+        const pngForSave = await this.renderToPng(container);
+        return {
+          type: 'file-save',
+          content: pngForSave,
+          filename: 'mermaid-diagram.png',
+        };
+      }
+
+      default:
+        throw new Error(`Unknown menu item: ${menuItemId}`);
+    }
+  }
+
+  /**
+   * Render the diagram SVG to a PNG base64 string using html-to-image
+   */
+  private async renderToPng(container: HTMLElement): Promise<string> {
+    const svg = container.querySelector('svg');
+    if (!svg) {
+      throw new Error('SVG element not found');
+    }
+
+    // Get bounding box and add padding to prevent cropping
+    const bbox = svg.getBoundingClientRect();
+    const padding = 20;
+
+    const dataUrl = await toPng(svg as unknown as HTMLElement, {
+      backgroundColor: 'white',
+      pixelRatio: 2, // Retina quality
+      width: Math.ceil(bbox.width) + padding * 2,
+      height: Math.ceil(bbox.height) + padding * 2,
+      style: {
+        margin: `${padding}px`,
+      },
+    });
+
+    return dataUrl.split(',')[1] ?? '';
+  }
+
+  /**
+   * Generate a mermaid.live URL for the given code
+   */
+  private generateMermaidLiveUrl(code: string): string {
+    const state = {
+      code,
+      mermaid: { theme: this.options.theme || 'default' },
+      autoSync: true,
+      updateDiagram: true,
+    };
+
+    const jsonString = JSON.stringify(state);
+    const compressed = pako.deflate(jsonString, { level: 9 });
+    const base64 = btoa(String.fromCharCode(...compressed));
+
+    return `https://mermaid.live/edit#pako:${base64}`;
   }
 
   destroy(): void {

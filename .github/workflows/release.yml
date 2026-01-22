@@ -45,24 +45,26 @@ jobs:
           chmod +x scripts/setup-macos-keychain.sh
           ./scripts/setup-macos-keychain.sh
 
-      - name: Store notarization credentials in keychain
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          echo "Storing and validating notarization credentials..."
-          xcrun notarytool store-credentials "notarization-profile" \
-            --apple-id "${APPLE_ID}" \
-            --team-id "${APPLE_TEAM_ID}" \
-            --password "${APPLE_ID_PASSWORD}"
-          echo "Credentials stored and validated successfully."
+      # Notarization temporarily disabled due to Apple service issues (Jan 2026)
+      # Re-enable by removing SKIP_NOTARIZATION and uncommenting the credentials step
+      # - name: Store notarization credentials in keychain
+      #   env:
+      #     APPLE_ID: ${{ secrets.APPLE_ID }}
+      #     APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+      #     APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      #   run: |
+      #     echo "Storing and validating notarization credentials..."
+      #     xcrun notarytool store-credentials "notarization-profile" \
+      #       --apple-id "${APPLE_ID}" \
+      #       --team-id "${APPLE_TEAM_ID}" \
+      #       --password "${APPLE_ID_PASSWORD}"
+      #     echo "Credentials stored and validated successfully."
 
       - name: Build distributables
         env:
           DEBUG: electron-osx-sign*,electron-notarize*
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          NOTARIZE_KEYCHAIN_PROFILE: notarization-profile
+          SKIP_NOTARIZATION: 1
         run: pnpm make
 
       - name: List build artifacts

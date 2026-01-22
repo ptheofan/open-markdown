@@ -15,8 +15,8 @@ const config: ForgeConfig = {
     asar: true,
     icon: './resources/icons/icon',
     extraResource: ['./resources/bin'],
-    // macOS code signing - enabled when APPLE_API_KEY_PATH is set
-    osxSign: process.env['APPLE_API_KEY_PATH']
+    // macOS code signing - enabled when APPLE_TEAM_ID is set (indicates CI release build)
+    osxSign: process.env['APPLE_TEAM_ID']
       ? {
           identity: 'Developer ID Application',
           optionsForFile: () => ({
@@ -25,17 +25,17 @@ const config: ForgeConfig = {
           }),
         }
       : undefined,
-    // macOS notarization using App Store Connect API key
+    // macOS notarization using app-specific password
     // Set SKIP_NOTARIZATION=1 to skip notarization (for testing signing only)
     osxNotarize:
       !process.env['SKIP_NOTARIZATION'] &&
-      process.env['APPLE_API_KEY_PATH'] &&
-      process.env['APPLE_API_KEY_ID'] &&
-      process.env['APPLE_API_ISSUER']
+      process.env['APPLE_ID'] &&
+      process.env['APPLE_ID_PASSWORD'] &&
+      process.env['APPLE_TEAM_ID']
         ? {
-            appleApiKey: process.env['APPLE_API_KEY_PATH'],
-            appleApiKeyId: process.env['APPLE_API_KEY_ID'],
-            appleApiIssuer: process.env['APPLE_API_ISSUER'],
+            appleId: process.env['APPLE_ID'],
+            appleIdPassword: process.env['APPLE_ID_PASSWORD'],
+            teamId: process.env['APPLE_TEAM_ID'],
           }
         : undefined,
     // File associations for markdown files
@@ -72,7 +72,7 @@ const config: ForgeConfig = {
       // Re-sign the app with ad-hoc signature to fix "app is damaged" error
       // This is needed because Electron's default linker signature doesn't include
       // all nested frameworks, causing Gatekeeper to reject the app
-      if (process.platform === 'darwin' && !process.env['APPLE_API_KEY_PATH']) {
+      if (process.platform === 'darwin' && !process.env['APPLE_TEAM_ID']) {
         const outputDir = packageResult.outputPaths[0];
         const appPath = `${outputDir}/Markdown Viewer.app`;
         console.log(`Re-signing app with ad-hoc signature: ${appPath}`);

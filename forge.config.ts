@@ -2,6 +2,8 @@ import type { ForgeConfig } from '@electron-forge/shared-types';
 import { MakerZIP } from '@electron-forge/maker-zip';
 import { MakerDMG } from '@electron-forge/maker-dmg';
 import { VitePlugin } from '@electron-forge/plugin-vite';
+import { FusesPlugin } from '@electron-forge/plugin-fuses';
+import { FuseV1Options, FuseVersion } from '@electron/fuses';
 import { execSync } from 'child_process';
 
 const config: ForgeConfig = {
@@ -13,9 +15,8 @@ const config: ForgeConfig = {
     asar: true,
     icon: './resources/icons/icon',
     extraResource: ['./resources/bin'],
-    // macOS specific options - signing is configured via environment variables
-    // Set APPLE_ID, APPLE_PASSWORD, and APPLE_TEAM_ID for notarization
-    osxSign: process.env['APPLE_ID']
+    // macOS code signing - enabled when APPLE_API_KEY_PATH is set
+    osxSign: process.env['APPLE_API_KEY_PATH']
       ? {
           optionsForFile: () => ({
             entitlements: './resources/entitlements.mac.plist',
@@ -23,14 +24,15 @@ const config: ForgeConfig = {
           }),
         }
       : undefined,
+    // macOS notarization using App Store Connect API key
     osxNotarize:
-      process.env['APPLE_ID'] &&
-      process.env['APPLE_PASSWORD'] &&
-      process.env['APPLE_TEAM_ID']
+      process.env['APPLE_API_KEY_PATH'] &&
+      process.env['APPLE_API_KEY_ID'] &&
+      process.env['APPLE_API_ISSUER']
         ? {
-            appleId: process.env['APPLE_ID'],
-            appleIdPassword: process.env['APPLE_PASSWORD'],
-            teamId: process.env['APPLE_TEAM_ID'],
+            appleApiKey: process.env['APPLE_API_KEY_PATH'],
+            appleApiKeyId: process.env['APPLE_API_KEY_ID'],
+            appleApiIssuer: process.env['APPLE_API_ISSUER'],
           }
         : undefined,
     // File associations for markdown files
@@ -67,7 +69,7 @@ const config: ForgeConfig = {
       // Re-sign the app with ad-hoc signature to fix "app is damaged" error
       // This is needed because Electron's default linker signature doesn't include
       // all nested frameworks, causing Gatekeeper to reject the app
-      if (process.platform === 'darwin' && !process.env['APPLE_ID']) {
+      if (process.platform === 'darwin' && !process.env['APPLE_API_KEY_PATH']) {
         const outputDir = packageResult.outputPaths[0];
         const appPath = `${outputDir}/Markdown Viewer.app`;
         console.log(`Re-signing app with ad-hoc signature: ${appPath}`);
@@ -105,8 +107,20 @@ const config: ForgeConfig = {
         },
       ],
     }),
-    // NOTE: FusesPlugin disabled - it invalidates ad-hoc code signature without Apple Developer credentials
-    // Re-enable when code signing is configured (see Technical Debt in docs)
+    // Security hardening - only enable when code signing is configured
+    ...(process.env['APPLE_API_KEY_PATH']
+      ? [
+          new FusesPlugin({
+            version: FuseVersion.V1,
+            [FuseV1Options.RunAsNode]: false,
+            [FuseV1Options.EnableCookieEncryption]: true,
+            [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
+            [FuseV1Options.EnableNodeCliInspectArguments]: false,
+            [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
+            [FuseV1Options.OnlyLoadAppFromAsar]: true,
+          }),
+        ]
+      : []),
   ],
 };
 

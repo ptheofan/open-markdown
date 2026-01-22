@@ -25,3 +25,14 @@ export {
   PluginRenderError,
   PluginConfigError,
 } from './PluginError';
+
+// Preferences errors
+export {
+  PreferencesErrorCode,
+  PreferencesLoadError,
+  PreferencesSaveError,
+  PreferencesValidationError,
+  PreferencesMigrationError,
+  ColorFormatError,
+  PluginPreferencesError,
+} from './PreferencesError';

@@ -1,6 +1,7 @@
 import type MarkdownIt from 'markdown-it';
 import type { ContextMenuItem } from './api';
 import type { PluginThemeDeclaration } from '../../themes/types';
+import type { PluginPreferencesSchema } from './preferences';
 
 /**
  * Plugin metadata for identification and display
@@ -93,6 +94,19 @@ export interface MarkdownPlugin {
     element: HTMLElement,
     menuItemId: string
   ) => Promise<ContextMenuData>;
+
+  /**
+   * Get the preferences schema for this plugin
+   * Used to dynamically generate UI for plugin preferences
+   * @returns Schema defining preference sections and fields
+   */
+  getPreferencesSchema?: () => PluginPreferencesSchema | null;
+
+  /**
+   * Called when plugin preferences are changed
+   * @param preferences - The updated preferences for this plugin
+   */
+  onPreferencesChange?: (preferences: unknown) => void;
 }
 
 /**

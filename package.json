@@ -70,6 +70,7 @@
   },
   "dependencies": {
     "chokidar": "^4.0.0",
+    "colorjs.io": "^0.6.1",
     "highlight.js": "^11.11.0",
     "html-to-image": "^1.11.13",
     "markdown-it": "^14.1.0",

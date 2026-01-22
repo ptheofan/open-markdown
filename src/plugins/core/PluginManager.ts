@@ -12,6 +12,7 @@ import type {
   PluginOptions,
   PluginManagerConfig,
   PluginLoadResult,
+  PluginPreferencesSchema,
 } from '@shared/types';
 import type { PluginThemeDeclaration } from '../../themes/types';
 
@@ -238,6 +239,50 @@ export class PluginManager {
    */
   getRenderer(): MarkdownRenderer {
     return this.renderer;
+  }
+
+  /**
+   * Get preferences schemas from all enabled plugins
+   * @returns Map of plugin ID to preferences schema
+   */
+  getPluginPreferencesSchemas(): Map<string, PluginPreferencesSchema> {
+    const schemas = new Map<string, PluginPreferencesSchema>();
+
+    for (const pluginId of this.enabledPlugins) {
+      const plugin = this.renderer.getPlugin(pluginId);
+      if (plugin?.getPreferencesSchema) {
+        const schema = plugin.getPreferencesSchema();
+        if (schema) {
+          schemas.set(pluginId, schema);
+        }
+      }
+    }
+
+    return schemas;
+  }
+
+  /**
+   * Notify a specific plugin that its preferences have changed
+   * @param pluginId - The plugin to notify
+   * @param preferences - The updated preferences for that plugin
+   */
+  notifyPluginPreferencesChange(pluginId: string, preferences: unknown): void {
+    const plugin = this.renderer.getPlugin(pluginId);
+    if (plugin?.onPreferencesChange) {
+      plugin.onPreferencesChange(preferences);
+    }
+  }
+
+  /**
+   * Notify all plugins of their preference changes
+   * @param preferencesMap - Map of plugin ID to preferences
+   */
+  notifyAllPluginsPreferencesChange(
+    preferencesMap: Record<string, unknown>
+  ): void {
+    for (const [pluginId, preferences] of Object.entries(preferencesMap)) {
+      this.notifyPluginPreferencesChange(pluginId, preferences);
+    }
   }
 }
 

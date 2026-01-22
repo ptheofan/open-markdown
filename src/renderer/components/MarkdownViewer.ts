@@ -12,7 +12,11 @@ import {
 import { BUILTIN_PLUGINS } from '@shared/constants';
 import { Toast } from './Toast';
 
-import type { MarkdownPlugin, ContextMenuData } from '@shared/types';
+import type {
+  MarkdownPlugin,
+  ContextMenuData,
+  PluginPreferencesSchema,
+} from '@shared/types';
 import type { PluginThemeDeclaration } from '../../themes/types';
 
 /**
@@ -182,6 +186,33 @@ export class MarkdownViewer {
    */
   getPluginThemeDeclarations(): PluginThemeDeclaration {
     return this.pluginManager.getPluginThemeDeclarations();
+  }
+
+  /**
+   * Get preferences schemas from all enabled plugins
+   * @returns Map of plugin ID to preferences schema
+   */
+  getPluginPreferencesSchemas(): Map<string, PluginPreferencesSchema> {
+    return this.pluginManager.getPluginPreferencesSchemas();
+  }
+
+  /**
+   * Notify a specific plugin that its preferences have changed
+   * @param pluginId - The plugin to notify
+   * @param preferences - The updated preferences for that plugin
+   */
+  notifyPluginPreferencesChange(pluginId: string, preferences: unknown): void {
+    this.pluginManager.notifyPluginPreferencesChange(pluginId, preferences);
+  }
+
+  /**
+   * Notify all plugins of their preference changes
+   * @param preferencesMap - Map of plugin ID to preferences
+   */
+  notifyAllPluginsPreferencesChange(
+    preferencesMap: Record<string, unknown>
+  ): void {
+    this.pluginManager.notifyAllPluginsPreferencesChange(preferencesMap);
   }
 
   /**

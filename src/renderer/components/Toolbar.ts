@@ -9,6 +9,7 @@ import type { ThemeMode } from '@shared/types';
 export interface ToolbarCallbacks {
   onOpenFile?: () => void;
   onToggleTheme?: () => void;
+  onOpenPreferences?: () => void;
 }
 
 /**
@@ -17,6 +18,7 @@ export interface ToolbarCallbacks {
 export class Toolbar {
   private element: HTMLElement;
   private openFileBtn: HTMLButtonElement | null = null;
+  private preferencesBtn: HTMLButtonElement | null = null;
   private themeToggleBtn: HTMLButtonElement | null = null;
   private fileNameElement: HTMLElement | null = null;
   private themeIconLight: HTMLElement | null = null;
@@ -34,6 +36,7 @@ export class Toolbar {
    */
   private cacheElements(): void {
     this.openFileBtn = this.element.querySelector('#open-file-btn');
+    this.preferencesBtn = this.element.querySelector('#preferences-btn');
     this.themeToggleBtn = this.element.querySelector('#theme-toggle-btn');
     this.fileNameElement = this.element.querySelector('#file-name');
     this.themeIconLight = this.element.querySelector('#theme-icon-light');
@@ -46,6 +49,10 @@ export class Toolbar {
   private setupEventListeners(): void {
     this.openFileBtn?.addEventListener('click', () => {
       this.callbacks.onOpenFile?.();
+    });
+
+    this.preferencesBtn?.addEventListener('click', () => {
+      this.callbacks.onOpenPreferences?.();
     });
 
     this.themeToggleBtn?.addEventListener('click', () => {

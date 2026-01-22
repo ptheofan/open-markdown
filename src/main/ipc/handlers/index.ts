@@ -11,6 +11,10 @@ import {
   registerContextMenuHandlers,
   unregisterContextMenuHandlers,
 } from './ContextMenuHandler';
+import {
+  registerPreferencesHandlers,
+  unregisterPreferencesHandlers,
+} from './PreferencesHandler';
 
 /**
  * Register all IPC handlers
@@ -20,6 +24,7 @@ export function registerAllHandlers(): void {
   registerThemeHandlers();
   registerClipboardHandlers();
   registerContextMenuHandlers();
+  registerPreferencesHandlers();
 }
 
 /**
@@ -30,6 +35,7 @@ export function unregisterAllHandlers(): void {
   unregisterThemeHandlers();
   unregisterClipboardHandlers();
   unregisterContextMenuHandlers();
+  unregisterPreferencesHandlers();
 }
 
 // Re-export individual handlers
@@ -43,3 +49,7 @@ export {
   registerContextMenuHandlers,
   unregisterContextMenuHandlers,
 } from './ContextMenuHandler';
+export {
+  registerPreferencesHandlers,
+  unregisterPreferencesHandlers,
+} from './PreferencesHandler';

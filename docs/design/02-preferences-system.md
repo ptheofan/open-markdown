@@ -847,6 +847,9 @@ export interface ParsedOklchColor {
 | **Storage: JSON file** | Simple, human-readable, sufficient | Manual migration | **Selected** |
 | **Apply mode: On save** | Explicit action | Poor UX, no immediate feedback | Rejected |
 | **Apply mode: Live preview** | Immediate feedback, modern UX | Slightly more complex state management | **Selected** |
+| **Color conversion: Color.js** | Comprehensive, accurate, CSS Color 4/5 | 30KB gzipped, but worth it for accuracy | **Selected** |
+| **Color conversion: Custom** | Smaller bundle | Error-prone, maintenance burden | Rejected |
+| **Color conversion: culori** | Fast, modular | Less comprehensive than Color.js | Considered |
 
 ## 5. Testing Strategy
 
@@ -921,7 +924,9 @@ export interface ParsedOklchColor {
 
 ## 8. References
 
-- [OKLCH Color Space](https://oklch.com/) - Color picker and documentation
+- [OKLCH Color Space](https://oklch.com/) - Interactive color picker and documentation
 - [CSS Color Level 4](https://www.w3.org/TR/css-color-4/#ok-lab) - OKLCH specification
+- [Color.js](https://colorjs.io/) - Color conversion library (recommended for hex/rgb → oklch)
+- [Chrome DevTools Color Picker](https://developer.chrome.com/docs/devtools/css/color) - UI reference for color picker design
 - Current codebase: `src/themes/`, `src/main/services/ThemeService.ts`
 - Plugin interface: `src/shared/types/plugin.ts`

@@ -1,7 +1,7 @@
 /**
  * E2E Tests: App Launch and Basic Functionality
  *
- * Tests critical paths for the Markdown Viewer application
+ * Tests critical paths for the Open Markdown application
  */
 import { test, expect } from './electron-app';
 
@@ -16,7 +16,7 @@ test.describe('App Launch', () => {
 
     // Verify window has content
     const title = await window.title();
-    expect(title).toContain('Markdown Viewer');
+    expect(title).toContain('Open Markdown');
   });
 
   test('should display toolbar with Open button', async ({ mainWindow }) => {

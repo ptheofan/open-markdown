@@ -17,7 +17,7 @@ function getOsxSignConfig() {
       preAutoEntitlements: false,
       preEmbedProvisioningProfile: true,
       optionsForFile: (filePath: string) => {
-        const isMainApp = filePath.endsWith('Markdown Viewer.app');
+        const isMainApp = filePath.endsWith('Open Markdown.app');
         return {
           entitlements: isMainApp
             ? './resources/entitlements.mas.plist'
@@ -41,7 +41,7 @@ function getOsxSignConfig() {
 
 const config: ForgeConfig = {
   packagerConfig: {
-    name: 'Markdown Viewer',
+    name: 'Open Markdown',
     executableName: 'markdown-viewer',
     appBundleId: 'com.aralu.markdown-viewer',
     appCategoryType: 'public.app-category.developer-tools',
@@ -60,7 +60,7 @@ const config: ForgeConfig = {
     // File associations for markdown files
     protocols: [
       {
-        name: 'Markdown Viewer',
+        name: 'Open Markdown',
         schemes: ['markdown-viewer'],
       },
     ],
@@ -77,7 +77,7 @@ const config: ForgeConfig = {
       ],
       CFBundleURLTypes: [
         {
-          CFBundleURLName: 'Markdown Viewer URL',
+          CFBundleURLName: 'Open Markdown URL',
           CFBundleURLSchemes: ['markdown-viewer'],
         },
       ],
@@ -94,7 +94,7 @@ const config: ForgeConfig = {
       // all nested frameworks, causing Gatekeeper to reject the app
       if (process.platform === 'darwin' && !process.env['APPLE_TEAM_ID'] && !isMasBuild) {
         const outputDir = packageResult.outputPaths[0];
-        const appPath = `${outputDir}/Markdown Viewer.app`;
+        const appPath = `${outputDir}/Open Markdown.app`;
         console.log(`Re-signing app with ad-hoc signature: ${appPath}`);
         execSync(`codesign --force --deep --sign - "${appPath}"`, { stdio: 'inherit' });
       }

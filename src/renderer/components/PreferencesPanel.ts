@@ -212,7 +212,7 @@ export class PreferencesPanel {
 
     fieldWrapper.innerHTML = `
       <label class="form-label">Default Application</label>
-      <p class="form-description">Set Markdown Viewer as the default app for .md, .markdown, .mdown, .mkdn, and .mkd files.</p>
+      <p class="form-description">Set Open Markdown as the default app for .md, .markdown, .mdown, .mkdn, and .mkd files.</p>
       <div class="action-button-row">
         <button class="action-button" type="button" ${!canSet || isDefault ? 'disabled' : ''}>
           ${isDefault ? 'Already Default' : 'Set as Default'}

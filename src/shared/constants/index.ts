@@ -27,7 +27,7 @@ export const DEFAULT_WINDOW = {
  * Application metadata
  */
 export const APP_CONFIG = {
-  NAME: 'Markdown Viewer',
+  NAME: 'Open Markdown',
   BUNDLE_ID: 'com.aralu.markdown-viewer',
 } as const;
 

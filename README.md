@@ -1,4 +1,4 @@
-# Markdown Viewer
+# Open Markdown
 
 A fast, native macOS/Windows/Linux desktop app for viewing Markdown files with live preview, syntax highlighting, and Mermaid diagram support.
 

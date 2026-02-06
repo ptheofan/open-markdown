@@ -30,7 +30,7 @@ PROVISIONING_PROFILE = ENV["PROVISIONING_PROFILE_PATH"] || "./resources/provisio
 platform :mac do
   desc "Build, sign, and package the MAS app"
   lane :build do
-    sh "rm -rf ../out/Markdown\\ Viewer-mas-arm64"
+    sh "rm -rf ../out/Open\\ Markdown-mas-arm64"
 
     sh(
       "cd .. && MAS_BUILD=1 MAS_TYPE=distribution " \
@@ -44,8 +44,8 @@ platform :mac do
 
   desc "Create .pkg installer for App Store upload"
   lane :pkg do
-    app_path = "../out/Markdown Viewer-mas-arm64/Markdown Viewer.app"
-    pkg_path = "../out/Markdown Viewer.pkg"
+    app_path = "../out/Open Markdown-mas-arm64/Open Markdown.app"
+    pkg_path = "../out/Open Markdown.pkg"
 
     sh "rm -f '#{pkg_path}'"
 
@@ -61,7 +61,7 @@ platform :mac do
 
   desc "Upload .pkg to App Store Connect"
   lane :upload do
-    pkg_path = File.expand_path("../out/Markdown Viewer.pkg", __dir__)
+    pkg_path = File.expand_path("../out/Open Markdown.pkg", __dir__)
 
     deliver(
       api_key: API_KEY,
@@ -85,7 +85,7 @@ platform :mac do
 
   desc "Build and package for local testing (development signed)"
   lane :dev do
-    sh "rm -rf ../out/Markdown\\ Viewer-mas-arm64"
+    sh "rm -rf ../out/Open\\ Markdown-mas-arm64"
 
     sh(
       "cd .. && MAS_BUILD=1 " \
@@ -93,6 +93,6 @@ platform :mac do
       "npx electron-forge package --platform mas"
     )
 
-    UI.success "MAS dev app built at out/Markdown Viewer-mas-arm64/"
+    UI.success "MAS dev app built at out/Open Markdown-mas-arm64/"
   end
 end

@@ -143,7 +143,7 @@ describe('WindowManager', () => {
       const win = manager.createWindow();
       manager.setWindowFilePath(win.id, '/path/to/README.md');
       manager.setWindowFilePath(win.id, null);
-      expect(win.setTitle).toHaveBeenCalledWith('Markdown Viewer');
+      expect(win.setTitle).toHaveBeenCalledWith('Open Markdown');
     });
   });
 

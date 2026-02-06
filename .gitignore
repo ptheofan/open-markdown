@@ -83,10 +83,12 @@ typings/
 *.local
 .secrets
 *.p12
+*.p8
 *.pem
 *.key
 *.cert
 *.crt
+*.provisionprofile
 credentials.json
 secrets.json
 
@@ -153,3 +155,9 @@ local.config.*
 # Claude Code
 .claude/
 CLAUDE.md
+
+# Fastlane
+fastlane/keys/
+fastlane/report.xml
+fastlane/README.md
+resources/provisioning/

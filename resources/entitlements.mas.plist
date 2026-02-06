@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- App Sandbox - REQUIRED for Mac App Store -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    <!-- Application groups - required for Electron IPC (Mach port rendezvous) between main and helper processes -->
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>KGRHL55T3R.com.aralu.markdown-viewer</string>
+        <string>group.com.aralu.markdown-viewer</string>
+    </array>
+    <!-- JIT - Electron/V8 needs this; Apple grants temporary exception for Electron apps -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <!-- Unsigned executable memory - needed by Electron's V8 engine -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <!-- Disable library validation - needed for Electron's native modules -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <!-- User-selected files read/write - for opening markdown files via open dialog -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    <!-- Bookmarks - to persist access to user-selected files across app restarts (for file watching) -->
+    <key>com.apple.security.files.bookmarks.app-scope</key>
+    <true/>
+    <!-- Network client - for loading remote images/resources in markdown -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+</dict>
+</plist>

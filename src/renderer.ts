@@ -14,6 +14,7 @@ import {
   createCopyDropdown,
   createChangeGutter,
   createFindBar,
+  createRecentFilesDropdown,
   Toast,
   type MarkdownViewer,
   type DropZone,
@@ -24,6 +25,7 @@ import {
   type CopyDropdown,
   type ChangeGutter,
   type FindBar,
+  type RecentFilesDropdown,
 } from './renderer/components';
 import {
   createDocumentCopyService,
@@ -44,6 +46,7 @@ import type {
   DeepPartial,
   CorePreferences,
   ExternalFileOpenEvent,
+  RecentFileEntry,
 } from '@shared/types';
 import type { ResolvedTheme } from './themes/types';
 
@@ -75,6 +78,7 @@ class App {
   private changeGutter: ChangeGutter | null = null;
   private findBar: FindBar | null = null;
   private findService: FindService | null = null;
+  private recentFilesDropdown: RecentFilesDropdown | null = null;
 
   private state: AppState = {
     currentFilePath: null,
@@ -96,6 +100,7 @@ class App {
       await this.initializePreferences();
       await this.initializeFullscreenState();
       this.setupEventListeners();
+      await this.initializeRecentFiles();
       this.showWelcomeScreen();
     } catch (error) {
       console.error('Failed to initialize app:', error);
@@ -113,6 +118,18 @@ class App {
       this.updateToolbarForFullscreen(isFullscreen);
     } catch (error) {
       console.error('Failed to get fullscreen state:', error);
+    }
+  }
+
+  /**
+   * Initialize recent files dropdown with stored data
+   */
+  private async initializeRecentFiles(): Promise<void> {
+    try {
+      const files = await window.electronAPI.recentFiles.get();
+      this.recentFilesDropdown?.updateRecentFiles(files);
+    } catch (error) {
+      console.error('Failed to load recent files:', error);
     }
   }
 
@@ -169,6 +186,20 @@ class App {
       this.copyDropdown.setCallbacks({
         onSelect: (type: CopyDocumentType) => {
           void this.handleCopyDocument(type);
+        },
+      });
+    }
+
+    // Create recent files dropdown
+    const recentFilesElement = document.getElementById('open-file-dropdown');
+    if (recentFilesElement) {
+      this.recentFilesDropdown = createRecentFilesDropdown(recentFilesElement);
+      this.recentFilesDropdown.setCallbacks({
+        onSelectRecentFile: (filePath: string) => {
+          void this.loadFile(filePath);
+        },
+        onClearRecentFiles: () => {
+          void window.electronAPI.recentFiles.clear();
         },
       });
     }
@@ -360,6 +391,14 @@ class App {
     );
     this.cleanupFunctions.push(cleanupExternalOpen);
 
+    // Recent files change listener (cross-window sync)
+    const cleanupRecentFiles = window.electronAPI.recentFiles.onChange(
+      (files: RecentFileEntry[]) => {
+        this.recentFilesDropdown?.updateRecentFiles(files);
+      }
+    );
+    this.cleanupFunctions.push(cleanupRecentFiles);
+
     // Find shortcut (Cmd+F / Ctrl+F)
     const handleFindShortcut = (e: KeyboardEvent): void => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
@@ -477,9 +516,23 @@ class App {
 
       // Start watching
       await this.startWatching(filePath);
+
+      // Track in recent files (non-fatal)
+      try {
+        await window.electronAPI.recentFiles.add(filePath);
+      } catch {
+        // Non-fatal: don't break file loading if recent files tracking fails
+      }
     } catch (error) {
       console.error('Failed to load file:', error);
       this.showError(`Failed to load file: ${error instanceof Error ? error.message : 'Unknown error'}`);
+
+      // Remove stale entry if file can't be read
+      try {
+        await window.electronAPI.recentFiles.remove(filePath);
+      } catch {
+        // Non-fatal
+      }
     }
   }
 
@@ -757,6 +810,7 @@ class App {
     this.copyDropdown?.destroy();
     this.changeGutter?.destroy();
     this.findBar?.destroy();
+    this.recentFilesDropdown?.destroy();
   }
 }
 

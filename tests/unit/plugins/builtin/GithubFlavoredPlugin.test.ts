@@ -126,7 +126,7 @@ describe('GithubFlavoredPlugin', () => {
 | Cell 1   | Cell 2   |
 `;
       const result = renderer.render(markdown);
-      expect(result).toContain('<table>');
+      expect(result).toContain('<table');
       expect(result).toContain('<th>');
       expect(result).toContain('<td>');
     });
@@ -203,7 +203,7 @@ describe('GithubFlavoredPlugin', () => {
       const result = renderer.render(markdown);
       expect(result).toContain('<del>strikethrough</del>');
       expect(result).toContain('type="checkbox"');
-      expect(result).toContain('<table>');
+      expect(result).toContain('<table');
     });
   });
 });

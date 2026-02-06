@@ -196,7 +196,8 @@ describe('PluginManager', () => {
   describe('render', () => {
     it('should render markdown using the underlying renderer', () => {
       const result = manager.render('# Hello');
-      expect(result).toContain('<h1>Hello</h1>');
+      expect(result).toContain('<h1');
+      expect(result).toContain('Hello</h1>');
     });
 
     it('should render with plugins applied', async () => {
@@ -207,7 +208,8 @@ describe('PluginManager', () => {
       await manager.enablePlugin('test-plugin');
       // Plugin applied even though no custom tokens in input
       const result = manager.render('# Hello');
-      expect(result).toContain('<h1>Hello</h1>');
+      expect(result).toContain('<h1');
+      expect(result).toContain('Hello</h1>');
       expect(applyFn).toHaveBeenCalled();
     });
   });

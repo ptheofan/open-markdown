@@ -226,9 +226,11 @@ const x = 42;
 - List item
 `;
       const result = renderer.render(markdown);
-      expect(result).toContain('<h1>Title</h1>');
+      expect(result).toContain('<h1');
+      expect(result).toContain('Title</h1>');
       expect(result).toContain('class="hljs"');
-      expect(result).toContain('<li>List item</li>');
+      expect(result).toContain('<li');
+      expect(result).toContain('List item</li>');
     });
   });
 });

@@ -90,12 +90,14 @@ describe('MarkdownRenderer', () => {
   describe('render', () => {
     it('should render markdown to HTML', () => {
       const result = renderer.render('# Hello World');
-      expect(result).toContain('<h1>Hello World</h1>');
+      expect(result).toContain('<h1');
+      expect(result).toContain('Hello World</h1>');
     });
 
     it('should render paragraphs', () => {
       const result = renderer.render('This is a paragraph.');
-      expect(result).toContain('<p>This is a paragraph.</p>');
+      expect(result).toContain('<p');
+      expect(result).toContain('This is a paragraph.</p>');
     });
 
     it('should render bold text', () => {
@@ -121,14 +123,14 @@ describe('MarkdownRenderer', () => {
 
     it('should render lists', () => {
       const result = renderer.render('- item 1\n- item 2');
-      expect(result).toContain('<ul>');
-      expect(result).toContain('<li>item 1</li>');
-      expect(result).toContain('<li>item 2</li>');
+      expect(result).toContain('<ul');
+      expect(result).toContain('item 1</li>');
+      expect(result).toContain('item 2</li>');
     });
 
     it('should render blockquotes', () => {
       const result = renderer.render('> quote');
-      expect(result).toContain('<blockquote>');
+      expect(result).toContain('<blockquote');
       expect(result).toContain('quote');
     });
 

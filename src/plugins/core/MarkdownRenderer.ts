@@ -4,7 +4,7 @@
 import { PluginInitError, PluginRenderError } from '@shared/errors';
 import MarkdownIt from 'markdown-it';
 
-
+import { applySourceMapRule } from './SourceMapRule';
 import type { MarkdownPlugin, PluginMetadata } from '@shared/types';
 import type { PluginThemeDeclaration } from '../../themes/types';
 
@@ -32,6 +32,7 @@ export class MarkdownRenderer {
       typographer: options.typographer ?? true,
       breaks: options.breaks ?? false,
     });
+    applySourceMapRule(this.md);
   }
 
   /**

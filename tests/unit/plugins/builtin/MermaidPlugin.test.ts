@@ -294,7 +294,8 @@ A-->B;
 Some text below.
 `;
       const result = renderer.render(markdown);
-      expect(result).toContain('<h1>Diagram</h1>');
+      expect(result).toContain('<h1');
+      expect(result).toContain('Diagram</h1>');
       expect(result).toContain('mermaid-container');
       expect(result).toContain('Some text below');
     });

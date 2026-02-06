@@ -409,6 +409,16 @@ class App {
     document.addEventListener('keydown', handleFindShortcut);
     this.cleanupFunctions.push(() => document.removeEventListener('keydown', handleFindShortcut));
 
+    // New window shortcut (Cmd+Shift+N / Ctrl+Shift+N)
+    const handleNewWindowShortcut = (e: KeyboardEvent): void => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'N') {
+        e.preventDefault();
+        void window.electronAPI.window.openNew();
+      }
+    };
+    document.addEventListener('keydown', handleNewWindowShortcut);
+    this.cleanupFunctions.push(() => document.removeEventListener('keydown', handleNewWindowShortcut));
+
   }
 
   /**

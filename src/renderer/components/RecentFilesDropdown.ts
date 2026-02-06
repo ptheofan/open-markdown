@@ -49,7 +49,11 @@ export class RecentFilesDropdown {
         const filePath = recentItem.getAttribute('data-recent-path');
         if (filePath) {
           this.closeMenu();
-          this.callbacks?.onSelectRecentFile(filePath);
+          if (e.metaKey || e.ctrlKey) {
+            void window.electronAPI.window.openNew(filePath);
+          } else {
+            this.callbacks?.onSelectRecentFile(filePath);
+          }
         }
         return;
       }

@@ -43,6 +43,7 @@ const config: ForgeConfig = {
   packagerConfig: {
     name: 'Open Markdown',
     executableName: 'markdown-viewer',
+    buildVersion: process.env['BUILD_NUMBER'] || undefined,
     appBundleId: 'com.aralu.markdown-viewer',
     appCategoryType: 'public.app-category.developer-tools',
     asar: true,

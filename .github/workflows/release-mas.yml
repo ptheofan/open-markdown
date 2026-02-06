@@ -89,6 +89,7 @@ jobs:
         env:
           ASC_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER }}
+          BUILD_NUMBER: ${{ github.run_number }}
         run: fastlane mac release
 
       - name: Cleanup keychain

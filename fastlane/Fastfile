@@ -1,0 +1,87 @@
+default_platform :mac
+
+# ASC API key — works locally (keys/ dir) and on CI (env var path)
+asc_key_id = ENV["ASC_KEY_ID"] || "ZR355Z7Z2L"
+asc_issuer_id = ENV["ASC_ISSUER_ID"] || "8bae5749-c5e4-49aa-8c9c-76987e155341"
+asc_key_path = ENV["ASC_KEY_PATH"] || File.expand_path("keys/AuthKey_ZR355Z7Z2L.p8", __dir__)
+
+API_KEY = app_store_connect_api_key(
+  key_id: asc_key_id,
+  issuer_id: asc_issuer_id,
+  key_filepath: asc_key_path,
+)
+
+# Signing identities — defaults for local, overridden on CI
+DIST_IDENTITY = ENV["DIST_IDENTITY"] || "Apple Distribution: ARALU Single Member P.C. (KGRHL55T3R)"
+INSTALLER_IDENTITY = ENV["INSTALLER_IDENTITY"] || "3rd Party Mac Developer Installer: ARALU Single Member P.C. (KGRHL55T3R)"
+PROVISIONING_PROFILE = ENV["PROVISIONING_PROFILE_PATH"] || "./resources/provisioning/dist.provisionprofile"
+
+platform :mac do
+  desc "Build, sign, and package the MAS app"
+  lane :build do
+    sh "rm -rf ../out/Markdown\\ Viewer-mas-arm64"
+
+    sh(
+      "cd .. && MAS_BUILD=1 MAS_TYPE=distribution " \
+      "MAS_IDENTITY='#{DIST_IDENTITY}' " \
+      "MAS_PROVISIONING_PROFILE='#{PROVISIONING_PROFILE}' " \
+      "npx electron-forge package --platform mas"
+    )
+
+    UI.success "MAS app built and signed"
+  end
+
+  desc "Create .pkg installer for App Store upload"
+  lane :pkg do
+    app_path = "../out/Markdown Viewer-mas-arm64/Markdown Viewer.app"
+    pkg_path = "../out/Markdown Viewer.pkg"
+
+    sh "rm -f '#{pkg_path}'"
+
+    sh(
+      "productbuild " \
+      "--component '#{app_path}' /Applications " \
+      "--sign '#{INSTALLER_IDENTITY}' " \
+      "'#{pkg_path}'"
+    )
+
+    UI.success "Created #{pkg_path}"
+  end
+
+  desc "Upload .pkg to App Store Connect"
+  lane :upload do
+    pkg_path = File.expand_path("../out/Markdown Viewer.pkg", __dir__)
+
+    deliver(
+      api_key: API_KEY,
+      pkg: pkg_path,
+      platform: "osx",
+      skip_screenshots: true,
+      skip_metadata: true,
+      force: true,
+      precheck_include_in_app_purchases: false,
+    )
+
+    UI.success "Uploaded to App Store Connect"
+  end
+
+  desc "Build, package, and upload to App Store Connect"
+  lane :release do
+    build
+    pkg
+    upload
+  end
+
+  desc "Build and package for local testing (development signed)"
+  lane :dev do
+    sh "rm -rf ../out/Markdown\\ Viewer-mas-arm64"
+
+    sh(
+      "cd .. && MAS_BUILD=1 " \
+      "MAS_IDENTITY='20CC2E65C086D7A959F47F7059BC36CE1C6C7C29' " \
+      "npx electron-forge package --platform mas"
+    )
+
+    UI.success "MAS dev app built at out/Markdown Viewer-mas-arm64/"
+  end
+end

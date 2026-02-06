@@ -6,6 +6,39 @@ import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
 import { execSync } from 'child_process';
 
+const isMasBuild = !!process.env['MAS_BUILD'];
+
+function getOsxSignConfig() {
+  if (isMasBuild) {
+    return {
+      identity: process.env['MAS_IDENTITY'] || 'Apple Development',
+      type: (process.env['MAS_TYPE'] || 'development') as 'development' | 'distribution',
+      provisioningProfile: process.env['MAS_PROVISIONING_PROFILE'] || './resources/provisioning/dev.provisionprofile',
+      preAutoEntitlements: false,
+      preEmbedProvisioningProfile: true,
+      optionsForFile: (filePath: string) => {
+        const isMainApp = filePath.endsWith('Markdown Viewer.app');
+        return {
+          entitlements: isMainApp
+            ? './resources/entitlements.mas.plist'
+            : './resources/entitlements.mas.inherit.plist',
+          hardenedRuntime: false,
+        };
+      },
+    };
+  }
+  if (process.env['APPLE_TEAM_ID']) {
+    return {
+      identity: 'Developer ID Application',
+      optionsForFile: () => ({
+        entitlements: './resources/entitlements.mac.plist',
+        hardenedRuntime: true,
+      }),
+    };
+  }
+  return undefined;
+}
+
 const config: ForgeConfig = {
   packagerConfig: {
     name: 'Markdown Viewer',
@@ -15,20 +48,11 @@ const config: ForgeConfig = {
     asar: true,
     icon: './resources/icons/icon',
     extraResource: ['./resources/bin'],
-    // macOS code signing - enabled when APPLE_TEAM_ID is set (indicates CI release build)
-    osxSign: process.env['APPLE_TEAM_ID']
-      ? {
-          identity: 'Developer ID Application',
-          optionsForFile: () => ({
-            entitlements: './resources/entitlements.mac.plist',
-            hardenedRuntime: true,
-          }),
-        }
-      : undefined,
+    osxSign: getOsxSignConfig(),
     // macOS notarization using keychain profile (credentials stored via xcrun notarytool store-credentials)
     // Set SKIP_NOTARIZATION=1 to skip notarization (for testing signing only)
     osxNotarize:
-      !process.env['SKIP_NOTARIZATION'] && process.env['NOTARIZE_KEYCHAIN_PROFILE']
+      !isMasBuild && !process.env['SKIP_NOTARIZATION'] && process.env['NOTARIZE_KEYCHAIN_PROFILE']
         ? {
             keychainProfile: process.env['NOTARIZE_KEYCHAIN_PROFILE'],
           }
@@ -57,8 +81,9 @@ const config: ForgeConfig = {
           CFBundleURLSchemes: ['markdown-viewer'],
         },
       ],
+      ElectronTeamID: 'KGRHL55T3R',
       NSRequiresAquaSystemAppearance: false,
-      LSMinimumSystemVersion: '10.15.0',
+      LSMinimumSystemVersion: '12.0',
     },
   },
   rebuildConfig: {},
@@ -67,7 +92,7 @@ const config: ForgeConfig = {
       // Re-sign the app with ad-hoc signature to fix "app is damaged" error
       // This is needed because Electron's default linker signature doesn't include
       // all nested frameworks, causing Gatekeeper to reject the app
-      if (process.platform === 'darwin' && !process.env['APPLE_TEAM_ID']) {
+      if (process.platform === 'darwin' && !process.env['APPLE_TEAM_ID'] && !isMasBuild) {
         const outputDir = packageResult.outputPaths[0];
         const appPath = `${outputDir}/Markdown Viewer.app`;
         console.log(`Re-signing app with ad-hoc signature: ${appPath}`);

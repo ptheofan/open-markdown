@@ -128,7 +128,7 @@ export class ChangeGutter {
   private createResetButton(): HTMLButtonElement {
     const btn = document.createElement('button');
     btn.className = RESET_BTN_CLASS;
-    btn.textContent = 'Reset';
+    btn.textContent = 'Clear Changes';
     btn.title = 'Accept current content as new baseline';
     btn.style.display = 'none';
     btn.addEventListener('click', this.handleResetClick);

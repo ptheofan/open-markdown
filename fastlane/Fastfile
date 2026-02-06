@@ -70,6 +70,7 @@ platform :mac do
       skip_screenshots: true,
       skip_metadata: true,
       force: true,
+      run_precheck_before_submit: false,
       precheck_include_in_app_purchases: false,
     )
 

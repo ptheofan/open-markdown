@@ -11,6 +11,7 @@ import type {
   FileAssociationResult,
   ExternalFileOpenEvent,
 } from './fileAssociation';
+import type { RecentFileEntry } from './recentFiles';
 
 /**
  * IPC Channel names for type-safe communication
@@ -60,6 +61,13 @@ export const IPC_CHANNELS = {
     SET_AS_DEFAULT: 'file-association:set-as-default',
     ON_EXTERNAL_OPEN: 'file-association:on-external-open',
   },
+  RECENT_FILES: {
+    GET: 'recent-files:get',
+    ADD: 'recent-files:add',
+    REMOVE: 'recent-files:remove',
+    CLEAR: 'recent-files:clear',
+    ON_CHANGE: 'recent-files:on-change',
+  },
 } as const;
 
 /**
@@ -73,7 +81,8 @@ export type IpcChannel =
   | (typeof IPC_CHANNELS.CONTEXT_MENU)[keyof typeof IPC_CHANNELS.CONTEXT_MENU]
   | (typeof IPC_CHANNELS.CLIPBOARD)[keyof typeof IPC_CHANNELS.CLIPBOARD]
   | (typeof IPC_CHANNELS.PREFERENCES)[keyof typeof IPC_CHANNELS.PREFERENCES]
-  | (typeof IPC_CHANNELS.FILE_ASSOCIATION)[keyof typeof IPC_CHANNELS.FILE_ASSOCIATION];
+  | (typeof IPC_CHANNELS.FILE_ASSOCIATION)[keyof typeof IPC_CHANNELS.FILE_ASSOCIATION]
+  | (typeof IPC_CHANNELS.RECENT_FILES)[keyof typeof IPC_CHANNELS.RECENT_FILES];
 
 /**
  * Fullscreen change event data
@@ -197,6 +206,17 @@ export interface FileAssociationAPI {
 }
 
 /**
+ * Recent files API exposed to renderer
+ */
+export interface RecentFilesAPI {
+  get: () => Promise<RecentFileEntry[]>;
+  add: (filePath: string) => Promise<void>;
+  remove: (filePath: string) => Promise<void>;
+  clear: () => Promise<void>;
+  onChange: (callback: (files: RecentFileEntry[]) => void) => () => void;
+}
+
+/**
  * Complete Electron API exposed via contextBridge
  */
 export interface ElectronAPI {
@@ -208,6 +228,7 @@ export interface ElectronAPI {
   clipboard: ClipboardAPI;
   preferences: PreferencesAPI;
   fileAssociation: FileAssociationAPI;
+  recentFiles: RecentFilesAPI;
 }
 
 /**

@@ -64,6 +64,7 @@ export type {
   ClipboardAPI,
   PreferencesAPI,
   FileAssociationAPI,
+  RecentFilesAPI,
   ElectronAPI,
   FullscreenChangeEvent,
   ContextMenuItem,
@@ -78,6 +79,9 @@ export type {
   FileAssociationStatus,
   ExternalFileOpenEvent,
 } from './fileAssociation';
+
+// Recent files types
+export type { RecentFileEntry } from './recentFiles';
 
 // Diff types
 export type {

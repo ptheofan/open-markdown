@@ -5,6 +5,7 @@ import { ipcMain, BrowserWindow } from 'electron';
 
 import { getFileService } from '../../services/FileService';
 import { getFileWatcherService } from '../../services/FileWatcherService';
+import { getWindowManager } from '@main/window/WindowManager';
 import { IPC_CHANNELS } from '../channels';
 
 import type { FileOpenResult, FileReadResult } from '@shared/types';
@@ -76,9 +77,11 @@ export function registerFileHandlers(): void {
       window.once('closed', () => {
         cleanup();
         void fileWatcherService.unwatchAll(windowId);
+        getWindowManager().setWindowFilePath(windowId, null);
       });
 
       await fileWatcherService.watch(filePath, windowId);
+      getWindowManager().setWindowFilePath(windowId, filePath);
     }
   );
 
@@ -90,6 +93,7 @@ export function registerFileHandlers(): void {
       if (!window) return;
 
       await fileWatcherService.unwatch(filePath, window.id);
+      getWindowManager().setWindowFilePath(window.id, null);
     }
   );
 }

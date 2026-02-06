@@ -1155,6 +1155,121 @@ button:focus:not(:focus-visible) {
   border-top: 1px solid var(--border-color);
 }
 
+/* ===========================================
+   Open Split Button
+   =========================================== */
+
+.open-split-btn {
+  display: inline-flex;
+}
+
+.open-split-btn-main {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right: none;
+}
+
+.open-split-btn-arrow {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  padding: 6px 6px;
+}
+
+.open-split-btn-arrow .dropdown-chevron {
+  opacity: 0.6;
+  transition: transform 0.15s ease;
+}
+
+.open-split-btn.is-open .open-split-btn-arrow .dropdown-chevron {
+  transform: rotate(180deg);
+}
+
+.open-split-btn .dropdown-menu {
+  left: 0;
+  right: auto;
+  min-width: 280px;
+}
+
+/* Recent file item - two-line layout */
+.dropdown-item-recent {
+  display: block;
+  width: 100%;
+  padding: 8px 14px;
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--border-color);
+  color: var(--text-color);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.dropdown-item-recent:first-child {
+  border-top: none;
+}
+
+.dropdown-item-recent:hover {
+  background-color: var(--hover-bg);
+}
+
+.dropdown-item-recent:active {
+  background-color: var(--active-bg);
+}
+
+.recent-file-name {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-file-path {
+  display: block;
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+/* Empty state */
+.dropdown-empty {
+  padding: 16px 14px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* Footer with clear action */
+.dropdown-footer {
+  border-top: 1px solid var(--border-color);
+}
+
+.dropdown-footer-btn {
+  display: block;
+  width: 100%;
+  padding: 8px 14px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.dropdown-footer-btn:hover {
+  background-color: var(--hover-bg);
+  color: var(--text-color);
+}
+
 /* Spinner */
 .spinner {
   position: absolute;

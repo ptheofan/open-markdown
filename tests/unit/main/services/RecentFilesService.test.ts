@@ -67,7 +67,7 @@ describe('RecentFilesService', () => {
       await service.initialize();
       const files = service.getRecentFiles();
       expect(files).toHaveLength(1);
-      expect(files[0].filePath).toBe('/test/file.md');
+      expect(files[0]!.filePath).toBe('/test/file.md');
     });
 
     it('should handle corrupt JSON gracefully', async () => {
@@ -108,17 +108,17 @@ describe('RecentFilesService', () => {
       await service.addRecentFile('/test/file.md');
       const files = service.getRecentFiles();
       expect(files).toHaveLength(1);
-      expect(files[0].filePath).toBe('/test/file.md');
-      expect(files[0].fileName).toBe('file.md');
-      expect(files[0].openedAt).toBeDefined();
+      expect(files[0]!.filePath).toBe('/test/file.md');
+      expect(files[0]!.fileName).toBe('file.md');
+      expect(files[0]!.openedAt).toBeDefined();
     });
 
     it('should prepend new files (most recent first)', async () => {
       await service.addRecentFile('/test/first.md');
       await service.addRecentFile('/test/second.md');
       const files = service.getRecentFiles();
-      expect(files[0].filePath).toBe('/test/second.md');
-      expect(files[1].filePath).toBe('/test/first.md');
+      expect(files[0]!.filePath).toBe('/test/second.md');
+      expect(files[1]!.filePath).toBe('/test/first.md');
     });
 
     it('should deduplicate by moving existing entry to top', async () => {
@@ -127,8 +127,8 @@ describe('RecentFilesService', () => {
       await service.addRecentFile('/test/first.md');
       const files = service.getRecentFiles();
       expect(files).toHaveLength(2);
-      expect(files[0].filePath).toBe('/test/first.md');
-      expect(files[1].filePath).toBe('/test/second.md');
+      expect(files[0]!.filePath).toBe('/test/first.md');
+      expect(files[1]!.filePath).toBe('/test/second.md');
     });
 
     it('should trim to max 10 entries', async () => {
@@ -137,7 +137,7 @@ describe('RecentFilesService', () => {
       }
       const files = service.getRecentFiles();
       expect(files).toHaveLength(10);
-      expect(files[0].filePath).toBe('/test/file11.md');
+      expect(files[0]!.filePath).toBe('/test/file11.md');
     });
 
     it('should call app.addRecentDocument', async () => {
@@ -163,7 +163,7 @@ describe('RecentFilesService', () => {
       await service2.initialize();
       const files = service2.getRecentFiles();
       expect(files).toHaveLength(1);
-      expect(files[0].filePath).toBe('/test/file.md');
+      expect(files[0]!.filePath).toBe('/test/file.md');
     });
   });
 
@@ -178,7 +178,7 @@ describe('RecentFilesService', () => {
       await service.removeRecentFile('/test/first.md');
       const files = service.getRecentFiles();
       expect(files).toHaveLength(1);
-      expect(files[0].filePath).toBe('/test/second.md');
+      expect(files[0]!.filePath).toBe('/test/second.md');
     });
 
     it('should be a no-op for non-existent file', async () => {

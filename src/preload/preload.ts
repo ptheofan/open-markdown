@@ -13,6 +13,7 @@ import type {
   FileOpenResult,
   FileReadResult,
   FullscreenChangeEvent,
+  RecentFileEntry,
   ResolvedTheme,
   ThemeChangeEvent,
   ThemeMode,
@@ -247,6 +248,39 @@ const electronAPI: ElectronAPI = {
           IPC_CHANNELS.FILE_ASSOCIATION.ON_EXTERNAL_OPEN,
           handler
         );
+      };
+    },
+  },
+
+  recentFiles: {
+    get: (): Promise<RecentFileEntry[]> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.RECENT_FILES.GET);
+    },
+
+    add: (filePath: string): Promise<void> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.RECENT_FILES.ADD, filePath);
+    },
+
+    remove: (filePath: string): Promise<void> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.RECENT_FILES.REMOVE, filePath);
+    },
+
+    clear: (): Promise<void> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.RECENT_FILES.CLEAR);
+    },
+
+    onChange: (callback: (files: RecentFileEntry[]) => void): (() => void) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        data: RecentFileEntry[]
+      ): void => {
+        callback(data);
+      };
+
+      ipcRenderer.on(IPC_CHANNELS.RECENT_FILES.ON_CHANGE, handler);
+
+      return () => {
+        ipcRenderer.removeListener(IPC_CHANNELS.RECENT_FILES.ON_CHANGE, handler);
       };
     },
   },

@@ -7,15 +7,14 @@ import path from 'node:path';
 import { registerAllHandlers } from './ipc/handlers';
 import { getThemeService } from './services/ThemeService';
 import { getPreferencesService } from './services/PreferencesService';
+import { getRecentFilesService } from './services/RecentFilesService';
 import { getMainWindow } from './window/MainWindow';
 import { getFileService } from './services/FileService';
 import { IPC_CHANNELS } from '@shared/types';
 import { MARKDOWN_EXTENSIONS } from '@shared/constants';
 
-/**
- * Pending file path for files opened before window is ready
- */
 let pendingFilePath: string | null = null;
+let rendererReady = false;
 
 /**
  * Check command-line arguments for markdown file
@@ -74,16 +73,21 @@ async function initialize(): Promise<void> {
   // Initialize services
   await getThemeService().initialize();
   await getPreferencesService().initialize();
+  await getRecentFilesService().initialize();
 
   // Register IPC handlers before creating windows
   registerAllHandlers();
 
-  // Create window when ready
+  rendererReady = false;
   createWindow();
 
-  // Send pending file after a short delay to ensure renderer is ready
-  if (pendingFilePath) {
-    setTimeout(sendPendingFile, 500);
+  const mainWindow = getMainWindow();
+  const win = mainWindow.getWindow();
+  if (win) {
+    win.webContents.once('did-finish-load', () => {
+      rendererReady = true;
+      sendPendingFile();
+    });
   }
 }
 
@@ -100,14 +104,12 @@ app.on('open-file', (event, filePath) => {
     return;
   }
 
-  const mainWindow = getMainWindow();
-  if (mainWindow.exists()) {
-    // Window exists, send immediately
+  if (rendererReady) {
+    const mainWindow = getMainWindow();
     mainWindow.send(IPC_CHANNELS.FILE_ASSOCIATION.ON_EXTERNAL_OPEN, {
       filePath,
     });
   } else {
-    // Store for later
     pendingFilePath = filePath;
   }
 });
@@ -119,7 +121,17 @@ app.whenReady()
     // macOS: re-create window when dock icon is clicked
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
+        rendererReady = false;
         createWindow();
+
+        const mainWindow = getMainWindow();
+        const win = mainWindow.getWindow();
+        if (win) {
+          win.webContents.once('did-finish-load', () => {
+            rendererReady = true;
+            sendPendingFile();
+          });
+        }
       }
     });
   })

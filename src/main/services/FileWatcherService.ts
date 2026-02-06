@@ -17,7 +17,6 @@ export type FileDeleteCallback = (event: FileDeleteEvent) => void;
 interface WatchedFileEntry {
   watcher: FSWatcher;
   windowIds: Set<number>;
-  debounceTimer: NodeJS.Timeout | null;
 }
 
 interface WindowCallbacks {
@@ -54,11 +53,10 @@ export class FileWatcherService {
       const entry: WatchedFileEntry = {
         watcher,
         windowIds: new Set([windowId]),
-        debounceTimer: null,
       };
 
       watcher.on('change', (changedPath: string) => {
-        void this.handleFileChange(changedPath);
+        void this.processFileChange(changedPath);
       });
 
       watcher.on('unlink', (deletedPath: string) => {
@@ -168,32 +166,13 @@ export class FileWatcherService {
   }
 
   private async closeWatcherEntry(filePath: string, entry: WatchedFileEntry): Promise<void> {
-    if (entry.debounceTimer) {
-      clearTimeout(entry.debounceTimer);
-      entry.debounceTimer = null;
-    }
     await entry.watcher.close();
     this.watchedFiles.delete(filePath);
   }
 
   /**
-   * Handle file change event with per-file debouncing
-   */
-  private handleFileChange(filePath: string): void {
-    const entry = this.watchedFiles.get(filePath);
-    if (!entry) return;
-
-    if (entry.debounceTimer) {
-      clearTimeout(entry.debounceTimer);
-    }
-
-    entry.debounceTimer = setTimeout(() => {
-      void this.processFileChange(filePath);
-    }, FILE_WATCH_DEBOUNCE_MS);
-  }
-
-  /**
-   * Process the file change after debounce - only notify windows watching this file
+   * Process file change - only notify windows watching this file.
+   * Debouncing is handled by chokidar's awaitWriteFinish option.
    */
   private async processFileChange(filePath: string): Promise<void> {
     try {
@@ -248,12 +227,9 @@ export class FileWatcherService {
       });
     }
 
-    // Remove the watcher entry since the file is deleted
-    if (entry.debounceTimer) {
-      clearTimeout(entry.debounceTimer);
-      entry.debounceTimer = null;
-    }
+    // Remove the entry and close the watcher (fire-and-forget since file is already gone)
     this.watchedFiles.delete(filePath);
+    void entry.watcher.close();
   }
 
   private async getFileStats(filePath: string): Promise<FileStats | null> {

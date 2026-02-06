@@ -137,7 +137,7 @@ describe('FileWatcherService', () => {
       await expect(service.unwatch(testFile, 1)).resolves.not.toThrow();
     });
 
-    it('should clear debounce timer if pending', async () => {
+    it('should handle unwatch after change event', async () => {
       await service.watch(testFile, 1);
 
       const changeCall = getWatcher(0).on.mock.calls.find(

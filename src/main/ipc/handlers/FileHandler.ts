@@ -9,6 +9,9 @@ import { IPC_CHANNELS } from '../channels';
 
 import type { FileOpenResult, FileReadResult } from '@shared/types';
 
+// Track per-window subscription cleanup functions to prevent duplicate callbacks
+const windowSubscriptions = new Map<number, () => void>();
+
 /**
  * Register file-related IPC handlers
  */
@@ -42,6 +45,12 @@ export function registerFileHandlers(): void {
 
       const windowId = window.id;
 
+      // Unsubscribe previous callbacks for this window (prevents duplicates on file switch)
+      const previousCleanup = windowSubscriptions.get(windowId);
+      if (previousCleanup) {
+        previousCleanup();
+      }
+
       // Set up forwarding of file events to the renderer
       const unsubscribeChange = fileWatcherService.onFileChange(windowId, (changeEvent) => {
         if (!window.isDestroyed()) {
@@ -55,10 +64,17 @@ export function registerFileHandlers(): void {
         }
       });
 
-      // Clean up subscriptions when window closes
-      window.once('closed', () => {
+      const cleanup = (): void => {
         unsubscribeChange();
         unsubscribeDelete();
+        windowSubscriptions.delete(windowId);
+      };
+
+      windowSubscriptions.set(windowId, cleanup);
+
+      // Clean up subscriptions when window closes
+      window.once('closed', () => {
+        cleanup();
         void fileWatcherService.unwatchAll(windowId);
       });
 

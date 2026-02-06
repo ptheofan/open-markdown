@@ -29,6 +29,9 @@
   --error-text: #cf222e;
   --success-color: #1a7f37;
   --warning-color: #9a6700;
+  --gutter-added-color: #2da44e;
+  --gutter-modified-color: #2da44e;
+  --gutter-deleted-color: #cf222e;
 }
 
 /* Dark theme */
@@ -57,6 +60,9 @@
   --error-text: #f85149;
   --success-color: #3fb950;
   --warning-color: #d29922;
+  --gutter-added-color: #3fb950;
+  --gutter-modified-color: #3fb950;
+  --gutter-deleted-color: #f85149;
 }
 
 /* Reset and Base */
@@ -1182,4 +1188,72 @@ button:focus:not(:focus-visible) {
 .toolbar-btn-dropdown .spinner {
   position: static;
   transform: none;
+}
+
+/* ===========================================
+   Change Gutter
+   =========================================== */
+
+/* Ensure markdown-body has relative positioning for gutter bars */
+.markdown-body > * {
+  position: relative;
+}
+
+.change-gutter-added::before,
+.change-gutter-modified::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -16px;
+  width: 3px;
+  height: 100%;
+  border-radius: 1.5px;
+}
+
+.change-gutter-added::before {
+  background-color: var(--gutter-added-color);
+}
+
+.change-gutter-modified::before {
+  background-color: var(--gutter-modified-color);
+}
+
+.change-gutter-deleted {
+  position: relative;
+  height: 0;
+  overflow: visible;
+}
+
+.change-gutter-deleted::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: -16px;
+  width: 12px;
+  height: 2px;
+  border-radius: 1px;
+  background-color: var(--gutter-deleted-color);
+}
+
+.change-gutter-reset-btn {
+  position: sticky;
+  bottom: 20px;
+  float: right;
+  margin-right: 8px;
+  padding: 6px 14px;
+  background-color: var(--toolbar-bg);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  z-index: 100;
+  transition: background-color 0.15s, border-color 0.15s;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.change-gutter-reset-btn:hover {
+  background-color: var(--hover-bg);
+  border-color: var(--text-muted);
 }

@@ -7,14 +7,16 @@ A fast, native macOS/Windows/Linux desktop app for viewing Markdown files with l
 - **GitHub-flavored Markdown** - Tables, task lists, strikethrough, and more
 - **Syntax Highlighting** - Code blocks with language detection and theme-aware colors
 - **Mermaid Diagrams** - Flowcharts, sequence diagrams, ERDs, and more
-- **Live Reload** - Automatically updates when the file changes
+- **Live Reload** - Automatically updates when the file changes, with change highlighting
+- **Multi-Window** - Open multiple files side by side (`Cmd+N`)
 - **Dark/Light Theme** - Follows system preference or manual toggle
 - **Drag & Drop** - Drop markdown files directly into the app
+- **Find in Page** - Search within rendered content (`Cmd+F`)
 - **Native Performance** - Built with Electron for a smooth experience
 
 ## Installation
 
-Download the latest release for your platform from the [Releases](https://github.com/aralu/markdown-viewer/releases) page:
+Download the latest release from the [Releases](https://github.com/ptheofan/open-markdown/releases) page:
 
 - **macOS**: `.dmg` or `.zip`
 - **Windows**: `.exe` installer
@@ -24,7 +26,8 @@ Download the latest release for your platform from the [Releases](https://github
 
 1. **Open a file**: Click the "Open" button or use `Cmd+O` (macOS) / `Ctrl+O` (Windows/Linux)
 2. **Drag & Drop**: Drag a `.md` file directly into the app window
-3. **Toggle theme**: Click the theme button in the toolbar to switch between light and dark mode
+3. **New window**: `Cmd+N` to open additional windows for side-by-side viewing
+4. **Toggle theme**: Click the theme button in the toolbar to switch between light and dark mode
 
 The app will automatically reload when the file is modified externally.
 
@@ -39,7 +42,7 @@ The app will automatically reload when the file is modified externally.
 
 ```bash
 # Clone the repository
-git clone https://github.com/aralu/markdown-viewer.git
+git clone https://github.com/ptheofan/open-markdown.git
 cd markdown-viewer
 
 # Install dependencies

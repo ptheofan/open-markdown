@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Documentation — Markdown Viewer</title>
+  <meta name="description" content="Learn how to use Markdown Viewer — keyboard shortcuts, supported formats, file associations, and more.">
+  <link rel="icon" href="images/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="index.html" class="nav-brand">
+        <img src="images/icon.svg" alt="" width="28" height="28">
+        Markdown Viewer
+      </a>
+      <ul class="nav-links">
+        <li><a href="docs.html" aria-current="page">Docs</a></li>
+        <li><a href="privacy.html">Privacy</a></li>
+        <li><a href="support.html">Support</a></li>
+        <li><a href="https://github.com/ptheofan/markdown-viewer">GitHub</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <main class="content">
+    <h1>Documentation</h1>
+
+    <h2>Getting Started</h2>
+    <p>Markdown Viewer is a native macOS app for reading Markdown files. Open any <code>.md</code> file and it renders instantly with GitHub-style formatting.</p>
+    <p>There are several ways to open a file:</p>
+    <ul>
+      <li>Use <strong>File &rarr; Open</strong> or press <code>Cmd+O</code></li>
+      <li><strong>Drag &amp; drop</strong> a file onto the app window or the Dock icon</li>
+      <li><strong>Double-click</strong> a Markdown file in Finder (once file associations are set up)</li>
+      <li>Open from the terminal: <code>open -a "Markdown Viewer" README.md</code></li>
+    </ul>
+
+    <h2>Live Reload</h2>
+    <p>When a file is open, Markdown Viewer watches it for changes. Edit the file in any text editor and the preview updates automatically — no manual refresh needed.</p>
+
+    <h2>Keyboard Shortcuts</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Shortcut</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><code>Cmd+O</code></td><td>Open file</td></tr>
+        <tr><td><code>Cmd+F</code></td><td>Find in page</td></tr>
+        <tr><td><code>Cmd+T</code></td><td>Toggle light/dark theme</td></tr>
+        <tr><td><code>Cmd+=</code></td><td>Zoom in</td></tr>
+        <tr><td><code>Cmd+-</code></td><td>Zoom out</td></tr>
+        <tr><td><code>Cmd+0</code></td><td>Reset zoom</td></tr>
+        <tr><td><code>Cmd+W</code></td><td>Close window</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Supported Formats</h2>
+    <p>Markdown Viewer recognises files with the following extensions:</p>
+    <ul>
+      <li><code>.md</code></li>
+      <li><code>.markdown</code></li>
+      <li><code>.mdown</code></li>
+      <li><code>.mkdn</code></li>
+      <li><code>.mkd</code></li>
+    </ul>
+
+    <h2>File Associations</h2>
+    <p>To make Markdown Viewer the default app for Markdown files in Finder:</p>
+    <ol>
+      <li>Right-click any <code>.md</code> file in Finder</li>
+      <li>Select <strong>Get Info</strong></li>
+      <li>Under <strong>Open with</strong>, choose <strong>Markdown Viewer</strong></li>
+      <li>Click <strong>Change All...</strong> to apply to all files of this type</li>
+    </ol>
+
+    <h2>Mermaid Diagrams</h2>
+    <p>Fenced code blocks with the <code>mermaid</code> language tag are automatically rendered as diagrams:</p>
+    <blockquote>
+      <p>Supported diagram types include flowcharts, sequence diagrams, class diagrams, state diagrams, Gantt charts, pie charts, and more. See the <a href="https://mermaid.js.org/intro/">Mermaid documentation</a> for the full list.</p>
+    </blockquote>
+
+    <h2>Syntax Highlighting</h2>
+    <p>Code blocks with a language tag are syntax-highlighted using highlight.js, which supports 190+ languages. The highlighting theme automatically adapts to light and dark mode.</p>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <span class="footer-copy">&copy; 2025 Paris Theofanidis. Licensed under GPL-3.0.</span>
+      <ul class="footer-links">
+        <li><a href="privacy.html">Privacy</a></li>
+        <li><a href="support.html">Support</a></li>
+        <li><a href="docs.html">Docs</a></li>
+        <li><a href="https://github.com/ptheofan/markdown-viewer">GitHub</a></li>
+      </ul>
+    </div>
+  </footer>
+
+</body>
+</html>

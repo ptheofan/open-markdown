@@ -12,6 +12,7 @@ import {
   createZoomController,
   createPreferencesPanel,
   createCopyDropdown,
+  createChangeGutter,
   Toast,
   type MarkdownViewer,
   type DropZone,
@@ -20,9 +21,11 @@ import {
   type ZoomController,
   type PreferencesPanel,
   type CopyDropdown,
+  type ChangeGutter,
 } from './renderer/components';
 import {
   createDocumentCopyService,
+  DiffService,
   type DocumentCopyService,
   type CopyDocumentType,
 } from './renderer/services';
@@ -65,6 +68,8 @@ class App {
   private copyDropdown: CopyDropdown | null = null;
   private documentCopyService: DocumentCopyService | null = null;
   private toast: Toast | null = null;
+  private diffService: DiffService | null = null;
+  private changeGutter: ChangeGutter | null = null;
 
   private state: AppState = {
     currentFilePath: null,
@@ -128,6 +133,12 @@ class App {
     this.toolbar = createToolbar(toolbarElement);
     this.statusBar = createStatusBar(statusBarElement);
     this.toast = new Toast();
+    this.diffService = new DiffService();
+    this.changeGutter = createChangeGutter({
+      scrollContainer: viewerElement,
+      contentContainer: viewerContainer,
+      onReset: () => this.handleResetBaseline(),
+    });
 
     // Create copy dropdown if element exists
     if (copyDropdownElement) {
@@ -426,6 +437,8 @@ class App {
 
       // Render markdown
       await this.markdownViewer?.render(result.content ?? '', filePath);
+      this.diffService?.setBaseline(result.content ?? '');
+      this.changeGutter?.clearIndicators();
 
       // Show viewer
       this.showViewer();
@@ -480,6 +493,11 @@ class App {
 
       // Re-render content
       await this.markdownViewer?.render(event.content, event.filePath);
+
+      if (this.diffService && this.changeGutter) {
+        const diff = this.diffService.computeDiff(event.content);
+        this.changeGutter.applyChanges(diff);
+      }
     } catch (error) {
       console.error('Failed to refresh content:', error);
     }
@@ -499,12 +517,22 @@ class App {
     this.toolbar?.setFileName(null);
     this.statusBar?.clear();
     this.markdownViewer?.clear();
+    this.diffService?.clearBaseline();
+    this.changeGutter?.clearIndicators();
 
     // Show drop zone
     this.showWelcomeScreen();
 
     // Show notification
     this.showError('The file has been deleted');
+  }
+
+  private handleResetBaseline(): void {
+    const content = this.markdownViewer?.getState().content;
+    if (content !== undefined && this.diffService) {
+      this.diffService.setBaseline(content);
+    }
+    this.changeGutter?.clearIndicators();
   }
 
   /**
@@ -689,6 +717,7 @@ class App {
     this.dropZone?.destroy();
     this.zoomController?.destroy();
     this.copyDropdown?.destroy();
+    this.changeGutter?.destroy();
   }
 }
 

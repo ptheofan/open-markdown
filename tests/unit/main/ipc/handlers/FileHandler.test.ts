@@ -46,11 +46,12 @@ const mockFileService = {
 const mockFileWatcherService = {
   watch: vi.fn(),
   unwatch: vi.fn(),
+  unwatchAll: vi.fn(),
   onFileChange: vi.fn().mockReturnValue(vi.fn()) as ReturnType<typeof vi.fn> & {
-    mockImplementation: (cb: (callback: FileChangeCallback) => () => void) => void;
+    mockImplementation: (cb: (windowId: number, callback: FileChangeCallback) => () => void) => void;
   },
   onFileDelete: vi.fn().mockReturnValue(vi.fn()) as ReturnType<typeof vi.fn> & {
-    mockImplementation: (cb: (callback: FileDeleteCallback) => () => void) => void;
+    mockImplementation: (cb: (windowId: number, callback: FileDeleteCallback) => () => void) => void;
   },
 };
 
@@ -208,6 +209,7 @@ describe('FileHandler', () => {
 
     it('should set up file change forwarding', async () => {
       const mockWindow = {
+        id: 1,
         isDestroyed: vi.fn(() => false),
         webContents: { send: vi.fn() },
         once: vi.fn(),
@@ -221,21 +223,22 @@ describe('FileHandler', () => {
       const event = { sender: {} };
       await handler?.(event, '/path/to/file.md');
 
-      expect(mockFileWatcherService.onFileChange).toHaveBeenCalled();
-      expect(mockFileWatcherService.onFileDelete).toHaveBeenCalled();
-      expect(mockFileWatcherService.watch).toHaveBeenCalledWith('/path/to/file.md');
+      expect(mockFileWatcherService.onFileChange).toHaveBeenCalledWith(1, expect.any(Function));
+      expect(mockFileWatcherService.onFileDelete).toHaveBeenCalledWith(1, expect.any(Function));
+      expect(mockFileWatcherService.watch).toHaveBeenCalledWith('/path/to/file.md', 1);
     });
 
     it('should forward file change events to renderer', async () => {
       let changeCallback: FileChangeCallback | undefined;
 
       const mockWindow = {
+        id: 1,
         isDestroyed: vi.fn(() => false),
         webContents: { send: vi.fn() },
         once: vi.fn(),
       };
       vi.mocked(BrowserWindow.fromWebContents).mockReturnValue(mockWindow as unknown as BrowserWindow);
-      mockFileWatcherService.onFileChange.mockImplementation((cb: FileChangeCallback) => {
+      mockFileWatcherService.onFileChange.mockImplementation((_windowId: number, cb: FileChangeCallback) => {
         changeCallback = cb;
         return vi.fn();
       });
@@ -264,12 +267,13 @@ describe('FileHandler', () => {
       let changeCallback: FileChangeCallback | undefined;
 
       const mockWindow = {
+        id: 1,
         isDestroyed: vi.fn(() => true), // Window is destroyed
         webContents: { send: vi.fn() },
         once: vi.fn(),
       };
       vi.mocked(BrowserWindow.fromWebContents).mockReturnValue(mockWindow as unknown as BrowserWindow);
-      mockFileWatcherService.onFileChange.mockImplementation((cb: FileChangeCallback) => {
+      mockFileWatcherService.onFileChange.mockImplementation((_windowId: number, cb: FileChangeCallback) => {
         changeCallback = cb;
         return vi.fn();
       });
@@ -295,12 +299,13 @@ describe('FileHandler', () => {
       let deleteCallback: FileDeleteCallback | undefined;
 
       const mockWindow = {
+        id: 1,
         isDestroyed: vi.fn(() => false),
         webContents: { send: vi.fn() },
         once: vi.fn(),
       };
       vi.mocked(BrowserWindow.fromWebContents).mockReturnValue(mockWindow as unknown as BrowserWindow);
-      mockFileWatcherService.onFileDelete.mockImplementation((cb: FileDeleteCallback) => {
+      mockFileWatcherService.onFileDelete.mockImplementation((_windowId: number, cb: FileDeleteCallback) => {
         deleteCallback = cb;
         return vi.fn();
       });
@@ -327,6 +332,7 @@ describe('FileHandler', () => {
       let closeCallback: (() => void) | undefined;
 
       const mockWindow = {
+        id: 1,
         isDestroyed: vi.fn(() => false),
         webContents: { send: vi.fn() },
         once: vi.fn((_event: string, cb: () => void) => {
@@ -337,6 +343,7 @@ describe('FileHandler', () => {
       mockFileWatcherService.onFileChange.mockReturnValue(unsubscribeChange);
       mockFileWatcherService.onFileDelete.mockReturnValue(unsubscribeDelete);
       mockFileWatcherService.watch.mockResolvedValue(undefined);
+      mockFileWatcherService.unwatchAll.mockResolvedValue(undefined);
 
       registerFileHandlers();
 
@@ -350,11 +357,14 @@ describe('FileHandler', () => {
 
       expect(unsubscribeChange).toHaveBeenCalled();
       expect(unsubscribeDelete).toHaveBeenCalled();
+      expect(mockFileWatcherService.unwatchAll).toHaveBeenCalledWith(1);
     });
   });
 
   describe('UNWATCH handler', () => {
-    it('should call fileWatcherService.unwatch', async () => {
+    it('should call fileWatcherService.unwatch with filePath and windowId', async () => {
+      const mockWindow = { id: 1 };
+      vi.mocked(BrowserWindow.fromWebContents).mockReturnValue(mockWindow as unknown as BrowserWindow);
       mockFileWatcherService.unwatch.mockResolvedValue(undefined);
 
       registerFileHandlers();
@@ -362,9 +372,20 @@ describe('FileHandler', () => {
       const handler = mockIpcMain._getHandler(IPC_CHANNELS.FILE.UNWATCH);
       expect(handler).toBeDefined();
 
-      await handler?.({}, '/path/to/file.md');
+      await handler?.({ sender: {} }, '/path/to/file.md');
 
-      expect(mockFileWatcherService.unwatch).toHaveBeenCalled();
+      expect(mockFileWatcherService.unwatch).toHaveBeenCalledWith('/path/to/file.md', 1);
+    });
+
+    it('should return early when no window found', async () => {
+      vi.mocked(BrowserWindow.fromWebContents).mockReturnValue(null);
+
+      registerFileHandlers();
+
+      const handler = mockIpcMain._getHandler(IPC_CHANNELS.FILE.UNWATCH);
+      await handler?.({ sender: {} }, '/path/to/file.md');
+
+      expect(mockFileWatcherService.unwatch).not.toHaveBeenCalled();
     });
   });
 });

@@ -11,15 +11,42 @@ import {
 } from '@main/services/FileWatcherService';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// Mock chokidar
-const mockWatcher = {
-  on: vi.fn().mockReturnThis(),
-  once: vi.fn().mockReturnThis(),
-  close: vi.fn().mockResolvedValue(undefined),
-};
+interface MockWatcher {
+  on: ReturnType<typeof vi.fn>;
+  once: ReturnType<typeof vi.fn>;
+  close: ReturnType<typeof vi.fn>;
+}
+
+function createMockWatcher(): MockWatcher {
+  const watcher: MockWatcher = {
+    on: vi.fn().mockReturnThis(),
+    once: vi.fn().mockImplementation((event: string, callback: () => void) => {
+      if (event === 'ready') {
+        setTimeout(() => callback(), 0);
+      }
+      return watcher;
+    }),
+    close: vi.fn().mockResolvedValue(undefined),
+  };
+  return watcher;
+}
+
+let mockWatchers: MockWatcher[] = [];
+
+function getWatcher(index: number): MockWatcher {
+  const watcher = mockWatchers[index];
+  if (!watcher) {
+    throw new Error(`No mock watcher at index ${index}`);
+  }
+  return watcher;
+}
 
 vi.mock('chokidar', () => ({
-  watch: vi.fn(() => mockWatcher),
+  watch: vi.fn(() => {
+    const watcher = createMockWatcher();
+    mockWatchers.push(watcher);
+    return watcher;
+  }),
 }));
 
 describe('FileWatcherService', () => {
@@ -29,21 +56,13 @@ describe('FileWatcherService', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    mockWatchers = [];
     service = new FileWatcherService();
 
-    // Create temp file for testing
     tempDir = path.join(os.tmpdir(), `watcher-test-${Date.now()}`);
     await fs.mkdir(tempDir, { recursive: true });
     testFile = path.join(tempDir, 'test.md');
     await fs.writeFile(testFile, '# Test');
-
-    // Default mock behavior: resolve ready event immediately
-    mockWatcher.once.mockImplementation((event: string, callback: () => void) => {
-      if (event === 'ready') {
-        setTimeout(() => callback(), 0);
-      }
-      return mockWatcher;
-    });
   });
 
   afterEach(async () => {
@@ -56,103 +75,97 @@ describe('FileWatcherService', () => {
   });
 
   describe('watch', () => {
-    it('should start watching a file', async () => {
+    it('should start watching a file for a window', async () => {
       const { watch } = await import('chokidar');
 
-      await service.watch(testFile);
+      await service.watch(testFile, 1);
 
       expect(watch).toHaveBeenCalledWith(testFile, expect.objectContaining({
         persistent: true,
         ignoreInitial: true,
       }));
       expect(service.isWatching()).toBe(true);
-      expect(service.getWatchedFile()).toBe(testFile);
-    });
-
-    it('should stop watching previous file when watching new file', async () => {
-      const anotherFile = path.join(tempDir, 'another.md');
-      await fs.writeFile(anotherFile, '# Another');
-
-      await service.watch(testFile);
-      expect(service.getWatchedFile()).toBe(testFile);
-
-      await service.watch(anotherFile);
-      expect(mockWatcher.close).toHaveBeenCalled();
-      expect(service.getWatchedFile()).toBe(anotherFile);
+      expect(service.isWatchingFile(testFile)).toBe(true);
     });
 
     it('should register change event handler', async () => {
-      await service.watch(testFile);
+      await service.watch(testFile, 1);
 
-      expect(mockWatcher.on).toHaveBeenCalledWith('change', expect.any(Function));
+      expect(getWatcher(0).on).toHaveBeenCalledWith('change', expect.any(Function));
     });
 
     it('should register unlink event handler', async () => {
-      await service.watch(testFile);
+      await service.watch(testFile, 1);
 
-      expect(mockWatcher.on).toHaveBeenCalledWith('unlink', expect.any(Function));
+      expect(getWatcher(0).on).toHaveBeenCalledWith('unlink', expect.any(Function));
     });
 
     it('should register error event handler', async () => {
-      await service.watch(testFile);
+      await service.watch(testFile, 1);
 
-      expect(mockWatcher.on).toHaveBeenCalledWith('error', expect.any(Function));
+      expect(getWatcher(0).on).toHaveBeenCalledWith('error', expect.any(Function));
     });
 
     it('should throw FileWatchError when watcher fails to initialize', async () => {
-      mockWatcher.once.mockImplementation((event: string, callback: (error: Error) => void) => {
+      // Override the mock factory for this test - we need a watcher that errors
+      const { watch } = await import('chokidar');
+      const errorWatcher = createMockWatcher();
+      errorWatcher.once.mockImplementation((event: string, callback: (error: Error) => void) => {
         if (event === 'error') {
           setTimeout(() => callback(new Error('Watch failed')), 0);
         }
-        return mockWatcher;
+        return errorWatcher;
       });
+      vi.mocked(watch).mockReturnValueOnce(errorWatcher as unknown as ReturnType<typeof watch>);
 
-      await expect(service.watch(testFile)).rejects.toThrow('Watch failed');
-      expect(service.getWatchedFile()).toBeNull();
+      await expect(service.watch(testFile, 1)).rejects.toThrow('Watch failed');
+      expect(service.isWatchingFile(testFile)).toBe(false);
     });
   });
 
   describe('unwatch', () => {
-    it('should stop watching the current file', async () => {
-      await service.watch(testFile);
-      await service.unwatch();
+    it('should stop watching a file for a window', async () => {
+      await service.watch(testFile, 1);
+      await service.unwatch(testFile, 1);
 
-      expect(mockWatcher.close).toHaveBeenCalled();
+      expect(getWatcher(0).close).toHaveBeenCalled();
       expect(service.isWatching()).toBe(false);
-      expect(service.getWatchedFile()).toBeNull();
+      expect(service.isWatchingFile(testFile)).toBe(false);
     });
 
     it('should handle unwatch when not watching', async () => {
-      await expect(service.unwatch()).resolves.not.toThrow();
+      await expect(service.unwatch(testFile, 1)).resolves.not.toThrow();
     });
 
     it('should clear debounce timer if pending', async () => {
-      await service.watch(testFile);
+      await service.watch(testFile, 1);
 
-      // Get the change handler
-      const changeCall = mockWatcher.on.mock.calls.find(
+      const changeCall = getWatcher(0).on.mock.calls.find(
         (call: unknown[]) => call[0] === 'change'
       );
       const changeHandler = changeCall?.[1] as (path: string) => void;
 
-      // Trigger a change (this would start debounce)
       changeHandler(testFile);
 
-      // Unwatch should clear the timer
-      await service.unwatch();
+      await service.unwatch(testFile, 1);
 
       expect(service.isWatching()).toBe(false);
     });
   });
 
-  describe('getWatchedFile', () => {
-    it('should return null when not watching', () => {
-      expect(service.getWatchedFile()).toBeNull();
+  describe('isWatchingFile', () => {
+    it('should return false when not watching', () => {
+      expect(service.isWatchingFile(testFile)).toBe(false);
     });
 
-    it('should return file path when watching', async () => {
-      await service.watch(testFile);
-      expect(service.getWatchedFile()).toBe(testFile);
+    it('should return true when watching the file', async () => {
+      await service.watch(testFile, 1);
+      expect(service.isWatchingFile(testFile)).toBe(true);
+    });
+
+    it('should return false for a different file', async () => {
+      await service.watch(testFile, 1);
+      expect(service.isWatchingFile('/some/other/file.md')).toBe(false);
     });
   });
 
@@ -162,13 +175,13 @@ describe('FileWatcherService', () => {
     });
 
     it('should return true when watching', async () => {
-      await service.watch(testFile);
+      await service.watch(testFile, 1);
       expect(service.isWatching()).toBe(true);
     });
 
     it('should return false after unwatch', async () => {
-      await service.watch(testFile);
-      await service.unwatch();
+      await service.watch(testFile, 1);
+      await service.unwatch(testFile, 1);
       expect(service.isWatching()).toBe(false);
     });
   });
@@ -176,12 +189,11 @@ describe('FileWatcherService', () => {
   describe('onFileChange', () => {
     it('should register callback for file changes', async () => {
       const callback = vi.fn();
-      service.onFileChange(callback);
+      service.onFileChange(1, callback);
 
-      await service.watch(testFile);
+      await service.watch(testFile, 1);
 
-      // Get the change handler
-      const changeCall = mockWatcher.on.mock.calls.find(
+      const changeCall = getWatcher(0).on.mock.calls.find(
         (call: unknown[]) => call[0] === 'change'
       );
       expect(changeCall).toBeDefined();
@@ -189,50 +201,43 @@ describe('FileWatcherService', () => {
 
     it('should return cleanup function', () => {
       const callback = vi.fn();
-      const cleanup = service.onFileChange(callback);
+      const cleanup = service.onFileChange(1, callback);
 
       expect(typeof cleanup).toBe('function');
     });
 
     it('should unregister callback when cleanup is called', () => {
       const callback = vi.fn();
-      const cleanup = service.onFileChange(callback);
+      const cleanup = service.onFileChange(1, callback);
 
       cleanup();
-
-      // Callback should no longer be in the set (we can't verify directly,
-      // but we can verify subsequent change events don't call it)
     });
   });
 
   describe('onFileDelete', () => {
     it('should register callback for file deletions', () => {
       const callback = vi.fn();
-      service.onFileDelete(callback);
-
-      // Callback should be registered
+      service.onFileDelete(1, callback);
     });
 
     it('should return cleanup function', () => {
       const callback = vi.fn();
-      const cleanup = service.onFileDelete(callback);
+      const cleanup = service.onFileDelete(1, callback);
 
       expect(typeof cleanup).toBe('function');
     });
 
     it('should call callback when file is deleted', async () => {
       const callback = vi.fn();
-      service.onFileDelete(callback);
+      service.onFileDelete(1, callback);
 
-      await service.watch(testFile);
+      await service.watch(testFile, 1);
 
-      // Get the unlink handler
-      const unlinkCall = mockWatcher.on.mock.calls.find(
+      const unlinkCall = getWatcher(0).on.mock.calls.find(
         (call: unknown[]) => call[0] === 'unlink'
       );
       const unlinkHandler = unlinkCall?.[1] as (path: string) => void;
 
-      // Simulate file deletion
       unlinkHandler(testFile);
 
       expect(callback).toHaveBeenCalledWith(
@@ -246,17 +251,15 @@ describe('FileWatcherService', () => {
       });
       const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-      service.onFileDelete(errorCallback);
+      service.onFileDelete(1, errorCallback);
 
-      await service.watch(testFile);
+      await service.watch(testFile, 1);
 
-      // Get the unlink handler
-      const unlinkCall = mockWatcher.on.mock.calls.find(
+      const unlinkCall = getWatcher(0).on.mock.calls.find(
         (call: unknown[]) => call[0] === 'unlink'
       );
       const unlinkHandler = unlinkCall?.[1] as (path: string) => void;
 
-      // Simulate file deletion - should not throw
       expect(() => unlinkHandler(testFile)).not.toThrow();
       expect(consoleSpy).toHaveBeenCalledWith(
         'Error in file delete callback:',
@@ -266,19 +269,17 @@ describe('FileWatcherService', () => {
       consoleSpy.mockRestore();
     });
 
-    it('should clear watched file reference after deletion', async () => {
-      await service.watch(testFile);
+    it('should remove window from watcher after deletion', async () => {
+      await service.watch(testFile, 1);
 
-      // Get the unlink handler
-      const unlinkCall = mockWatcher.on.mock.calls.find(
+      const unlinkCall = getWatcher(0).on.mock.calls.find(
         (call: unknown[]) => call[0] === 'unlink'
       );
       const unlinkHandler = unlinkCall?.[1] as (path: string) => void;
 
-      // Simulate file deletion
       unlinkHandler(testFile);
 
-      expect(service.getWatchedFile()).toBeNull();
+      expect(service.isWatchingFile(testFile)).toBe(false);
     });
   });
 
@@ -287,18 +288,148 @@ describe('FileWatcherService', () => {
       const changeCallback = vi.fn();
       const deleteCallback = vi.fn();
 
-      service.onFileChange(changeCallback);
-      service.onFileDelete(deleteCallback);
+      service.onFileChange(1, changeCallback);
+      service.onFileDelete(1, deleteCallback);
 
-      await service.watch(testFile);
+      await service.watch(testFile, 1);
       await service.destroy();
 
-      expect(mockWatcher.close).toHaveBeenCalled();
+      expect(getWatcher(0).close).toHaveBeenCalled();
       expect(service.isWatching()).toBe(false);
     });
 
     it('should handle destroy when not watching', async () => {
       await expect(service.destroy()).resolves.not.toThrow();
+    });
+  });
+
+  describe('multi-file watching', () => {
+    let secondFile: string;
+
+    beforeEach(async () => {
+      secondFile = path.join(tempDir, 'second.md');
+      await fs.writeFile(secondFile, '# Second');
+    });
+
+    it('should watch multiple files simultaneously', async () => {
+      const { watch: chokidarWatch } = await import('chokidar');
+
+      await service.watch(testFile, 1);
+      await service.watch(secondFile, 2);
+
+      expect(chokidarWatch).toHaveBeenCalledTimes(2);
+      expect(service.isWatchingFile(testFile)).toBe(true);
+      expect(service.isWatchingFile(secondFile)).toBe(true);
+      expect(mockWatchers).toHaveLength(2);
+    });
+
+    it('should reference-count when same file watched by multiple windows', async () => {
+      const { watch: chokidarWatch } = await import('chokidar');
+
+      await service.watch(testFile, 1);
+      await service.watch(testFile, 2);
+
+      // Should only create one chokidar watcher for the same file
+      expect(chokidarWatch).toHaveBeenCalledTimes(1);
+      expect(service.isWatchingFile(testFile)).toBe(true);
+      expect(mockWatchers).toHaveLength(1);
+    });
+
+    it('should only notify windows watching a specific file on change', async () => {
+      const callback1 = vi.fn();
+      const callback2 = vi.fn();
+
+      service.onFileChange(1, callback1);
+      service.onFileChange(2, callback2);
+
+      await service.watch(testFile, 1);
+      await service.watch(secondFile, 2);
+
+      // Trigger change on testFile (watched by window 1)
+      const changeCall = getWatcher(0).on.mock.calls.find(
+        (call: unknown[]) => call[0] === 'change'
+      );
+      const changeHandler = changeCall?.[1] as (path: string) => void;
+
+      changeHandler(testFile);
+
+      // Wait for debounce
+      await vi.waitFor(() => {
+        expect(callback1).toHaveBeenCalledWith(
+          expect.objectContaining({ filePath: testFile })
+        );
+      });
+
+      expect(callback2).not.toHaveBeenCalled();
+    });
+
+    it('should only notify windows watching a specific file on delete', async () => {
+      const callback1 = vi.fn();
+      const callback2 = vi.fn();
+
+      service.onFileDelete(1, callback1);
+      service.onFileDelete(2, callback2);
+
+      await service.watch(testFile, 1);
+      await service.watch(secondFile, 2);
+
+      // Trigger delete on secondFile (watched by window 2)
+      const unlinkCall = getWatcher(1).on.mock.calls.find(
+        (call: unknown[]) => call[0] === 'unlink'
+      );
+      const unlinkHandler = unlinkCall?.[1] as (path: string) => void;
+
+      unlinkHandler(secondFile);
+
+      expect(callback1).not.toHaveBeenCalled();
+      expect(callback2).toHaveBeenCalledWith(
+        expect.objectContaining({ filePath: secondFile })
+      );
+    });
+
+    it('should clean up all subscriptions for a window via unwatchAll', async () => {
+      await service.watch(testFile, 1);
+      await service.watch(secondFile, 1);
+
+      expect(service.isWatchingFile(testFile)).toBe(true);
+      expect(service.isWatchingFile(secondFile)).toBe(true);
+
+      await service.unwatchAll(1);
+
+      expect(service.isWatchingFile(testFile)).toBe(false);
+      expect(service.isWatchingFile(secondFile)).toBe(false);
+      expect(service.isWatching()).toBe(false);
+    });
+
+    it('should close watcher when last window unwatches a file', async () => {
+      await service.watch(testFile, 1);
+      await service.watch(testFile, 2);
+
+      await service.unwatch(testFile, 1);
+      // First window unwatched, but window 2 still watching - watcher should stay
+      expect(getWatcher(0).close).not.toHaveBeenCalled();
+      expect(service.isWatchingFile(testFile)).toBe(true);
+
+      await service.unwatch(testFile, 2);
+      // Last window unwatched - watcher should be closed
+      expect(getWatcher(0).close).toHaveBeenCalled();
+      expect(service.isWatchingFile(testFile)).toBe(false);
+    });
+
+    it('should not close watcher when other windows still watch the file', async () => {
+      await service.watch(testFile, 1);
+      await service.watch(testFile, 2);
+      await service.watch(testFile, 3);
+
+      await service.unwatch(testFile, 1);
+
+      expect(getWatcher(0).close).not.toHaveBeenCalled();
+      expect(service.isWatchingFile(testFile)).toBe(true);
+
+      await service.unwatch(testFile, 2);
+
+      expect(getWatcher(0).close).not.toHaveBeenCalled();
+      expect(service.isWatchingFile(testFile)).toBe(true);
     });
   });
 });

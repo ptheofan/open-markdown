@@ -1,5 +1,6 @@
 /**
- * FileWatcherService - Watches files for changes using chokidar
+ * FileWatcherService - Watches multiple files for changes using chokidar
+ * with reference counting for multi-window support
  */
 import { readFile, stat } from 'node:fs/promises';
 
@@ -10,34 +11,38 @@ import { watch } from 'chokidar';
 import type { FileChangeEvent, FileDeleteEvent, FileStats } from '@shared/types';
 import type { FSWatcher } from 'chokidar';
 
-/**
- * Callback types for file events
- */
 export type FileChangeCallback = (event: FileChangeEvent) => void;
 export type FileDeleteCallback = (event: FileDeleteEvent) => void;
 
-/**
- * Service for watching file changes
- */
+interface WatchedFileEntry {
+  watcher: FSWatcher;
+  windowIds: Set<number>;
+  debounceTimer: NodeJS.Timeout | null;
+}
+
+interface WindowCallbacks {
+  changeCallbacks: Set<FileChangeCallback>;
+  deleteCallbacks: Set<FileDeleteCallback>;
+}
+
 export class FileWatcherService {
-  private watcher: FSWatcher | null = null;
-  private watchedFilePath: string | null = null;
-  private changeCallbacks: Set<FileChangeCallback> = new Set();
-  private deleteCallbacks: Set<FileDeleteCallback> = new Set();
-  private debounceTimer: NodeJS.Timeout | null = null;
+  private watchedFiles: Map<string, WatchedFileEntry> = new Map();
+  private windowCallbacks: Map<number, WindowCallbacks> = new Map();
 
   /**
-   * Start watching a file for changes
-   * @param filePath - Path to the file to watch
+   * Start watching a file for a specific window.
+   * If the file is already watched, adds the window to the reference set.
    */
-  async watch(filePath: string): Promise<void> {
-    // Stop watching previous file if any
-    await this.unwatch();
+  async watch(filePath: string, windowId: number): Promise<void> {
+    const existing = this.watchedFiles.get(filePath);
+
+    if (existing) {
+      existing.windowIds.add(windowId);
+      return;
+    }
 
     try {
-      this.watchedFilePath = filePath;
-
-      this.watcher = watch(filePath, {
+      const watcher = watch(filePath, {
         persistent: true,
         ignoreInitial: true,
         awaitWriteFinish: {
@@ -46,32 +51,31 @@ export class FileWatcherService {
         },
       });
 
-      // Handle file changes
-      this.watcher.on('change', (changedPath: string) => {
+      const entry: WatchedFileEntry = {
+        watcher,
+        windowIds: new Set([windowId]),
+        debounceTimer: null,
+      };
+
+      watcher.on('change', (changedPath: string) => {
         void this.handleFileChange(changedPath);
       });
 
-      // Handle file deletion
-      this.watcher.on('unlink', (deletedPath: string) => {
+      watcher.on('unlink', (deletedPath: string) => {
         this.handleFileDelete(deletedPath);
       });
 
-      // Handle errors
-      this.watcher.on('error', (error: unknown) => {
+      watcher.on('error', (error: unknown) => {
         console.error('File watcher error:', error);
       });
 
-      // Wait for watcher to be ready
       await new Promise<void>((resolve, reject) => {
-        if (!this.watcher) {
-          reject(new FileWatchError(filePath, 'Watcher not initialized'));
-          return;
-        }
-        this.watcher.once('ready', () => resolve());
-        this.watcher.once('error', reject);
+        watcher.once('ready', () => resolve());
+        watcher.once('error', reject);
       });
+
+      this.watchedFiles.set(filePath, entry);
     } catch (error) {
-      this.watchedFilePath = null;
       throw new FileWatchError(
         filePath,
         error instanceof Error ? error.message : 'Unknown error'
@@ -80,73 +84,116 @@ export class FileWatcherService {
   }
 
   /**
-   * Stop watching the current file
+   * Stop watching a file for a specific window.
+   * Closes the chokidar watcher only when no windows remain.
    */
-  async unwatch(): Promise<void> {
-    if (this.debounceTimer) {
-      clearTimeout(this.debounceTimer);
-      this.debounceTimer = null;
-    }
+  async unwatch(filePath: string, windowId: number): Promise<void> {
+    const entry = this.watchedFiles.get(filePath);
+    if (!entry) return;
 
-    if (this.watcher) {
-      await this.watcher.close();
-      this.watcher = null;
-    }
+    entry.windowIds.delete(windowId);
 
-    this.watchedFilePath = null;
+    if (entry.windowIds.size === 0) {
+      await this.closeWatcherEntry(filePath, entry);
+    }
   }
 
   /**
-   * Get the currently watched file path
+   * Stop watching all files for a specific window (window close cleanup).
    */
-  getWatchedFile(): string | null {
-    return this.watchedFilePath;
+  async unwatchAll(windowId: number): Promise<void> {
+    const filePaths = [...this.watchedFiles.keys()];
+    for (const filePath of filePaths) {
+      await this.unwatch(filePath, windowId);
+    }
+    this.windowCallbacks.delete(windowId);
   }
 
   /**
-   * Check if currently watching a file
+   * Check if a specific file is being watched by any window
+   */
+  isWatchingFile(filePath: string): boolean {
+    return this.watchedFiles.has(filePath);
+  }
+
+  /**
+   * Check if watching any files
    */
   isWatching(): boolean {
-    return this.watcher !== null && this.watchedFilePath !== null;
+    return this.watchedFiles.size > 0;
   }
 
   /**
-   * Register callback for file changes
+   * Register callback for file changes on a specific window
    */
-  onFileChange(callback: FileChangeCallback): () => void {
-    this.changeCallbacks.add(callback);
+  onFileChange(windowId: number, callback: FileChangeCallback): () => void {
+    const callbacks = this.getOrCreateWindowCallbacks(windowId);
+    callbacks.changeCallbacks.add(callback);
     return () => {
-      this.changeCallbacks.delete(callback);
+      callbacks.changeCallbacks.delete(callback);
     };
   }
 
   /**
-   * Register callback for file deletion
+   * Register callback for file deletion on a specific window
    */
-  onFileDelete(callback: FileDeleteCallback): () => void {
-    this.deleteCallbacks.add(callback);
+  onFileDelete(windowId: number, callback: FileDeleteCallback): () => void {
+    const callbacks = this.getOrCreateWindowCallbacks(windowId);
+    callbacks.deleteCallbacks.add(callback);
     return () => {
-      this.deleteCallbacks.delete(callback);
+      callbacks.deleteCallbacks.delete(callback);
     };
   }
 
   /**
-   * Handle file change event with debouncing
+   * Cleanup all resources
+   */
+  async destroy(): Promise<void> {
+    for (const [filePath, entry] of this.watchedFiles) {
+      await this.closeWatcherEntry(filePath, entry);
+    }
+    this.windowCallbacks.clear();
+  }
+
+  private getOrCreateWindowCallbacks(windowId: number): WindowCallbacks {
+    let callbacks = this.windowCallbacks.get(windowId);
+    if (!callbacks) {
+      callbacks = {
+        changeCallbacks: new Set(),
+        deleteCallbacks: new Set(),
+      };
+      this.windowCallbacks.set(windowId, callbacks);
+    }
+    return callbacks;
+  }
+
+  private async closeWatcherEntry(filePath: string, entry: WatchedFileEntry): Promise<void> {
+    if (entry.debounceTimer) {
+      clearTimeout(entry.debounceTimer);
+      entry.debounceTimer = null;
+    }
+    await entry.watcher.close();
+    this.watchedFiles.delete(filePath);
+  }
+
+  /**
+   * Handle file change event with per-file debouncing
    */
   private handleFileChange(filePath: string): void {
-    // Clear existing debounce timer
-    if (this.debounceTimer) {
-      clearTimeout(this.debounceTimer);
+    const entry = this.watchedFiles.get(filePath);
+    if (!entry) return;
+
+    if (entry.debounceTimer) {
+      clearTimeout(entry.debounceTimer);
     }
 
-    // Debounce the change notification
-    this.debounceTimer = setTimeout(() => {
+    entry.debounceTimer = setTimeout(() => {
       void this.processFileChange(filePath);
     }, FILE_WATCH_DEBOUNCE_MS);
   }
 
   /**
-   * Process the file change after debounce
+   * Process the file change after debounce - only notify windows watching this file
    */
   private async processFileChange(filePath: string): Promise<void> {
     try {
@@ -155,49 +202,60 @@ export class FileWatcherService {
         this.getFileStats(filePath),
       ]);
 
-      if (!stats) {
-        return;
+      if (!stats) return;
+
+      const event: FileChangeEvent = { filePath, content, stats };
+
+      const entry = this.watchedFiles.get(filePath);
+      if (!entry) return;
+
+      for (const windowId of entry.windowIds) {
+        const callbacks = this.windowCallbacks.get(windowId);
+        if (!callbacks) continue;
+
+        callbacks.changeCallbacks.forEach((callback) => {
+          try {
+            callback(event);
+          } catch (error) {
+            console.error('Error in file change callback:', error);
+          }
+        });
       }
-
-      const event: FileChangeEvent = {
-        filePath,
-        content,
-        stats,
-      };
-
-      this.changeCallbacks.forEach((callback) => {
-        try {
-          callback(event);
-        } catch (error) {
-          console.error('Error in file change callback:', error);
-        }
-      });
     } catch (error) {
       console.error('Error reading changed file:', error);
     }
   }
 
   /**
-   * Handle file deletion event
+   * Handle file deletion - only notify windows watching this file
    */
   private handleFileDelete(filePath: string): void {
+    const entry = this.watchedFiles.get(filePath);
+    if (!entry) return;
+
     const event: FileDeleteEvent = { filePath };
 
-    this.deleteCallbacks.forEach((callback) => {
-      try {
-        callback(event);
-      } catch (error) {
-        console.error('Error in file delete callback:', error);
-      }
-    });
+    for (const windowId of entry.windowIds) {
+      const callbacks = this.windowCallbacks.get(windowId);
+      if (!callbacks) continue;
 
-    // Clear watched file reference since it's deleted
-    this.watchedFilePath = null;
+      callbacks.deleteCallbacks.forEach((callback) => {
+        try {
+          callback(event);
+        } catch (error) {
+          console.error('Error in file delete callback:', error);
+        }
+      });
+    }
+
+    // Remove the watcher entry since the file is deleted
+    if (entry.debounceTimer) {
+      clearTimeout(entry.debounceTimer);
+      entry.debounceTimer = null;
+    }
+    this.watchedFiles.delete(filePath);
   }
 
-  /**
-   * Get file statistics
-   */
   private async getFileStats(filePath: string): Promise<FileStats | null> {
     try {
       const stats = await stat(filePath);
@@ -210,25 +268,10 @@ export class FileWatcherService {
       return null;
     }
   }
-
-  /**
-   * Cleanup resources
-   */
-  async destroy(): Promise<void> {
-    await this.unwatch();
-    this.changeCallbacks.clear();
-    this.deleteCallbacks.clear();
-  }
 }
 
-/**
- * Singleton instance
- */
 let fileWatcherInstance: FileWatcherService | null = null;
 
-/**
- * Get the FileWatcherService singleton instance
- */
 export function getFileWatcherService(): FileWatcherService {
   if (!fileWatcherInstance) {
     fileWatcherInstance = new FileWatcherService();

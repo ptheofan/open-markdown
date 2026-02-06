@@ -40,14 +40,16 @@ export function registerFileHandlers(): void {
       const window = BrowserWindow.fromWebContents(event.sender);
       if (!window) return;
 
+      const windowId = window.id;
+
       // Set up forwarding of file events to the renderer
-      const unsubscribeChange = fileWatcherService.onFileChange((changeEvent) => {
+      const unsubscribeChange = fileWatcherService.onFileChange(windowId, (changeEvent) => {
         if (!window.isDestroyed()) {
           window.webContents.send(IPC_CHANNELS.FILE.ON_CHANGE, changeEvent);
         }
       });
 
-      const unsubscribeDelete = fileWatcherService.onFileDelete((deleteEvent) => {
+      const unsubscribeDelete = fileWatcherService.onFileDelete(windowId, (deleteEvent) => {
         if (!window.isDestroyed()) {
           window.webContents.send(IPC_CHANNELS.FILE.ON_DELETE, deleteEvent);
         }
@@ -57,17 +59,21 @@ export function registerFileHandlers(): void {
       window.once('closed', () => {
         unsubscribeChange();
         unsubscribeDelete();
+        void fileWatcherService.unwatchAll(windowId);
       });
 
-      await fileWatcherService.watch(filePath);
+      await fileWatcherService.watch(filePath, windowId);
     }
   );
 
   // Handle file unwatch
   ipcMain.handle(
     IPC_CHANNELS.FILE.UNWATCH,
-    async (_event, _filePath: string): Promise<void> => {
-      await fileWatcherService.unwatch();
+    async (event, filePath: string): Promise<void> => {
+      const window = BrowserWindow.fromWebContents(event.sender);
+      if (!window) return;
+
+      await fileWatcherService.unwatch(filePath, window.id);
     }
   );
 }

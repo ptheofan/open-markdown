@@ -17,6 +17,7 @@ vi.mock('electron', () => {
         webContents: {
           send: vi.fn(),
           once: vi.fn(),
+          openDevTools: vi.fn(),
         },
         loadURL: vi.fn().mockResolvedValue(undefined),
         loadFile: vi.fn().mockResolvedValue(undefined),
@@ -129,6 +130,19 @@ describe('WindowManager', () => {
       manager.setWindowFilePath(win.id, '/test/file.md');
       manager.setWindowFilePath(win.id, null);
       expect(manager.getWindowFilePath(win.id)).toBeNull();
+    });
+
+    it('should set window title when file path is set', () => {
+      const win = manager.createWindow();
+      manager.setWindowFilePath(win.id, '/path/to/README.md');
+      expect(win.setTitle).toHaveBeenCalledWith('README.md');
+    });
+
+    it('should set default title when file path is cleared', () => {
+      const win = manager.createWindow();
+      manager.setWindowFilePath(win.id, '/path/to/README.md');
+      manager.setWindowFilePath(win.id, null);
+      expect(win.setTitle).toHaveBeenCalledWith('Markdown Viewer');
     });
   });
 

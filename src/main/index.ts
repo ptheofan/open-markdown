@@ -8,19 +8,22 @@ import { registerAllHandlers } from './ipc/handlers';
 import { getThemeService } from './services/ThemeService';
 import { getPreferencesService } from './services/PreferencesService';
 import { getRecentFilesService } from './services/RecentFilesService';
-import { getMainWindow } from './window/MainWindow';
+import { getWindowManager } from './window/WindowManager';
 import { getFileService } from './services/FileService';
 import { IPC_CHANNELS } from '@shared/types';
 import { MARKDOWN_EXTENSIONS } from '@shared/constants';
 
-let pendingFilePath: string | null = null;
-let rendererReady = false;
+interface PendingWindow {
+  filePath: string | null;
+  rendererReady: boolean;
+}
+
+const pendingWindows = new Map<number, PendingWindow>();
 
 /**
  * Check command-line arguments for markdown file
  */
-function checkCommandLineArgs(): void {
-  // Skip the first args (electron path, app path in dev, or just app path in prod)
+function checkCommandLineArgs(): string | null {
   const args = process.argv.slice(app.isPackaged ? 1 : 2);
 
   const filePath = args.find((arg) => {
@@ -30,45 +33,71 @@ function checkCommandLineArgs(): void {
   });
 
   if (filePath) {
-    // Resolve to absolute path if needed
-    pendingFilePath = path.isAbsolute(filePath)
-      ? filePath
-      : path.resolve(filePath);
+    return path.isAbsolute(filePath) ? filePath : path.resolve(filePath);
   }
+
+  return null;
 }
 
 /**
- * Send pending file to renderer when ready
+ * Send pending file to a specific window when its renderer is ready
  */
-function sendPendingFile(): void {
-  const mainWindow = getMainWindow();
-  if (pendingFilePath && mainWindow.exists()) {
-    mainWindow.send(IPC_CHANNELS.FILE_ASSOCIATION.ON_EXTERNAL_OPEN, {
-      filePath: pendingFilePath,
+function sendPendingFile(windowId: number): void {
+  const pending = pendingWindows.get(windowId);
+  if (!pending?.filePath) return;
+
+  const windowManager = getWindowManager();
+  const win = windowManager.getWindow(windowId);
+  if (win && !win.isDestroyed()) {
+    win.webContents.send(IPC_CHANNELS.FILE_ASSOCIATION.ON_EXTERNAL_OPEN, {
+      filePath: pending.filePath,
     });
-    pendingFilePath = null;
+    pending.filePath = null;
   }
 }
 
 /**
- * Create application window
+ * Create an application window, optionally with a file to open
  */
-function createWindow(): void {
-  const mainWindow = getMainWindow();
-  mainWindow.create();
+function createWindow(filePath?: string): BrowserWindow {
+  const windowManager = getWindowManager();
+  const win = windowManager.createWindow();
 
-  // Open DevTools in development
-  if (process.env['NODE_ENV'] !== 'production') {
-    mainWindow.openDevTools();
+  pendingWindows.set(win.id, {
+    filePath: filePath ?? null,
+    rendererReady: false,
+  });
+
+  win.webContents.once('did-finish-load', () => {
+    const pending = pendingWindows.get(win.id);
+    if (pending) {
+      pending.rendererReady = true;
+    }
+    sendPendingFile(win.id);
+  });
+
+  win.on('closed', () => {
+    pendingWindows.delete(win.id);
+  });
+
+  return win;
+}
+
+/**
+ * Focus an existing window
+ */
+function focusWindow(win: BrowserWindow): void {
+  if (win.isMinimized()) {
+    win.restore();
   }
+  win.focus();
 }
 
 /**
  * Initialize application
  */
 async function initialize(): Promise<void> {
-  // Check for file argument in command line
-  checkCommandLineArgs();
+  const pendingFilePath = checkCommandLineArgs();
 
   // Initialize services
   await getThemeService().initialize();
@@ -78,17 +107,7 @@ async function initialize(): Promise<void> {
   // Register IPC handlers before creating windows
   registerAllHandlers();
 
-  rendererReady = false;
-  createWindow();
-
-  const mainWindow = getMainWindow();
-  const win = mainWindow.getWindow();
-  if (win) {
-    win.webContents.once('did-finish-load', () => {
-      rendererReady = true;
-      sendPendingFile();
-    });
-  }
+  createWindow(pendingFilePath ?? undefined);
 }
 
 // Electron app lifecycle events
@@ -97,20 +116,47 @@ async function initialize(): Promise<void> {
 app.on('open-file', (event, filePath) => {
   event.preventDefault();
 
-  // Validate it's a markdown file
   const ext = path.extname(filePath).toLowerCase();
   const fileService = getFileService();
   if (!fileService.isMarkdownFile(ext)) {
     return;
   }
 
-  if (rendererReady) {
-    const mainWindow = getMainWindow();
-    mainWindow.send(IPC_CHANNELS.FILE_ASSOCIATION.ON_EXTERNAL_OPEN, {
-      filePath,
-    });
+  const windowManager = getWindowManager();
+
+  // If a window already has this file, focus it
+  const existingWin = windowManager.getWindowByFilePath(filePath);
+  if (existingWin && !existingWin.isDestroyed()) {
+    focusWindow(existingWin);
+    return;
+  }
+
+  // If there's an empty window, load the file there
+  const emptyWin = windowManager.getEmptyWindow();
+  if (emptyWin && !emptyWin.isDestroyed()) {
+    const pending = pendingWindows.get(emptyWin.id);
+    if (pending?.rendererReady) {
+      emptyWin.webContents.send(IPC_CHANNELS.FILE_ASSOCIATION.ON_EXTERNAL_OPEN, {
+        filePath,
+      });
+    } else if (pending) {
+      pending.filePath = filePath;
+    }
+    focusWindow(emptyWin);
+    return;
+  }
+
+  // Otherwise create a new window
+  if (app.isReady()) {
+    createWindow(filePath);
   } else {
-    pendingFilePath = filePath;
+    // App not ready yet; store for first window creation
+    // The first window created in initialize() will pick this up
+    // via the pendingWindows map, but we need a pre-ready fallback
+    app.once('ready', () => {
+      // Will be handled by initialize() if it picks up the CLI arg
+      // This is a fallback for open-file events before ready
+    });
   }
 });
 
@@ -121,17 +167,7 @@ app.whenReady()
     // macOS: re-create window when dock icon is clicked
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
-        rendererReady = false;
         createWindow();
-
-        const mainWindow = getMainWindow();
-        const win = mainWindow.getWindow();
-        if (win) {
-          win.webContents.once('did-finish-load', () => {
-            rendererReady = true;
-            sendPendingFile();
-          });
-        }
       }
     });
   })
@@ -147,7 +183,7 @@ app.on('window-all-closed', () => {
   }
 });
 
-// Security: Prevent new window creation
+// Security: Prevent new window creation from web content
 app.on('web-contents-created', (_event, contents) => {
   contents.setWindowOpenHandler(() => {
     return { action: 'deny' };

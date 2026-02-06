@@ -127,6 +127,10 @@ const electronAPI: ElectronAPI = {
       return ipcRenderer.invoke(IPC_CHANNELS.WINDOW.GET_FULLSCREEN);
     },
 
+    openNew: (filePath?: string): Promise<void> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, filePath);
+    },
+
     onFullscreenChange: (
       callback: (event: FullscreenChangeEvent) => void
     ): (() => void) => {

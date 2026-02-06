@@ -4,7 +4,8 @@
 import { BrowserWindow } from 'electron';
 import path from 'node:path';
 
-import { DEFAULT_WINDOW } from '@shared/constants';
+import { DEFAULT_WINDOW, APP_CONFIG } from '@shared/constants';
+import { IPC_CHANNELS } from '@shared/types/api';
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
 declare const MAIN_WINDOW_VITE_NAME: string;
@@ -40,10 +41,26 @@ export class WindowManager {
 
     this.loadContent(win);
 
+    win.on('enter-full-screen', () => {
+      win.webContents.send(IPC_CHANNELS.WINDOW.ON_FULLSCREEN_CHANGE, {
+        isFullscreen: true,
+      });
+    });
+
+    win.on('leave-full-screen', () => {
+      win.webContents.send(IPC_CHANNELS.WINDOW.ON_FULLSCREEN_CHANGE, {
+        isFullscreen: false,
+      });
+    });
+
     win.on('closed', () => {
       this.windows.delete(win.id);
       this.windowFilePaths.delete(win.id);
     });
+
+    if (process.env['NODE_ENV'] !== 'production') {
+      win.webContents.openDevTools();
+    }
 
     return win;
   }
@@ -67,6 +84,15 @@ export class WindowManager {
 
   setWindowFilePath(windowId: number, filePath: string | null): void {
     this.windowFilePaths.set(windowId, filePath);
+    const win = this.windows.get(windowId);
+    if (win && !win.isDestroyed()) {
+      if (filePath) {
+        const fileName = path.basename(filePath);
+        win.setTitle(fileName);
+      } else {
+        win.setTitle(APP_CONFIG.NAME);
+      }
+    }
   }
 
   getWindowFilePath(windowId: number): string | null {

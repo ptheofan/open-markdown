@@ -38,6 +38,7 @@ export const IPC_CHANNELS = {
   WINDOW: {
     ON_FULLSCREEN_CHANGE: 'window:on-fullscreen-change',
     GET_FULLSCREEN: 'window:get-fullscreen',
+    OPEN_NEW: 'window:open-new',
   },
   CONTEXT_MENU: {
     SHOW: 'context-menu:show',
@@ -132,6 +133,7 @@ export interface AppAPI {
  */
 export interface WindowAPI {
   getFullscreen: () => Promise<boolean>;
+  openNew: (filePath?: string) => Promise<void>;
   onFullscreenChange: (
     callback: (event: FullscreenChangeEvent) => void
   ) => () => void;

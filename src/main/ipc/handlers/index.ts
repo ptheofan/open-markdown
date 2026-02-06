@@ -23,6 +23,10 @@ import {
   registerRecentFilesHandlers,
   unregisterRecentFilesHandlers,
 } from './RecentFilesHandler';
+import {
+  registerWindowHandlers,
+  unregisterWindowHandlers,
+} from './WindowHandler';
 
 /**
  * Register all IPC handlers
@@ -35,6 +39,7 @@ export function registerAllHandlers(): void {
   registerPreferencesHandlers();
   registerFileAssociationHandlers();
   registerRecentFilesHandlers();
+  registerWindowHandlers();
 }
 
 /**
@@ -48,6 +53,7 @@ export function unregisterAllHandlers(): void {
   unregisterPreferencesHandlers();
   unregisterFileAssociationHandlers();
   unregisterRecentFilesHandlers();
+  unregisterWindowHandlers();
 }
 
 // Re-export individual handlers
@@ -73,3 +79,7 @@ export {
   registerRecentFilesHandlers,
   unregisterRecentFilesHandlers,
 } from './RecentFilesHandler';
+export {
+  registerWindowHandlers,
+  unregisterWindowHandlers,
+} from './WindowHandler';

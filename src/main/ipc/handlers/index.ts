@@ -19,6 +19,10 @@ import {
   registerFileAssociationHandlers,
   unregisterFileAssociationHandlers,
 } from './FileAssociationHandler';
+import {
+  registerFindHandlers,
+  unregisterFindHandlers,
+} from './FindHandler';
 
 /**
  * Register all IPC handlers
@@ -30,6 +34,7 @@ export function registerAllHandlers(): void {
   registerContextMenuHandlers();
   registerPreferencesHandlers();
   registerFileAssociationHandlers();
+  registerFindHandlers();
 }
 
 /**
@@ -42,6 +47,7 @@ export function unregisterAllHandlers(): void {
   unregisterContextMenuHandlers();
   unregisterPreferencesHandlers();
   unregisterFileAssociationHandlers();
+  unregisterFindHandlers();
 }
 
 // Re-export individual handlers
@@ -63,3 +69,7 @@ export {
   registerFileAssociationHandlers,
   unregisterFileAssociationHandlers,
 } from './FileAssociationHandler';
+export {
+  registerFindHandlers,
+  unregisterFindHandlers,
+} from './FindHandler';

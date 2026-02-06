@@ -19,6 +19,10 @@ import {
   registerFileAssociationHandlers,
   unregisterFileAssociationHandlers,
 } from './FileAssociationHandler';
+import {
+  registerRecentFilesHandlers,
+  unregisterRecentFilesHandlers,
+} from './RecentFilesHandler';
 
 /**
  * Register all IPC handlers
@@ -30,6 +34,7 @@ export function registerAllHandlers(): void {
   registerContextMenuHandlers();
   registerPreferencesHandlers();
   registerFileAssociationHandlers();
+  registerRecentFilesHandlers();
 }
 
 /**
@@ -42,6 +47,7 @@ export function unregisterAllHandlers(): void {
   unregisterContextMenuHandlers();
   unregisterPreferencesHandlers();
   unregisterFileAssociationHandlers();
+  unregisterRecentFilesHandlers();
 }
 
 // Re-export individual handlers
@@ -63,3 +69,7 @@ export {
   registerFileAssociationHandlers,
   unregisterFileAssociationHandlers,
 } from './FileAssociationHandler';
+export {
+  registerRecentFilesHandlers,
+  unregisterRecentFilesHandlers,
+} from './RecentFilesHandler';

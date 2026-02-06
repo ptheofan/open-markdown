@@ -13,6 +13,7 @@ import {
   createPreferencesPanel,
   createCopyDropdown,
   createChangeGutter,
+  createFindBar,
   Toast,
   type MarkdownViewer,
   type DropZone,
@@ -22,6 +23,7 @@ import {
   type PreferencesPanel,
   type CopyDropdown,
   type ChangeGutter,
+  type FindBar,
 } from './renderer/components';
 import {
   createDocumentCopyService,
@@ -41,6 +43,7 @@ import type {
   DeepPartial,
   CorePreferences,
   ExternalFileOpenEvent,
+  FindResult,
 } from '@shared/types';
 import type { ResolvedTheme } from './themes/types';
 
@@ -70,6 +73,7 @@ class App {
   private toast: Toast | null = null;
   private diffService: DiffService | null = null;
   private changeGutter: ChangeGutter | null = null;
+  private findBar: FindBar | null = null;
 
   private state: AppState = {
     currentFilePath: null,
@@ -138,6 +142,18 @@ class App {
       scrollContainer: viewerElement,
       contentContainer: viewerContainer,
       onReset: () => this.handleResetBaseline(),
+    });
+
+    this.findBar = createFindBar(viewerElement, {
+      onFind: (text, { matchCase }) => {
+        window.electronAPI.find.findInPage(text, { matchCase });
+      },
+      onFindNext: (text, { matchCase, forward }) => {
+        window.electronAPI.find.findInPage(text, { matchCase, forward, findNext: true });
+      },
+      onStopFinding: () => {
+        window.electronAPI.find.stopFinding('clearSelection');
+      },
     });
 
     // Create copy dropdown if element exists
@@ -338,6 +354,22 @@ class App {
       }
     );
     this.cleanupFunctions.push(cleanupExternalOpen);
+
+    // Find shortcut (Cmd+F / Ctrl+F)
+    const handleFindShortcut = (e: KeyboardEvent): void => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
+        e.preventDefault();
+        this.findBar?.show();
+      }
+    };
+    document.addEventListener('keydown', handleFindShortcut);
+    this.cleanupFunctions.push(() => document.removeEventListener('keydown', handleFindShortcut));
+
+    // Find result listener
+    const cleanupFindResult = window.electronAPI.find.onResult((result: FindResult) => {
+      this.findBar?.updateResult(result);
+    });
+    this.cleanupFunctions.push(cleanupFindResult);
   }
 
   /**
@@ -718,6 +750,7 @@ class App {
     this.zoomController?.destroy();
     this.copyDropdown?.destroy();
     this.changeGutter?.destroy();
+    this.findBar?.destroy();
   }
 }
 

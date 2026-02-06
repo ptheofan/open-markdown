@@ -55,9 +55,10 @@ export class DropZone {
     this.element.addEventListener('dragleave', this.boundHandleDragLeave);
     this.element.addEventListener('drop', this.boundHandleDrop);
 
-    // Also handle window-level drag events to prevent default browser behavior
+    // Window-level: prevent browser from opening dragged files, and handle
+    // drops that land outside the drop zone element (e.g. on the viewer)
     window.addEventListener('dragover', this.boundPreventDefaults);
-    window.addEventListener('drop', this.boundPreventDefaults);
+    window.addEventListener('drop', this.boundHandleDrop);
 
     // Set up Open link click handler
     this.openLink = this.element.querySelector('#drop-zone-open-link');
@@ -75,7 +76,7 @@ export class DropZone {
     this.element.removeEventListener('dragleave', this.boundHandleDragLeave);
     this.element.removeEventListener('drop', this.boundHandleDrop);
     window.removeEventListener('dragover', this.boundPreventDefaults);
-    window.removeEventListener('drop', this.boundPreventDefaults);
+    window.removeEventListener('drop', this.boundHandleDrop);
     if (this.openLink) {
       this.openLink.removeEventListener('click', this.boundHandleOpenLinkClick);
     }
@@ -166,8 +167,7 @@ export class DropZone {
       return;
     }
 
-    // Get the file path - Electron provides the path property
-    const filePath = (file as File & { path?: string }).path;
+    const filePath = window.electronAPI.file.getDroppedFilePath(file);
     if (!filePath) {
       this.showError('Could not get file path');
       return;

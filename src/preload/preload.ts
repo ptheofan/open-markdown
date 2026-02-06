@@ -2,7 +2,7 @@
  * Preload script - Runs in an isolated context with access to Node.js
  * Exposes a secure API to the renderer process via contextBridge
  */
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
 import { IPC_CHANNELS } from '@shared/types/api';
 
@@ -45,6 +45,10 @@ const electronAPI: ElectronAPI = {
 
     unwatch: (filePath: string): Promise<void> => {
       return ipcRenderer.invoke(IPC_CHANNELS.FILE.UNWATCH, filePath);
+    },
+
+    getDroppedFilePath: (file: File): string => {
+      return webUtils.getPathForFile(file);
     },
 
     onFileChange: (callback: (event: FileChangeEvent) => void): (() => void) => {

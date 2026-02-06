@@ -100,6 +100,7 @@ export interface FileAPI {
   read: (filePath: string) => Promise<FileReadResult>;
   watch: (filePath: string) => Promise<void>;
   unwatch: (filePath: string) => Promise<void>;
+  getDroppedFilePath: (file: File) => string;
   onFileChange: (
     callback: (event: FileChangeEvent) => void
   ) => () => void;

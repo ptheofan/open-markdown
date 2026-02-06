@@ -3,6 +3,7 @@
  */
 import { BrowserWindow } from 'electron';
 import { WindowManager } from '@main/window/WindowManager';
+import { IPC_CHANNELS } from '@shared/types/api';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Mock Electron
@@ -156,6 +157,32 @@ describe('WindowManager', () => {
       const win = manager.createWindow();
       manager.setWindowFilePath(win.id, '/test/file.md');
       expect(manager.getEmptyWindow()).toBeUndefined();
+    });
+  });
+
+  describe('fullscreen event forwarding', () => {
+    it('should send fullscreen change event on enter-full-screen', () => {
+      const win = manager.createWindow();
+      const simulateEvent = (win as unknown as { _simulateEvent: (event: string, ...args: unknown[]) => void })._simulateEvent;
+
+      simulateEvent('enter-full-screen');
+
+      expect(win.webContents.send).toHaveBeenCalledWith(
+        IPC_CHANNELS.WINDOW.ON_FULLSCREEN_CHANGE,
+        { isFullscreen: true }
+      );
+    });
+
+    it('should send fullscreen change event on leave-full-screen', () => {
+      const win = manager.createWindow();
+      const simulateEvent = (win as unknown as { _simulateEvent: (event: string, ...args: unknown[]) => void })._simulateEvent;
+
+      simulateEvent('leave-full-screen');
+
+      expect(win.webContents.send).toHaveBeenCalledWith(
+        IPC_CHANNELS.WINDOW.ON_FULLSCREEN_CHANGE,
+        { isFullscreen: false }
+      );
     });
   });
 

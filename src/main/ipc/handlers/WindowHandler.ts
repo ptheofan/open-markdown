@@ -12,7 +12,7 @@ export function registerWindowHandlers(): void {
     return win?.isFullScreen() ?? false;
   });
 
-  ipcMain.handle(IPC_CHANNELS.WINDOW.OPEN_NEW, () => {
+  ipcMain.handle(IPC_CHANNELS.WINDOW.OPEN_NEW, (_event, _filePath?: string) => {
     const windowManager = getWindowManager();
     windowManager.createWindow();
   });

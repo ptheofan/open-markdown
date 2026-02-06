@@ -91,3 +91,10 @@ export {
 
 // Toast
 export { Toast, type ToastType } from './Toast';
+
+// ChangeGutter
+export {
+  ChangeGutter,
+  createChangeGutter,
+  type ChangeGutterOptions,
+} from './ChangeGutter';

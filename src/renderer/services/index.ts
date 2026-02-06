@@ -9,3 +9,5 @@ export {
   type DocumentCopyOptions,
   type DocumentCopyResult,
 } from './DocumentCopyService';
+
+export { DiffService } from './DiffService';

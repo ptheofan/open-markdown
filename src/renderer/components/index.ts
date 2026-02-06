@@ -98,3 +98,10 @@ export {
   createChangeGutter,
   type ChangeGutterOptions,
 } from './ChangeGutter';
+
+// FindBar
+export {
+  FindBar,
+  createFindBar,
+  type FindBarCallbacks,
+} from './FindBar';

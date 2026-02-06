@@ -3,8 +3,8 @@
  */
 import { ipcMain, BrowserWindow } from 'electron';
 
-import { IPC_CHANNELS } from '../channels';
-import { getWindowManager } from '../../window/WindowManager';
+import { IPC_CHANNELS } from '@shared/types/api';
+import { getWindowManager } from '@main/window/WindowManager';
 
 export function registerWindowHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.WINDOW.GET_FULLSCREEN, (event) => {
@@ -12,6 +12,7 @@ export function registerWindowHandlers(): void {
     return win?.isFullScreen() ?? false;
   });
 
+  // TODO: Pass filePath to createWindow once file path routing is wired up (Task 8)
   ipcMain.handle(IPC_CHANNELS.WINDOW.OPEN_NEW, (_event, _filePath?: string) => {
     const windowManager = getWindowManager();
     windowManager.createWindow();

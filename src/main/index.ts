@@ -19,6 +19,7 @@ interface PendingWindow {
 }
 
 const pendingWindows = new Map<number, PendingWindow>();
+let preReadyFilePath: string | null = null;
 
 /**
  * Check command-line arguments for markdown file
@@ -97,7 +98,9 @@ function focusWindow(win: BrowserWindow): void {
  * Initialize application
  */
 async function initialize(): Promise<void> {
-  const pendingFilePath = checkCommandLineArgs();
+  // Pre-ready open-file event takes priority over CLI args
+  const pendingFilePath = preReadyFilePath ?? checkCommandLineArgs();
+  preReadyFilePath = null;
 
   // Initialize services
   await getThemeService().initialize();
@@ -150,13 +153,8 @@ app.on('open-file', (event, filePath) => {
   if (app.isReady()) {
     createWindow(filePath);
   } else {
-    // App not ready yet; store for first window creation
-    // The first window created in initialize() will pick this up
-    // via the pendingWindows map, but we need a pre-ready fallback
-    app.once('ready', () => {
-      // Will be handled by initialize() if it picks up the CLI arg
-      // This is a fallback for open-file events before ready
-    });
+    // Store for initialize() to pick up when app is ready
+    preReadyFilePath = filePath;
   }
 });
 

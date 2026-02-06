@@ -3,7 +3,7 @@
  */
 import { ipcMain, BrowserWindow } from 'electron';
 
-import { IPC_CHANNELS } from '@main/ipc/channels';
+import { IPC_CHANNELS } from '@shared/types/api';
 import {
   registerWindowHandlers,
   unregisterWindowHandlers,

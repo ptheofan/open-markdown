@@ -105,3 +105,10 @@ export {
   createFindBar,
   type FindBarCallbacks,
 } from './FindBar';
+
+// RecentFilesDropdown
+export {
+  RecentFilesDropdown,
+  createRecentFilesDropdown,
+  type RecentFilesDropdownCallbacks,
+} from './RecentFilesDropdown';

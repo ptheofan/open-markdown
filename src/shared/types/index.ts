@@ -78,3 +78,10 @@ export type {
   FileAssociationStatus,
   ExternalFileOpenEvent,
 } from './fileAssociation';
+
+// Diff types
+export type {
+  LineChangeType,
+  LineChange,
+  DiffResult,
+} from './diff';

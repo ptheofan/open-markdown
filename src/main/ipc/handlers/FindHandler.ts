@@ -18,7 +18,7 @@ export function registerFindHandlers(): void {
 
   ipcMain.handle(
     IPC_CHANNELS.FIND.STOP_FINDING,
-    (event, { action }: { action: 'clearSelection' | 'keepSelection' | 'activateSelection' }) => {
+    (event, { action }: { action: 'clearSelection' | 'keepSelection' }) => {
       event.sender.stopFindInPage(action);
     }
   );

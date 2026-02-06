@@ -119,6 +119,7 @@ export class FindBar {
       if (!this.currentText) {
         this.callbacks.onStopFinding();
         this.countDisplay.textContent = '';
+        this.countDisplay.classList.remove('find-bar-no-results');
         return;
       }
 

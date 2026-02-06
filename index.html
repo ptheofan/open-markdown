@@ -11,12 +11,22 @@
       <!-- Toolbar -->
       <header id="toolbar" class="toolbar">
         <div class="toolbar-left">
-          <button id="open-file-btn" class="toolbar-btn" title="Open File (Cmd+O)">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M3.5 0a.5.5 0 0 1 .5.5V1h8V.5a.5.5 0 0 1 1 0V1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h1V.5a.5.5 0 0 1 .5-.5zM1 4v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4H1z"/>
-            </svg>
-            <span>Open</span>
-          </button>
+          <div id="open-file-dropdown" class="toolbar-dropdown open-split-btn">
+            <button id="open-file-btn" class="toolbar-btn open-split-btn-main" title="Open File (Cmd+O)">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M3.5 0a.5.5 0 0 1 .5.5V1h8V.5a.5.5 0 0 1 1 0V1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h1V.5a.5.5 0 0 1 .5-.5zM1 4v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4H1z"/>
+              </svg>
+              <span>Open</span>
+            </button>
+            <button id="open-recent-btn" class="toolbar-btn open-split-btn-arrow" title="Recent files">
+              <svg class="dropdown-chevron" width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
+                <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z"/>
+              </svg>
+            </button>
+            <div class="dropdown-menu hidden">
+              <div class="dropdown-empty hidden">No recent files</div>
+            </div>
+          </div>
         </div>
         <div class="toolbar-center">
           <span id="file-name" class="file-name">No file open</span>

@@ -64,6 +64,7 @@ export type {
   ClipboardAPI,
   PreferencesAPI,
   FileAssociationAPI,
+  FindAPI,
   ElectronAPI,
   FullscreenChangeEvent,
   ContextMenuItem,
@@ -85,3 +86,9 @@ export type {
   LineChange,
   DiffResult,
 } from './diff';
+
+// Find types
+export type {
+  FindInPageOptions,
+  FindResult,
+} from './find';

@@ -28,6 +28,7 @@ import {
 import {
   createDocumentCopyService,
   DiffService,
+  FindService,
   type DocumentCopyService,
   type CopyDocumentType,
 } from './renderer/services';
@@ -43,7 +44,6 @@ import type {
   DeepPartial,
   CorePreferences,
   ExternalFileOpenEvent,
-  FindResult,
 } from '@shared/types';
 import type { ResolvedTheme } from './themes/types';
 
@@ -74,6 +74,7 @@ class App {
   private diffService: DiffService | null = null;
   private changeGutter: ChangeGutter | null = null;
   private findBar: FindBar | null = null;
+  private findService: FindService | null = null;
 
   private state: AppState = {
     currentFilePath: null,
@@ -144,15 +145,19 @@ class App {
       onReset: () => this.handleResetBaseline(),
     });
 
+    this.findService = new FindService(viewerContainer);
+
     this.findBar = createFindBar(viewerElement, {
       onFind: (text, { matchCase }) => {
-        window.electronAPI.find.findInPage(text, { matchCase });
+        const result = this.findService!.find(text, { matchCase });
+        this.findBar!.updateResult(result);
       },
-      onFindNext: (text, { matchCase, forward }) => {
-        window.electronAPI.find.findInPage(text, { matchCase, forward, findNext: true });
+      onFindNext: (_text, { forward }) => {
+        const result = this.findService!.findNext(forward);
+        this.findBar!.updateResult(result);
       },
       onStopFinding: () => {
-        window.electronAPI.find.stopFinding('clearSelection');
+        this.findService!.clear();
       },
     });
 
@@ -365,11 +370,6 @@ class App {
     document.addEventListener('keydown', handleFindShortcut);
     this.cleanupFunctions.push(() => document.removeEventListener('keydown', handleFindShortcut));
 
-    // Find result listener
-    const cleanupFindResult = window.electronAPI.find.onResult((result: FindResult) => {
-      this.findBar?.updateResult(result);
-    });
-    this.cleanupFunctions.push(cleanupFindResult);
   }
 
   /**
@@ -530,6 +530,11 @@ class App {
         const diff = this.diffService.computeDiff(event.content);
         this.changeGutter.applyChanges(diff);
       }
+
+      if (this.findService && this.findBar) {
+        const result = this.findService.rerun();
+        if (result) this.findBar.updateResult(result);
+      }
     } catch (error) {
       console.error('Failed to refresh content:', error);
     }
@@ -551,6 +556,7 @@ class App {
     this.markdownViewer?.clear();
     this.diffService?.clearBaseline();
     this.changeGutter?.clearIndicators();
+    this.findService?.clear();
 
     // Show drop zone
     this.showWelcomeScreen();

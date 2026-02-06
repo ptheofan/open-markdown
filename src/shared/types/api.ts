@@ -11,7 +11,6 @@ import type {
   FileAssociationResult,
   ExternalFileOpenEvent,
 } from './fileAssociation';
-import type { FindInPageOptions, FindResult } from './find';
 
 /**
  * IPC Channel names for type-safe communication
@@ -61,11 +60,6 @@ export const IPC_CHANNELS = {
     SET_AS_DEFAULT: 'file-association:set-as-default',
     ON_EXTERNAL_OPEN: 'file-association:on-external-open',
   },
-  FIND: {
-    FIND_IN_PAGE: 'find:find-in-page',
-    STOP_FINDING: 'find:stop-finding',
-    ON_RESULT: 'find:on-result',
-  },
 } as const;
 
 /**
@@ -79,8 +73,7 @@ export type IpcChannel =
   | (typeof IPC_CHANNELS.CONTEXT_MENU)[keyof typeof IPC_CHANNELS.CONTEXT_MENU]
   | (typeof IPC_CHANNELS.CLIPBOARD)[keyof typeof IPC_CHANNELS.CLIPBOARD]
   | (typeof IPC_CHANNELS.PREFERENCES)[keyof typeof IPC_CHANNELS.PREFERENCES]
-  | (typeof IPC_CHANNELS.FILE_ASSOCIATION)[keyof typeof IPC_CHANNELS.FILE_ASSOCIATION]
-  | (typeof IPC_CHANNELS.FIND)[keyof typeof IPC_CHANNELS.FIND];
+  | (typeof IPC_CHANNELS.FILE_ASSOCIATION)[keyof typeof IPC_CHANNELS.FILE_ASSOCIATION];
 
 /**
  * Fullscreen change event data
@@ -204,15 +197,6 @@ export interface FileAssociationAPI {
 }
 
 /**
- * Find in page API exposed to renderer
- */
-export interface FindAPI {
-  findInPage: (text: string, options?: FindInPageOptions) => void;
-  stopFinding: (action: 'clearSelection' | 'keepSelection') => void;
-  onResult: (callback: (result: FindResult) => void) => () => void;
-}
-
-/**
  * Complete Electron API exposed via contextBridge
  */
 export interface ElectronAPI {
@@ -224,7 +208,6 @@ export interface ElectronAPI {
   clipboard: ClipboardAPI;
   preferences: PreferencesAPI;
   fileAssociation: FileAssociationAPI;
-  find: FindAPI;
 }
 
 /**

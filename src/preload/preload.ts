@@ -12,8 +12,6 @@ import type {
   FileDeleteEvent,
   FileOpenResult,
   FileReadResult,
-  FindInPageOptions,
-  FindResult,
   FullscreenChangeEvent,
   ResolvedTheme,
   ThemeChangeEvent,
@@ -253,30 +251,6 @@ const electronAPI: ElectronAPI = {
     },
   },
 
-  find: {
-    findInPage: (text: string, options?: FindInPageOptions): void => {
-      void ipcRenderer.invoke(IPC_CHANNELS.FIND.FIND_IN_PAGE, { text, options: options ?? {} });
-    },
-
-    stopFinding: (action: 'clearSelection' | 'keepSelection'): void => {
-      void ipcRenderer.invoke(IPC_CHANNELS.FIND.STOP_FINDING, { action });
-    },
-
-    onResult: (callback: (result: FindResult) => void): (() => void) => {
-      const handler = (
-        _event: Electron.IpcRendererEvent,
-        data: FindResult,
-      ): void => {
-        callback(data);
-      };
-
-      ipcRenderer.on(IPC_CHANNELS.FIND.ON_RESULT, handler);
-
-      return () => {
-        ipcRenderer.removeListener(IPC_CHANNELS.FIND.ON_RESULT, handler);
-      };
-    },
-  },
 };
 
 // Expose the API to the renderer process

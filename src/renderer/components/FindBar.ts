@@ -1,7 +1,7 @@
 /**
  * FindBar - Floating search bar for find-in-page functionality
  */
-import type { FindResult } from '@shared/types';
+import type { FindResult } from '../services/FindService';
 
 export interface FindBarCallbacks {
   onFind: (text: string, options: { matchCase: boolean }) => void;
@@ -88,6 +88,7 @@ export class FindBar {
       this.countDisplay.textContent = `${result.activeMatchOrdinal} of ${result.matches}`;
       this.countDisplay.classList.remove('find-bar-no-results');
     }
+
   }
 
   destroy(): void {
@@ -111,6 +112,13 @@ export class FindBar {
   }
 
   private setupEventListeners(): void {
+    // Prevent clicks on find bar buttons from stealing input focus
+    this.element.addEventListener('mousedown', (e: MouseEvent) => {
+      if (e.target !== this.input) {
+        e.preventDefault();
+      }
+    });
+
     // Input with debounce
     this.input.addEventListener('input', () => {
       this.currentText = this.input.value;

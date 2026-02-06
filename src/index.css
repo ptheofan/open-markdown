@@ -1344,3 +1344,13 @@ button:focus:not(:focus-visible) {
 .find-bar-close {
   font-size: 16px !important;
 }
+
+::highlight(find-matches) {
+  background-color: #ffff00;
+  color: #000000;
+}
+
+::highlight(find-active-match) {
+  background-color: #ff9632;
+  color: #000000;
+}

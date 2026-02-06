@@ -67,14 +67,6 @@ export class MainWindow {
       });
     });
 
-    // Forward found-in-page results to renderer
-    this.window.webContents.on('found-in-page', (_event, result) => {
-      this.window?.webContents.send(IPC_CHANNELS.FIND.ON_RESULT, {
-        activeMatchOrdinal: result.activeMatchOrdinal,
-        matches: result.matches,
-      });
-    });
-
     // Register IPC handler for getting fullscreen state
     ipcMain.handle(IPC_CHANNELS.WINDOW.GET_FULLSCREEN, () => {
       return this.window?.isFullScreen() ?? false;

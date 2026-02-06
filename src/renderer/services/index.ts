@@ -11,3 +11,5 @@ export {
 } from './DocumentCopyService';
 
 export { DiffService } from './DiffService';
+
+export { FindService, type FindResult } from './FindService';

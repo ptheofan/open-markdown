@@ -1,9 +1,20 @@
 default_platform :mac
 
-# ASC API key — works locally (keys/ dir) and on CI (env var path)
-asc_key_id = ENV["ASC_KEY_ID"] || "ZR355Z7Z2L"
-asc_issuer_id = ENV["ASC_ISSUER_ID"] || "8bae5749-c5e4-49aa-8c9c-76987e155341"
-asc_key_path = ENV["ASC_KEY_PATH"] || File.expand_path("keys/AuthKey_ZR355Z7Z2L.p8", __dir__)
+# Load local .env if present (for local dev, gitignored)
+env_file = File.expand_path("../.env", __dir__)
+if File.exist?(env_file)
+  File.readlines(env_file).each do |line|
+    line = line.strip
+    next if line.empty? || line.start_with?("#")
+    key, value = line.split("=", 2)
+    ENV[key] ||= value if key && value
+  end
+end
+
+# ASC API key — set via .env locally or env vars on CI
+asc_key_id = ENV.fetch("ASC_KEY_ID")
+asc_issuer_id = ENV.fetch("ASC_ISSUER_ID")
+asc_key_path = ENV["ASC_KEY_PATH"] || File.expand_path("keys/AuthKey_#{asc_key_id}.p8", __dir__)
 
 API_KEY = app_store_connect_api_key(
   key_id: asc_key_id,

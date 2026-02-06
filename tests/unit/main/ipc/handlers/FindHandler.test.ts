@@ -23,7 +23,7 @@ vi.mock('electron', () => {
   };
 });
 
-function getHandler(channel: string) {
+function getHandler(channel: string): ((...args: unknown[]) => unknown) | undefined {
   return (ipcMain as unknown as { _getHandler: (c: string) => ((...args: unknown[]) => unknown) | undefined })._getHandler(channel);
 }
 

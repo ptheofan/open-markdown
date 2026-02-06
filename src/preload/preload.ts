@@ -255,11 +255,11 @@ const electronAPI: ElectronAPI = {
 
   find: {
     findInPage: (text: string, options?: FindInPageOptions): void => {
-      ipcRenderer.invoke(IPC_CHANNELS.FIND.FIND_IN_PAGE, { text, options: options ?? {} });
+      void ipcRenderer.invoke(IPC_CHANNELS.FIND.FIND_IN_PAGE, { text, options: options ?? {} });
     },
 
     stopFinding: (action: 'clearSelection' | 'keepSelection'): void => {
-      ipcRenderer.invoke(IPC_CHANNELS.FIND.STOP_FINDING, { action });
+      void ipcRenderer.invoke(IPC_CHANNELS.FIND.STOP_FINDING, { action });
     },
 
     onResult: (callback: (result: FindResult) => void): (() => void) => {

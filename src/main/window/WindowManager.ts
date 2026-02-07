@@ -10,6 +10,8 @@ import { IPC_CHANNELS } from '@shared/types/api';
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
 declare const MAIN_WINDOW_VITE_NAME: string;
 
+const IS_DEV = typeof MAIN_WINDOW_VITE_DEV_SERVER_URL !== 'undefined' && !!MAIN_WINDOW_VITE_DEV_SERVER_URL;
+
 export class WindowManager {
   private windows: Map<number, BrowserWindow> = new Map();
   private windowFilePaths: Map<number, string | null> = new Map();
@@ -25,6 +27,7 @@ export class WindowManager {
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: false,
+        devTools: IS_DEV,
       },
       titleBarStyle: 'hiddenInset',
       trafficLightPosition: { x: 15, y: 15 },
@@ -58,7 +61,7 @@ export class WindowManager {
       this.windowFilePaths.delete(win.id);
     });
 
-    if (process.env['NODE_ENV'] !== 'production') {
+    if (IS_DEV) {
       win.webContents.openDevTools();
     }
 

@@ -34,6 +34,7 @@ export const IPC_CHANNELS = {
   APP: {
     GET_VERSION: 'app:get-version',
     GET_PLATFORM: 'app:get-platform',
+    RENDERER_READY: 'app:renderer-ready',
   },
   WINDOW: {
     ON_FULLSCREEN_CHANGE: 'window:on-fullscreen-change',
@@ -127,6 +128,7 @@ export interface ThemeAPI {
 export interface AppAPI {
   getVersion: () => string;
   getPlatform: () => NodeJS.Platform;
+  signalReady: () => void;
 }
 
 /**

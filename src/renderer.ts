@@ -100,6 +100,7 @@ class App {
       await this.initializePreferences();
       await this.initializeFullscreenState();
       this.setupEventListeners();
+      window.electronAPI.app.signalReady();
       await this.initializeRecentFiles();
       this.showWelcomeScreen();
     } catch (error) {

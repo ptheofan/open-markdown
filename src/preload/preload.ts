@@ -124,6 +124,10 @@ const electronAPI: ElectronAPI = {
     getPlatform: (): NodeJS.Platform => {
       return process.platform;
     },
+
+    signalReady: (): void => {
+      ipcRenderer.send(IPC_CHANNELS.APP.RENDERER_READY);
+    },
   },
 
   window: {

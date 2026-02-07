@@ -69,7 +69,7 @@ function createWindow(filePath?: string): BrowserWindow {
     rendererReady: false,
   });
 
-  win.webContents.once('did-finish-load', () => {
+  win.webContents.ipc.once(IPC_CHANNELS.APP.RENDERER_READY, () => {
     const pending = pendingWindows.get(win.id);
     if (pending) {
       pending.rendererReady = true;

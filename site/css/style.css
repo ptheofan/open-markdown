@@ -244,25 +244,67 @@ main {
   color: var(--color-text-secondary);
 }
 
-/* ── Screenshot placeholder ── */
+/* ── Examples ── */
 
-.screenshot-section {
-  text-align: center;
-  padding: 2rem 0 3rem;
+.examples {
+  padding: 3rem 0;
 }
 
-.screenshot-placeholder {
-  max-width: 720px;
-  margin: 0 auto;
-  aspect-ratio: 16/10;
-  background: var(--color-bg-alt);
-  border: 2px dashed var(--color-border);
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.examples h2 {
+  text-align: center;
+  font-size: 1.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.examples-subtitle {
+  text-align: center;
   color: var(--color-text-secondary);
-  font-size: 0.95rem;
+  font-size: 1rem;
+  max-width: 560px;
+  margin: 0 auto 2rem;
+}
+
+.examples-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 1.5rem;
+}
+
+.example-card {
+  display: block;
+  background: var(--color-card-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  overflow: hidden;
+  transition: box-shadow 0.15s, transform 0.15s;
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.example-card:hover {
+  box-shadow: 0 6px 20px var(--color-card-shadow);
+  transform: translateY(-2px);
+  text-decoration: none;
+}
+
+.example-card img {
+  width: 100%;
+  display: block;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.example-info {
+  padding: 1.25rem;
+}
+
+.example-info h3 {
+  font-size: 1.05rem;
+  margin-bottom: 0.35rem;
+}
+
+.example-info p {
+  font-size: 0.9rem;
+  color: var(--color-text-secondary);
 }
 
 /* ── Docs / content pages ── */
@@ -410,6 +452,10 @@ main {
 
   .nav-links a {
     font-size: 0.8rem;
+  }
+
+  .examples-grid {
+    grid-template-columns: 1fr;
   }
 
   .footer-inner {

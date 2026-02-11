@@ -271,7 +271,8 @@ main {
 }
 
 .example-card {
-  display: block;
+  display: flex;
+  flex-direction: column;
   background: var(--color-card-bg);
   border: 1px solid var(--color-border);
   border-radius: 10px;
@@ -294,6 +295,7 @@ main {
 }
 
 .example-info {
+  flex: 1;
   padding: 1.25rem;
 }
 

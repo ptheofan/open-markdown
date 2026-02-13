@@ -70,6 +70,9 @@ export const IPC_CHANNELS = {
     CLEAR: 'recent-files:clear',
     ON_CHANGE: 'recent-files:on-change',
   },
+  MENU: {
+    ACTION: 'menu:action',
+  },
 } as const;
 
 /**
@@ -84,7 +87,8 @@ export type IpcChannel =
   | (typeof IPC_CHANNELS.CLIPBOARD)[keyof typeof IPC_CHANNELS.CLIPBOARD]
   | (typeof IPC_CHANNELS.PREFERENCES)[keyof typeof IPC_CHANNELS.PREFERENCES]
   | (typeof IPC_CHANNELS.FILE_ASSOCIATION)[keyof typeof IPC_CHANNELS.FILE_ASSOCIATION]
-  | (typeof IPC_CHANNELS.RECENT_FILES)[keyof typeof IPC_CHANNELS.RECENT_FILES];
+  | (typeof IPC_CHANNELS.RECENT_FILES)[keyof typeof IPC_CHANNELS.RECENT_FILES]
+  | (typeof IPC_CHANNELS.MENU)[keyof typeof IPC_CHANNELS.MENU];
 
 /**
  * Fullscreen change event data
@@ -222,6 +226,13 @@ export interface RecentFilesAPI {
 }
 
 /**
+ * Menu API exposed to renderer
+ */
+export interface MenuAPI {
+  onAction: (callback: (action: string) => void) => () => void;
+}
+
+/**
  * Complete Electron API exposed via contextBridge
  */
 export interface ElectronAPI {
@@ -234,6 +245,7 @@ export interface ElectronAPI {
   preferences: PreferencesAPI;
   fileAssociation: FileAssociationAPI;
   recentFiles: RecentFilesAPI;
+  menu: MenuAPI;
 }
 
 /**

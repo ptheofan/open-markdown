@@ -5,6 +5,7 @@ import { app, BrowserWindow } from 'electron';
 import path from 'node:path';
 
 import { registerAllHandlers } from './ipc/handlers';
+import { setupApplicationMenu } from './menu/applicationMenu';
 import { getThemeService } from './services/ThemeService';
 import { getPreferencesService } from './services/PreferencesService';
 import { getRecentFilesService } from './services/RecentFilesService';
@@ -110,6 +111,9 @@ async function initialize(): Promise<void> {
   // Register IPC handlers before creating windows
   registerAllHandlers();
 
+  // Set up application menu
+  setupApplicationMenu();
+
   createWindow(pendingFilePath ?? undefined);
 }
 
@@ -161,24 +165,15 @@ app.on('open-file', (event, filePath) => {
 app.whenReady()
   .then(() => {
     void initialize();
-
-    // macOS: re-create window when dock icon is clicked
-    app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) {
-        createWindow();
-      }
-    });
   })
   .catch((error: unknown) => {
     console.error('Failed to initialize app:', error);
     app.quit();
   });
 
-// Quit when all windows are closed (except on macOS)
+// Quit when all windows are closed
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  app.quit();
 });
 
 // Security: Prevent new window creation from web content

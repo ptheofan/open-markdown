@@ -297,6 +297,23 @@ const electronAPI: ElectronAPI = {
     },
   },
 
+  menu: {
+    onAction: (callback: (action: string) => void): (() => void) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        action: string
+      ): void => {
+        callback(action);
+      };
+
+      ipcRenderer.on(IPC_CHANNELS.MENU.ACTION, handler);
+
+      return () => {
+        ipcRenderer.removeListener(IPC_CHANNELS.MENU.ACTION, handler);
+      };
+    },
+  },
+
 };
 
 // Expose the API to the renderer process

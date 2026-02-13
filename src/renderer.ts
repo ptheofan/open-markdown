@@ -400,26 +400,32 @@ class App {
     );
     this.cleanupFunctions.push(cleanupRecentFiles);
 
-    // Find shortcut (Cmd+F / Ctrl+F)
-    const handleFindShortcut = (e: KeyboardEvent): void => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'f') {
-        e.preventDefault();
-        this.findBar?.show();
+    // Menu action listener (from application menu)
+    const cleanupMenuAction = window.electronAPI.menu.onAction(
+      (action: string) => {
+        switch (action) {
+          case 'find':
+            this.findBar?.show();
+            break;
+          case 'open-file':
+            void this.handleOpenFile();
+            break;
+          case 'open-preferences':
+            this.handleOpenPreferences();
+            break;
+          case 'zoom-in':
+            this.zoomController?.zoomIn();
+            break;
+          case 'zoom-out':
+            this.zoomController?.zoomOut();
+            break;
+          case 'zoom-reset':
+            this.zoomController?.resetZoom();
+            break;
+        }
       }
-    };
-    document.addEventListener('keydown', handleFindShortcut);
-    this.cleanupFunctions.push(() => document.removeEventListener('keydown', handleFindShortcut));
-
-    // New window shortcut (Cmd+N / Ctrl+N)
-    const handleNewWindowShortcut = (e: KeyboardEvent): void => {
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === 'n') {
-        e.preventDefault();
-        void window.electronAPI.window.openNew();
-      }
-    };
-    document.addEventListener('keydown', handleNewWindowShortcut);
-    this.cleanupFunctions.push(() => document.removeEventListener('keydown', handleNewWindowShortcut));
-
+    );
+    this.cleanupFunctions.push(cleanupMenuAction);
   }
 
   /**

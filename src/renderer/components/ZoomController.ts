@@ -43,7 +43,6 @@ export class ZoomController {
   private onZoomChange: ZoomChangeCallback | null = null;
 
   private boundHandleWheel: (e: WheelEvent) => void;
-  private boundHandleKeydown: (e: KeyboardEvent) => void;
 
   constructor(
     targetElement: HTMLElement,
@@ -57,7 +56,6 @@ export class ZoomController {
 
     // Bind event handlers
     this.boundHandleWheel = this.handleWheel.bind(this);
-    this.boundHandleKeydown = this.handleKeydown.bind(this);
 
     this.setupEventListeners();
     this.applyZoom();
@@ -69,9 +67,6 @@ export class ZoomController {
   private setupEventListeners(): void {
     // Wheel event for pinch-to-zoom (trackpad pinch sends wheel events with ctrlKey)
     this.scrollContainer.addEventListener('wheel', this.boundHandleWheel, { passive: false });
-
-    // Keyboard shortcuts
-    window.addEventListener('keydown', this.boundHandleKeydown);
   }
 
   /**
@@ -96,40 +91,6 @@ export class ZoomController {
 
         this.zoomToPoint(newZoom, mouseX, mouseY);
       }
-    }
-  }
-
-  /**
-   * Handle keyboard shortcuts for zoom
-   */
-  private handleKeydown(e: KeyboardEvent): void {
-    // Only handle when not in an input field
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
-      return;
-    }
-
-    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-    const modifierKey = isMac ? e.metaKey : e.ctrlKey;
-
-    if (!modifierKey) return;
-
-    switch (e.key) {
-      case '=':
-      case '+':
-        // Zoom in
-        e.preventDefault();
-        this.zoomIn();
-        break;
-      case '-':
-        // Zoom out
-        e.preventDefault();
-        this.zoomOut();
-        break;
-      case '0':
-        // Reset zoom
-        e.preventDefault();
-        this.resetZoom();
-        break;
     }
   }
 
@@ -239,7 +200,6 @@ export class ZoomController {
    */
   destroy(): void {
     this.scrollContainer.removeEventListener('wheel', this.boundHandleWheel);
-    window.removeEventListener('keydown', this.boundHandleKeydown);
   }
 }
 

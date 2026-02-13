@@ -58,15 +58,6 @@ export class Toolbar {
     this.themeToggleBtn?.addEventListener('click', () => {
       this.callbacks.onToggleTheme?.();
     });
-
-    // Keyboard shortcuts
-    document.addEventListener('keydown', (e) => {
-      // Cmd/Ctrl + O to open file
-      if ((e.metaKey || e.ctrlKey) && e.key === 'o') {
-        e.preventDefault();
-        this.callbacks.onOpenFile?.();
-      }
-    });
   }
 
   /**

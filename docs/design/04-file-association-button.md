@@ -10,10 +10,12 @@
 
 Users want to open `.md` files directly from Finder by double-clicking them. While the app already declares file associations in `forge.config.ts`, macOS doesn't automatically set this app as the default handler. Users need a way to:
 
+This was added after file was opened. You can easily see changes
+As well as removals without having to read through the entire document
+again and again. Quite handy when working with claude-code or similar models.
+
 1. Register the app as a handler for `.md` files
 2. Have the app actually open files when launched via Finder/file association
-
-Currently, the app has **no runtime handler** for the `app.on('open-file')` event, so even if file associations were set, files wouldn't open.
 
 ## 2. Goals & Non-Goals
 

@@ -16,7 +16,11 @@ A fast, native macOS/Windows/Linux desktop app for viewing Markdown files with l
 
 ## Installation
 
-Download the latest release from the [Releases](https://github.com/ptheofan/open-markdown/releases) page:
+**Mac App Store** (recommended for macOS):
+
+[![Download on the Mac App Store](https://developer.apple.com/assets/elements/badges/download-on-the-mac-app-store.svg)](https://apps.apple.com/us/app/open-markdown/id6758868093?mt=12)
+
+Or download the latest release from the [Releases](https://github.com/ptheofan/open-markdown/releases) page:
 
 - **macOS**: `.dmg` or `.zip`
 - **Windows**: `.exe` installer

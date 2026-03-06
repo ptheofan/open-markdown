@@ -9,6 +9,12 @@ export const MARKDOWN_EXTENSIONS = ['.md', '.markdown', '.mdown', '.mkdn', '.mkd
 export const FILE_WATCH_DEBOUNCE_MS = 300;
 
 /**
+ * Delay before confirming file deletion after unlink (ms).
+ * Prevents false deletes from atomic-save workflows.
+ */
+export const FILE_DELETE_CONFIRM_MS = 750;
+
+/**
  * Maximum file size to render (bytes) - 5MB
  */
 export const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;

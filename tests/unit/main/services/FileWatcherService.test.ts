@@ -10,6 +10,7 @@ import {
   getFileWatcherService,
 } from '@main/services/FileWatcherService';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { FILE_DELETE_CONFIRM_MS } from '@shared/constants';
 
 interface MockWatcher {
   on: ReturnType<typeof vi.fn>;
@@ -41,6 +42,17 @@ function getWatcher(index: number): MockWatcher {
   return watcher;
 }
 
+function getWatcherEventHandler(index: number, eventName: string): (filePath: string) => void {
+  const call = getWatcher(index).on.mock.calls.find(
+    (entry: unknown[]) => entry[0] === eventName
+  );
+  const handler = call?.[1];
+  if (typeof handler !== 'function') {
+    throw new Error(`No ${eventName} handler found for watcher ${index}`);
+  }
+  return handler as (filePath: string) => void;
+}
+
 vi.mock('chokidar', () => ({
   watch: vi.fn(() => {
     const watcher = createMockWatcher();
@@ -66,6 +78,7 @@ describe('FileWatcherService', () => {
   });
 
   afterEach(async () => {
+    vi.useRealTimers();
     await service.destroy();
     try {
       await fs.rm(tempDir, { recursive: true, force: true });
@@ -92,6 +105,12 @@ describe('FileWatcherService', () => {
       await service.watch(testFile, 1);
 
       expect(getWatcher(0).on).toHaveBeenCalledWith('change', expect.any(Function));
+    });
+
+    it('should register add event handler', async () => {
+      await service.watch(testFile, 1);
+
+      expect(getWatcher(0).on).toHaveBeenCalledWith('add', expect.any(Function));
     });
 
     it('should register unlink event handler', async () => {
@@ -232,13 +251,18 @@ describe('FileWatcherService', () => {
       service.onFileDelete(1, callback);
 
       await service.watch(testFile, 1);
+      vi.useFakeTimers();
 
-      const unlinkCall = getWatcher(0).on.mock.calls.find(
-        (call: unknown[]) => call[0] === 'unlink'
-      );
-      const unlinkHandler = unlinkCall?.[1] as (path: string) => void;
+      const unlinkHandler = getWatcherEventHandler(0, 'unlink');
 
+      await fs.rm(testFile);
       unlinkHandler(testFile);
+      await vi.advanceTimersByTimeAsync(FILE_DELETE_CONFIRM_MS + 1);
+      await vi.waitFor(() => {
+        expect(callback).toHaveBeenCalledTimes(1);
+      });
+
+      vi.useRealTimers();
 
       expect(callback).toHaveBeenCalledWith(
         expect.objectContaining({ filePath: testFile })
@@ -254,13 +278,18 @@ describe('FileWatcherService', () => {
       service.onFileDelete(1, errorCallback);
 
       await service.watch(testFile, 1);
+      vi.useFakeTimers();
 
-      const unlinkCall = getWatcher(0).on.mock.calls.find(
-        (call: unknown[]) => call[0] === 'unlink'
-      );
-      const unlinkHandler = unlinkCall?.[1] as (path: string) => void;
+      const unlinkHandler = getWatcherEventHandler(0, 'unlink');
 
+      await fs.rm(testFile);
       expect(() => unlinkHandler(testFile)).not.toThrow();
+      await vi.advanceTimersByTimeAsync(FILE_DELETE_CONFIRM_MS + 1);
+      await vi.waitFor(() => {
+        expect(errorCallback).toHaveBeenCalledTimes(1);
+      });
+      vi.useRealTimers();
+
       expect(consoleSpy).toHaveBeenCalledWith(
         'Error in file delete callback:',
         expect.any(Error)
@@ -271,15 +300,65 @@ describe('FileWatcherService', () => {
 
     it('should remove window from watcher after deletion', async () => {
       await service.watch(testFile, 1);
+      vi.useFakeTimers();
 
-      const unlinkCall = getWatcher(0).on.mock.calls.find(
-        (call: unknown[]) => call[0] === 'unlink'
-      );
-      const unlinkHandler = unlinkCall?.[1] as (path: string) => void;
+      const unlinkHandler = getWatcherEventHandler(0, 'unlink');
+
+      await fs.rm(testFile);
+      unlinkHandler(testFile);
+      await vi.advanceTimersByTimeAsync(FILE_DELETE_CONFIRM_MS + 1);
+      await vi.waitFor(() => {
+        expect(service.isWatchingFile(testFile)).toBe(false);
+      });
+      vi.useRealTimers();
+    });
+
+    it('should not emit delete for transient unlink followed by add', async () => {
+      const deleteCallback = vi.fn();
+      const changeCallback = vi.fn();
+      service.onFileDelete(1, deleteCallback);
+      service.onFileChange(1, changeCallback);
+
+      await service.watch(testFile, 1);
+      vi.useFakeTimers();
+
+      const unlinkHandler = getWatcherEventHandler(0, 'unlink');
+      const addHandler = getWatcherEventHandler(0, 'add');
 
       unlinkHandler(testFile);
+      addHandler(testFile);
+      await vi.advanceTimersByTimeAsync(FILE_DELETE_CONFIRM_MS + 1);
+      await vi.waitFor(() => {
+        expect(changeCallback).toHaveBeenCalledTimes(1);
+      });
+      vi.useRealTimers();
 
-      expect(service.isWatchingFile(testFile)).toBe(false);
+      expect(deleteCallback).not.toHaveBeenCalled();
+      expect(service.isWatchingFile(testFile)).toBe(true);
+    });
+
+    it('should not emit delete for transient unlink followed by change', async () => {
+      const deleteCallback = vi.fn();
+      const changeCallback = vi.fn();
+      service.onFileDelete(1, deleteCallback);
+      service.onFileChange(1, changeCallback);
+
+      await service.watch(testFile, 1);
+      vi.useFakeTimers();
+
+      const unlinkHandler = getWatcherEventHandler(0, 'unlink');
+      const changeHandler = getWatcherEventHandler(0, 'change');
+
+      unlinkHandler(testFile);
+      changeHandler(testFile);
+      await vi.advanceTimersByTimeAsync(FILE_DELETE_CONFIRM_MS + 1);
+      await vi.waitFor(() => {
+        expect(changeCallback).toHaveBeenCalledTimes(1);
+      });
+      vi.useRealTimers();
+
+      expect(deleteCallback).not.toHaveBeenCalled();
+      expect(service.isWatchingFile(testFile)).toBe(true);
     });
   });
 
@@ -372,6 +451,7 @@ describe('FileWatcherService', () => {
 
       await service.watch(testFile, 1);
       await service.watch(secondFile, 2);
+      vi.useFakeTimers();
 
       // Trigger delete on secondFile (watched by window 2)
       const unlinkCall = getWatcher(1).on.mock.calls.find(
@@ -379,7 +459,13 @@ describe('FileWatcherService', () => {
       );
       const unlinkHandler = unlinkCall?.[1] as (path: string) => void;
 
+      await fs.rm(secondFile);
       unlinkHandler(secondFile);
+      await vi.advanceTimersByTimeAsync(FILE_DELETE_CONFIRM_MS + 1);
+      await vi.waitFor(() => {
+        expect(callback2).toHaveBeenCalledTimes(1);
+      });
+      vi.useRealTimers();
 
       expect(callback1).not.toHaveBeenCalled();
       expect(callback2).toHaveBeenCalledWith(

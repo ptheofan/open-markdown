@@ -4,7 +4,7 @@
  */
 import { readFile, stat } from 'node:fs/promises';
 
-import { FILE_WATCH_DEBOUNCE_MS } from '@shared/constants';
+import { FILE_DELETE_CONFIRM_MS, FILE_WATCH_DEBOUNCE_MS } from '@shared/constants';
 import { FileWatchError } from '@shared/errors';
 import { watch } from 'chokidar';
 
@@ -27,6 +27,7 @@ interface WindowCallbacks {
 export class FileWatcherService {
   private watchedFiles: Map<string, WatchedFileEntry> = new Map();
   private windowCallbacks: Map<number, WindowCallbacks> = new Map();
+  private pendingDeleteTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
 
   /**
    * Start watching a file for a specific window.
@@ -56,11 +57,17 @@ export class FileWatcherService {
       };
 
       watcher.on('change', (changedPath: string) => {
+        this.cancelPendingDelete(changedPath);
         void this.processFileChange(changedPath);
       });
 
+      watcher.on('add', (addedPath: string) => {
+        this.cancelPendingDelete(addedPath);
+        void this.processFileChange(addedPath);
+      });
+
       watcher.on('unlink', (deletedPath: string) => {
-        this.handleFileDelete(deletedPath);
+        this.scheduleFileDeleteConfirmation(deletedPath);
       });
 
       watcher.on('error', (error: unknown) => {
@@ -166,6 +173,7 @@ export class FileWatcherService {
   }
 
   private async closeWatcherEntry(filePath: string, entry: WatchedFileEntry): Promise<void> {
+    this.cancelPendingDelete(filePath);
     await entry.watcher.close();
     this.watchedFiles.delete(filePath);
   }
@@ -230,6 +238,34 @@ export class FileWatcherService {
     // Remove the entry and close the watcher (fire-and-forget since file is already gone)
     this.watchedFiles.delete(filePath);
     void entry.watcher.close();
+    this.cancelPendingDelete(filePath);
+  }
+
+  private scheduleFileDeleteConfirmation(filePath: string): void {
+    this.cancelPendingDelete(filePath);
+
+    const timer = setTimeout(() => {
+      void this.confirmAndHandleFileDelete(filePath);
+    }, FILE_DELETE_CONFIRM_MS);
+
+    this.pendingDeleteTimers.set(filePath, timer);
+  }
+
+  private cancelPendingDelete(filePath: string): void {
+    const timer = this.pendingDeleteTimers.get(filePath);
+    if (!timer) return;
+
+    clearTimeout(timer);
+    this.pendingDeleteTimers.delete(filePath);
+  }
+
+  private async confirmAndHandleFileDelete(filePath: string): Promise<void> {
+    this.pendingDeleteTimers.delete(filePath);
+
+    const stats = await this.getFileStats(filePath);
+    if (stats) return;
+
+    this.handleFileDelete(filePath);
   }
 
   private async getFileStats(filePath: string): Promise<FileStats | null> {

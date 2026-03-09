@@ -41,6 +41,7 @@ import {
   type CopyDocumentType,
 } from './renderer/services';
 import { isDomainError } from '@shared/errors';
+import { BUILTIN_PLUGINS } from '@shared/constants';
 import { applyTheme as applyThemeCSS } from './themes';
 
 import type {
@@ -53,8 +54,10 @@ import type {
   CorePreferences,
   ExternalFileOpenEvent,
   RecentFileEntry,
+  MermaidDiagramData,
 } from '@shared/types';
 import type { GoogleAuthState } from '@shared/types/google-docs';
+import type { MermaidPlugin } from '@plugins/builtin/MermaidPlugin';
 import type { ResolvedTheme } from './themes/types';
 
 /**
@@ -919,6 +922,38 @@ class App {
   }
 
   /**
+   * Extract mermaid diagram data (PNG + live URL) from the rendered viewer.
+   * Used to pass diagram images to the Google Docs sync service.
+   */
+  private async extractMermaidData(): Promise<MermaidDiagramData[]> {
+    const viewer = document.getElementById('markdown-content');
+    if (!viewer || !this.markdownViewer) return [];
+
+    const pluginManager = this.markdownViewer.getPluginManager();
+    const mermaidPlugin = pluginManager.getPlugin<MermaidPlugin>(BUILTIN_PLUGINS.MERMAID);
+    if (!mermaidPlugin) return [];
+
+    const containers = viewer.querySelectorAll('.mermaid-container[data-mermaid-source]');
+    const diagrams: MermaidDiagramData[] = [];
+
+    for (const container of containers) {
+      const encodedSource = container.getAttribute('data-mermaid-source');
+      if (!encodedSource) continue;
+
+      try {
+        const code = mermaidPlugin.decodeFromAttribute(encodedSource);
+        const pngBase64 = await mermaidPlugin.renderToPng(container as HTMLElement);
+        const liveUrl = mermaidPlugin.generateMermaidLiveUrl(code);
+        diagrams.push({ code, pngBase64, liveUrl });
+      } catch (error) {
+        console.warn('Failed to extract mermaid diagram:', error);
+      }
+    }
+
+    return diagrams;
+  }
+
+  /**
    * Handle Google Docs sync
    */
   private async handleGoogleDocsSync(): Promise<void> {
@@ -930,9 +965,13 @@ class App {
     this.googleDocsButton?.setState('syncing');
 
     try {
+      // Extract mermaid diagrams from the rendered viewer
+      const mermaidData = await this.extractMermaidData();
+
       const result = await window.electronAPI.googleDocs.sync(
         this.state.currentFilePath,
-        content
+        content,
+        mermaidData.length > 0 ? mermaidData : undefined,
       );
 
       if (result.externalEditsDetected) {
@@ -940,7 +979,7 @@ class App {
 
         // Show confirmation dialog and wait for user response
         this.googleDocsConfirmDialog?.setCallbacks({
-          onConfirm: () => { void this.handleGoogleDocsSyncOverwrite(content); },
+          onConfirm: () => { void this.handleGoogleDocsSyncOverwrite(content, mermaidData); },
           onCancel: () => { /* do nothing, button already set to ready */ },
         });
         this.googleDocsConfirmDialog?.show();
@@ -962,7 +1001,7 @@ class App {
   /**
    * Handle Google Docs sync overwrite after confirmation
    */
-  private async handleGoogleDocsSyncOverwrite(content: string): Promise<void> {
+  private async handleGoogleDocsSyncOverwrite(content: string, mermaidData?: MermaidDiagramData[]): Promise<void> {
     if (!this.state.currentFilePath) return;
 
     this.googleDocsButton?.setState('syncing');
@@ -970,7 +1009,8 @@ class App {
     try {
       const result = await window.electronAPI.googleDocs.syncConfirmOverwrite(
         this.state.currentFilePath,
-        content
+        content,
+        mermaidData && mermaidData.length > 0 ? mermaidData : undefined,
       );
       if (result.success) {
         this.toast?.success('Synced to Google Docs (overwritten)');

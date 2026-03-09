@@ -93,6 +93,7 @@ export type {
   DocsTextRun,
   DocsElement,
   DocsDocument,
+  MermaidDiagramData,
 } from './google-docs';
 
 // Diff types

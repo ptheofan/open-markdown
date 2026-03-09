@@ -12,7 +12,7 @@ import type {
   ExternalFileOpenEvent,
 } from './fileAssociation';
 import type { RecentFileEntry } from './recentFiles';
-import type { GoogleDocLink, GoogleDocsSyncResult, GoogleAuthState } from './google-docs';
+import type { GoogleDocLink, GoogleDocsSyncResult, GoogleAuthState, MermaidDiagramData } from './google-docs';
 
 /**
  * IPC Channel names for type-safe communication
@@ -256,8 +256,8 @@ export interface GoogleDocsAPI {
   link: (filePath: string, docUrl: string) => Promise<GoogleDocLink>;
   unlink: (filePath: string) => Promise<void>;
   getLink: (filePath: string) => Promise<GoogleDocLink | null>;
-  sync: (filePath: string, markdownContent: string) => Promise<GoogleDocsSyncResult>;
-  syncConfirmOverwrite: (filePath: string, markdownContent: string) => Promise<GoogleDocsSyncResult>;
+  sync: (filePath: string, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[]) => Promise<GoogleDocsSyncResult>;
+  syncConfirmOverwrite: (filePath: string, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[]) => Promise<GoogleDocsSyncResult>;
   onAuthChange: (callback: (state: GoogleAuthState) => void) => () => void;
   onSyncStatus: (callback: (status: { syncing: boolean; error?: string }) => void) => () => void;
 }

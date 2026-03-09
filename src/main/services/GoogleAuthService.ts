@@ -12,7 +12,19 @@ import path from 'path';
 import { app, safeStorage, shell } from 'electron';
 import type { GoogleAuthState } from '@shared/types/google-docs';
 
-const DEFAULT_CLIENT_ID = 'YOUR_CLIENT_ID.apps.googleusercontent.com';
+declare const __GOOGLE_OAUTH_CLIENT_ID_ENC__: string;
+
+/** Deobfuscate a build-time encrypted string (AES-256-CBC) */
+function deobfuscate(encoded: string): string {
+  if (!encoded) return '';
+  const [ivHex, encHex] = encoded.split(':');
+  if (!ivHex || !encHex) return '';
+  const key = crypto.scryptSync('open-markdown-obf', 'docs-salt', 32);
+  const decipher = crypto.createDecipheriv('aes-256-cbc', key, Buffer.from(ivHex, 'hex'));
+  return Buffer.concat([decipher.update(Buffer.from(encHex, 'hex')), decipher.final()]).toString('utf8');
+}
+
+const DEFAULT_CLIENT_ID = deobfuscate(__GOOGLE_OAUTH_CLIENT_ID_ENC__);
 
 const SCOPES = [
   'https://www.googleapis.com/auth/documents',

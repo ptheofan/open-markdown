@@ -2,6 +2,9 @@ import { defineConfig } from 'vitest/config';
 import path from 'node:path';
 
 export default defineConfig({
+  define: {
+    '__GOOGLE_OAUTH_CLIENT_ID_ENC__': JSON.stringify(''),
+  },
   test: {
     globals: true,
     environment: 'node',

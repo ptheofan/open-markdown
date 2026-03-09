@@ -65,6 +65,7 @@ export type {
   PreferencesAPI,
   FileAssociationAPI,
   RecentFilesAPI,
+  GoogleDocsAPI,
   ElectronAPI,
   FullscreenChangeEvent,
   ContextMenuItem,
@@ -82,6 +83,17 @@ export type {
 
 // Recent files types
 export type { RecentFileEntry } from './recentFiles';
+
+// Google Docs types
+export type {
+  GoogleDocLink,
+  GoogleDocsSyncResult,
+  GoogleAuthState,
+  GoogleCredentialsConfig,
+  DocsTextRun,
+  DocsElement,
+  DocsDocument,
+} from './google-docs';
 
 // Diff types
 export type {

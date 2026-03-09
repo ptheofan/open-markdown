@@ -124,6 +124,10 @@ export const DEFAULT_CORE_PREFERENCES: CorePreferences = {
       itemSpacing: '0.25em',
     },
   },
+  googleDocs: {
+    useCustomCredentials: false,
+    customClientId: '',
+  },
 };
 
 /**

@@ -88,6 +88,10 @@ export interface CorePreferences {
     ul: ListStyle;
     ol: ListStyle;
   };
+  googleDocs: {
+    useCustomCredentials: boolean;
+    customClientId: string;
+  };
 }
 
 /**

@@ -108,6 +108,10 @@
           <span id="status-file-path" class="status-item" title="File path">No file</span>
         </div>
         <div class="status-right">
+          <span id="status-gdocs" class="status-item status-gdocs hidden" title="Google Docs link status">
+            <span class="status-gdocs-dot"></span>
+            <span id="status-gdocs-text">Linked</span>
+          </span>
           <span id="status-zoom" class="status-item status-zoom" title="Zoom level">100%</span>
           <span id="status-modified" class="status-item" title="Last modified"></span>
           <span id="status-watch" class="status-item status-watch" title="Watch status">
@@ -130,6 +134,18 @@
           <div class="gdocs-dialog-actions">
             <button id="gdocs-link-cancel" class="gdocs-dialog-btn gdocs-dialog-btn-secondary">Cancel</button>
             <button id="gdocs-link-confirm" class="gdocs-dialog-btn gdocs-dialog-btn-primary">Link</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Google Docs Overwrite Confirmation Dialog -->
+      <div id="gdocs-confirm-dialog" class="gdocs-dialog-overlay hidden">
+        <div class="gdocs-dialog">
+          <h3 class="gdocs-dialog-title">External changes detected</h3>
+          <p class="gdocs-dialog-text">The Google Doc has been edited since your last sync. Overwriting will replace those changes with your markdown content.</p>
+          <div class="gdocs-dialog-actions">
+            <button id="gdocs-confirm-cancel" class="gdocs-dialog-btn gdocs-dialog-btn-secondary">Cancel</button>
+            <button id="gdocs-confirm-overwrite" class="gdocs-dialog-btn gdocs-dialog-btn-danger">Overwrite</button>
           </div>
         </div>
       </div>

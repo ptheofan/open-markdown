@@ -1570,6 +1570,16 @@ button:focus:not(:focus-visible) {
   opacity: 0.9;
 }
 
+.gdocs-dialog-btn-danger {
+  background: #e53e3e;
+  color: white;
+  border-color: transparent;
+}
+
+.gdocs-dialog-btn-danger:hover {
+  background: #c53030;
+}
+
 /* Google Docs Sync Button spinner animation */
 #gdocs-sync-btn .spinner-icon {
   animation: spin 1s linear infinite;

@@ -141,39 +141,35 @@ export class GoogleDocsSyncService {
    */
   async sync(filePath: string, docId: string, markdown: string, mermaidDiagrams?: MermaidDiagramData[]): Promise<GoogleDocsSyncResult> {
     try {
-      // 1. Load baseline from linkStore
+      console.log('[SyncService] Step 1: Loading baseline...');
       const baseline = await this.linkStore.loadBaseline(docId);
-
-      // 2. Read current doc from Google Docs API
+      console.log('[SyncService] Step 2: Reading current doc from API...');
       const currentDoc = await this.docsService.getDocument(docId);
-
-      // 3. Extract plain text from current doc ("theirs")
+      console.log('[SyncService] Step 3: Extracting plain text...');
       const theirs = this.docsService.extractPlainText(currentDoc);
-
-      // 4. Convert markdown to DocsDocument
+      console.log('[SyncService] Step 4: Converting markdown...');
       const docsDoc = convertMarkdownToDocs(markdown);
-
-      // 5. Process mermaid diagrams — upload to Drive and set image links
+      console.log('[SyncService] Step 5: Processing mermaid diagrams...');
       await this.processMermaidDiagrams(docsDoc, mermaidDiagrams);
-
-      // 6. Extract plain text from DocsDocument ("ours")
+      console.log('[SyncService] Step 6: Extracting our plain text...');
       const ours = extractPlainTextFromDocsDoc(docsDoc);
 
-      // Three-way check:
       if (baseline === null) {
-        // 7. First sync → fullPopulate
+        console.log('[SyncService] First sync → fullPopulate');
         return await this.fullPopulate(docId, filePath, docsDoc, ours);
       }
 
       if (baseline !== theirs) {
-        // 8. External edits detected
+        console.log('[SyncService] External edits detected');
         return { success: false, externalEditsDetected: true };
       }
 
-      // 9. No external edits → applyDiff
+      console.log('[SyncService] Applying diff...');
       return await this.applyDiff(docId, filePath, theirs, docsDoc, ours);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
+      const stack = err instanceof Error ? err.stack : '';
+      console.error('[SyncService] ERROR:', message, '\n', stack);
       return { success: false, error: message };
     }
   }
@@ -188,26 +184,13 @@ export class GoogleDocsSyncService {
     mermaidDiagrams?: MermaidDiagramData[],
   ): Promise<GoogleDocsSyncResult> {
     try {
-      // 1. Load baseline (unused for check, but we still follow the flow)
-      await this.linkStore.loadBaseline(docId);
-
-      // 2. Read current doc from Google Docs API
-      const currentDoc = await this.docsService.getDocument(docId);
-
-      // 3. Extract plain text from current doc ("theirs")
-      const theirs = this.docsService.extractPlainText(currentDoc);
-
-      // 4. Convert markdown to DocsDocument
+      console.log('[SyncService] Force overwrite — clearing doc and repopulating');
       const docsDoc = convertMarkdownToDocs(markdown);
-
-      // 5. Process mermaid diagrams — upload to Drive and set image links
       await this.processMermaidDiagrams(docsDoc, mermaidDiagrams);
-
-      // 6. Extract plain text from DocsDocument ("ours")
       const ours = extractPlainTextFromDocsDoc(docsDoc);
 
-      // Skip external edit check — apply diff directly
-      return await this.applyDiff(docId, filePath, theirs, docsDoc, ours);
+      // Full clear + repopulate (same as first sync)
+      return await this.fullPopulate(docId, filePath, docsDoc, ours);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return { success: false, error: message };
@@ -257,7 +240,21 @@ export class GoogleDocsSyncService {
     docsDoc: DocsDocument,
     plainText: string,
   ): Promise<GoogleDocsSyncResult> {
+    // First, clear any existing content from the doc
+    const currentDoc = await this.docsService.getDocument(docId);
+    const endIndex = currentDoc?.body?.content?.at(-1)?.endIndex;
+    if (endIndex && endIndex > 2) {
+      console.log(`[SyncService] Clearing existing doc content (endIndex: ${endIndex})`);
+      await this.docsService.batchUpdate(docId, [{
+        deleteContentRange: {
+          range: { startIndex: 1, endIndex: endIndex - 1 },
+        },
+      }]);
+    }
+
+    // Now insert our content into the clean doc
     const requests = buildInsertRequests(docsDoc, 1);
+    console.log(`[SyncService] fullPopulate: ${requests.length} total requests`);
     if (requests.length > 0) {
       await this.docsService.batchUpdate(docId, requests);
     }

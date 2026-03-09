@@ -13,6 +13,7 @@ import { app, safeStorage, shell } from 'electron';
 import type { GoogleAuthState } from '@shared/types/google-docs';
 
 declare const __GOOGLE_OAUTH_CLIENT_ID_ENC__: string;
+declare const __GOOGLE_OAUTH_CLIENT_SECRET_ENC__: string;
 
 /** Deobfuscate a build-time encrypted string (AES-256-CBC) */
 function deobfuscate(encoded: string): string {
@@ -25,10 +26,12 @@ function deobfuscate(encoded: string): string {
 }
 
 const DEFAULT_CLIENT_ID = deobfuscate(__GOOGLE_OAUTH_CLIENT_ID_ENC__);
+const DEFAULT_CLIENT_SECRET = deobfuscate(__GOOGLE_OAUTH_CLIENT_SECRET_ENC__);
 
 const SCOPES = [
   'https://www.googleapis.com/auth/documents',
   'https://www.googleapis.com/auth/drive.file',
+  'email',
 ];
 
 const AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
@@ -63,8 +66,6 @@ export class GoogleAuthService {
   constructor(dataDir?: string) {
     const dir = dataDir ?? app.getPath('userData');
     this.tokenPath = path.join(dir, 'google-auth-tokens');
-    // Start the callback server immediately so we know the port for auth URLs
-    this.startCallbackServerSync();
   }
 
   /**
@@ -80,13 +81,22 @@ export class GoogleAuthService {
   // ── Auth state ────────────────────────────────────────────
 
   getAuthState(): GoogleAuthState {
-    if (!this.tokens) {
-      return { isAuthenticated: false };
+    // If tokens are in memory, we're authenticated
+    if (this.tokens) {
+      return { isAuthenticated: true, userEmail: this.tokens.email };
     }
-    return {
-      isAuthenticated: true,
-      userEmail: this.tokens.email,
-    };
+    // If not initialized yet, check if token file exists on disk (no keychain access)
+    if (!this.initialized) {
+      try {
+        const fs = require('fs');
+        if (fs.existsSync(this.tokenPath)) {
+          return { isAuthenticated: true }; // tokens on disk, will load lazily on sync
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return { isAuthenticated: false };
   }
 
   // ── Auth flow ─────────────────────────────────────────────
@@ -127,20 +137,30 @@ export class GoogleAuthService {
    * 6. Save tokens
    */
   async signIn(): Promise<GoogleAuthState> {
+    await this.initialize();
+    // Ensure callback server is running (may have been stopped after previous auth)
+    if (!this.callbackServer) {
+      this.startCallbackServerSync();
+    }
+
     const { url, codeVerifier } = this.generateAuthUrl();
 
     // Open in system browser
     await shell.openExternal(url);
 
     // Wait for the authorization code from the callback server
+    console.log('[GoogleAuth] Waiting for callback...');
     const code = await this.waitForCallback();
+    console.log('[GoogleAuth] Got auth code, exchanging for tokens...');
 
     // Exchange the code for tokens
     const activeClientId = this.getActiveClientId();
     const tokenResponse = await this.exchangeCode(code, codeVerifier, activeClientId);
+    console.log('[GoogleAuth] Token exchange successful, fetching user email...');
 
     // Fetch user info to get email
     const email = await this.fetchUserEmail(tokenResponse.access_token);
+    console.log('[GoogleAuth] Got email:', email);
 
     // Store tokens
     this.tokens = {
@@ -151,6 +171,7 @@ export class GoogleAuthService {
     };
 
     await this.saveTokens();
+    console.log('[GoogleAuth] Tokens saved. Auth state:', this.getAuthState());
 
     return this.getAuthState();
   }
@@ -174,6 +195,7 @@ export class GoogleAuthService {
    * Throws if not authenticated.
    */
   async getAccessToken(): Promise<string> {
+    await this.initialize();
     if (!this.tokens) {
       throw new Error('Not authenticated. Call signIn() first.');
     }
@@ -206,6 +228,10 @@ export class GoogleAuthService {
   // ── Cleanup ───────────────────────────────────────────────
 
   destroy(): void {
+    this.stopCallbackServer();
+  }
+
+  private stopCallbackServer(): void {
     if (this.callbackServer) {
       this.callbackServer.close();
       this.callbackServer = null;
@@ -245,11 +271,19 @@ export class GoogleAuthService {
       }, 5 * 60 * 1000);
 
       const handler = (req: http.IncomingMessage, res: http.ServerResponse) => {
-        if (!req.url) return;
+        if (!req.url) {
+          res.writeHead(404);
+          res.end();
+          return;
+        }
 
         const reqUrl = new URL(req.url, `http://localhost:${this.callbackPort}`);
 
-        if (reqUrl.pathname !== '/callback') return;
+        if (reqUrl.pathname !== '/callback') {
+          res.writeHead(404);
+          res.end();
+          return;
+        }
 
         const code = reqUrl.searchParams.get('code');
         const error = reqUrl.searchParams.get('error');
@@ -260,7 +294,7 @@ export class GoogleAuthService {
             '<html><body><h1>Authorization failed</h1><p>You can close this window.</p></body></html>'
           );
           clearTimeout(timeout);
-          this.callbackServer?.removeListener('request', handler);
+          this.stopCallbackServer();
           reject(new Error(`OAuth error: ${error}`));
           return;
         }
@@ -271,7 +305,7 @@ export class GoogleAuthService {
             '<html><body><h1>Authorization successful!</h1><p>You can close this window.</p></body></html>'
           );
           clearTimeout(timeout);
-          this.callbackServer?.removeListener('request', handler);
+          this.stopCallbackServer();
           resolve(code);
         }
       };
@@ -291,6 +325,7 @@ export class GoogleAuthService {
     const body = new URLSearchParams({
       code,
       client_id: clientId,
+      client_secret: DEFAULT_CLIENT_SECRET,
       redirect_uri: `http://localhost:${this.callbackPort}/callback`,
       grant_type: 'authorization_code',
       code_verifier: codeVerifier,
@@ -325,6 +360,7 @@ export class GoogleAuthService {
     const body = new URLSearchParams({
       refresh_token: this.tokens.refresh_token,
       client_id: this.getActiveClientId(),
+      client_secret: DEFAULT_CLIENT_SECRET,
       grant_type: 'refresh_token',
     });
 

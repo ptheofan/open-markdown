@@ -125,10 +125,12 @@ describe('GoogleDocsService', () => {
         ok: false,
         status: 400,
         statusText: 'Bad Request',
-        json: () => Promise.resolve({ error: { message: 'Invalid request' } }),
+        text: () => Promise.resolve('{"error":{"message":"Invalid request"}}'),
       });
 
-      await expect(service.batchUpdate('doc-123', [])).rejects.toThrow('Invalid request');
+      await expect(service.batchUpdate('doc-123', [])).rejects.toThrow(
+        'Google Docs API error (400): {"error":{"message":"Invalid request"}}',
+      );
     });
   });
 

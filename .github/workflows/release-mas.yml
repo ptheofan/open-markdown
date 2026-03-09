@@ -91,6 +91,7 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER }}
           BUILD_NUMBER: ${{ github.run_number }}
           GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
         run: fastlane mac release
 
       - name: Cleanup keychain

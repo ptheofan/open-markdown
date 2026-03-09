@@ -30,9 +30,14 @@ export function registerGoogleDocsHandlers(): void {
 
   // Sign in
   ipcMain.handle(IPC_CHANNELS.GOOGLE_DOCS.AUTH_SIGN_IN, async () => {
-    const state = await authService.signIn();
-    sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_AUTH_CHANGE, state);
-    return state;
+    try {
+      const state = await authService.signIn();
+      sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_AUTH_CHANGE, state);
+      return state;
+    } catch (error) {
+      console.error('Google Docs sign-in error:', error);
+      throw error;
+    }
   });
 
   // Sign out
@@ -77,19 +82,23 @@ export function registerGoogleDocsHandlers(): void {
   ipcMain.handle(
     IPC_CHANNELS.GOOGLE_DOCS.SYNC,
     async (_event, filePath: string, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[]) => {
-      const link = linkStore.getLink(filePath);
-      if (!link) throw new Error('File not linked to Google Docs');
-      sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, { syncing: true });
       try {
+        console.log('[SYNC] Starting sync for:', filePath);
+        const link = linkStore.getLink(filePath);
+        console.log('[SYNC] Link:', link);
+        if (!link) return { success: false, error: 'File not linked to Google Docs' };
+        console.log('[SYNC] Calling syncService.sync...');
+        sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, { syncing: true });
         const result = await syncService.sync(filePath, link.docId, markdownContent, mermaidDiagrams);
+        console.log('[SYNC] Result:', JSON.stringify(result));
         sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, { syncing: false });
         return result;
       } catch (error) {
-        sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, {
-          syncing: false,
-          error: error instanceof Error ? error.message : 'Sync failed',
-        });
-        throw error;
+        const message = error instanceof Error ? error.message : String(error);
+        const stack = error instanceof Error ? error.stack : '';
+        console.error('Google Docs sync error:', message, '\n', stack);
+        sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, { syncing: false, error: message });
+        return { success: false, error: message };
       }
     },
   );
@@ -99,7 +108,7 @@ export function registerGoogleDocsHandlers(): void {
     IPC_CHANNELS.GOOGLE_DOCS.SYNC_CONFIRM_OVERWRITE,
     async (_event, filePath: string, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[]) => {
       const link = linkStore.getLink(filePath);
-      if (!link) throw new Error('File not linked to Google Docs');
+      if (!link) return { success: false, error: 'File not linked to Google Docs' };
       sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, { syncing: true });
       try {
         const result = await syncService.syncForceOverwrite(
@@ -111,11 +120,10 @@ export function registerGoogleDocsHandlers(): void {
         sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, { syncing: false });
         return result;
       } catch (error) {
-        sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, {
-          syncing: false,
-          error: error instanceof Error ? error.message : 'Sync failed',
-        });
-        throw error;
+        const message = error instanceof Error ? error.message : 'Sync failed';
+        console.error('Google Docs overwrite sync error:', error);
+        sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, { syncing: false, error: message });
+        return { success: false, error: message };
       }
     },
   );

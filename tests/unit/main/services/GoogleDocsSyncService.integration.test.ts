@@ -416,16 +416,11 @@ describe('GoogleDocsSyncService Integration', () => {
       expect(Buffer.isBuffer(uploadCall[0])).toBe(true);
       expect(uploadCall[1]).toContain('mermaid-');
 
-      // Images are now rendered as "[Mermaid Diagram]" text with a link style
+      // Images are rendered via insertInlineImage requests
       const requests: any[] = mockDocsService.batchUpdate.mock.calls[0]![1];
-      const mermaidTexts = requests.filter(
-        (r: any) => r.insertText?.text?.includes('[Mermaid Diagram]'),
-      );
-      expect(mermaidTexts.length).toBe(1);
-
-      // No insertInlineImage requests
       const imageInserts = requests.filter((r: any) => r.insertInlineImage);
-      expect(imageInserts.length).toBe(0);
+      expect(imageInserts.length).toBe(1);
+      expect(imageInserts[0].insertInlineImage.uri).toContain('drive.google.com');
     });
 
     it('should gracefully handle upload failure for mermaid diagrams', async () => {

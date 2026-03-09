@@ -18,6 +18,7 @@ import {
   createOpenExternalDropdown,
   createGoogleDocsLinkDialog,
   createGoogleDocsButton,
+  createGoogleDocsConfirmDialog,
   Toast,
   type MarkdownViewer,
   type DropZone,
@@ -32,6 +33,7 @@ import {
   type OpenExternalDropdown,
   type GoogleDocsLinkDialog,
   type GoogleDocsButton,
+  type GoogleDocsConfirmDialog,
 } from './renderer/components';
 import type { EditModeCallbacks } from './renderer/components/EditModeController';
 import {
@@ -93,6 +95,7 @@ class App {
   private openExternalDropdown: OpenExternalDropdown | null = null;
   private googleDocsButton: GoogleDocsButton | null = null;
   private googleDocsLinkDialog: GoogleDocsLinkDialog | null = null;
+  private googleDocsConfirmDialog: GoogleDocsConfirmDialog | null = null;
 
   private state: AppState = {
     currentFilePath: null,
@@ -266,6 +269,12 @@ class App {
       this.googleDocsLinkDialog.setCallbacks({
         onLink: (url: string) => { void this.handleGoogleDocsLink(url); },
       });
+    }
+
+    // Create Google Docs confirm dialog
+    const gdocsConfirmEl = document.getElementById('gdocs-confirm-dialog');
+    if (gdocsConfirmEl) {
+      this.googleDocsConfirmDialog = createGoogleDocsConfirmDialog(gdocsConfirmEl);
     }
 
     // Create zoom controller for the markdown content
@@ -1024,8 +1033,12 @@ class App {
    * Update Google Docs button state based on auth and link status
    */
   private async updateGoogleDocsButtonState(): Promise<void> {
+    const statusGdocs = document.getElementById('status-gdocs');
+    const statusGdocsText = document.getElementById('status-gdocs-text');
+
     if (!this.state.currentFilePath) {
       this.googleDocsButton?.setState('unlinked');
+      if (statusGdocs) statusGdocs.classList.add('hidden');
       return;
     }
 
@@ -1033,7 +1046,14 @@ class App {
       const link = await window.electronAPI.googleDocs.getLink(this.state.currentFilePath);
       if (!link) {
         this.googleDocsButton?.setState('unlinked');
+        if (statusGdocs) statusGdocs.classList.add('hidden');
         return;
+      }
+
+      // Update status bar indicator for linked file
+      if (statusGdocs && statusGdocsText) {
+        statusGdocs.classList.remove('hidden');
+        statusGdocsText.textContent = `Linked · Last synced ${link.lastSyncedAt ? this.formatTimeAgo(link.lastSyncedAt) : 'never'}`;
       }
 
       const authState = await window.electronAPI.googleDocs.getAuthStatus();
@@ -1046,7 +1066,24 @@ class App {
     } catch (error) {
       console.error('Failed to update Google Docs button state:', error);
       this.googleDocsButton?.setState('unlinked');
+      if (statusGdocs) statusGdocs.classList.add('hidden');
     }
+  }
+
+  /**
+   * Format a time ago string from an ISO date string
+   */
+  private formatTimeAgo(isoString: string): string {
+    const date = new Date(isoString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+
+    if (diffMins < 1) return 'just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    return date.toLocaleDateString();
   }
 
   /**
@@ -1098,23 +1135,18 @@ class App {
       );
 
       if (result.externalEditsDetected) {
-        // Show confirmation dialog
-        const overwrite = confirm(
-          'The Google Doc has been edited since your last sync.\n\nOverwrite with your changes?'
-        );
-        if (overwrite) {
-          const retryResult = await window.electronAPI.googleDocs.syncConfirmOverwrite(
-            this.state.currentFilePath,
-            content
-          );
-          if (retryResult.success) {
-            this.toast?.success('Synced to Google Docs (overwritten)');
-          } else {
-            this.toast?.error(retryResult.error ?? 'Sync failed');
-          }
-        }
+        this.googleDocsButton?.setState('ready');
+
+        // Show confirmation dialog and wait for user response
+        this.googleDocsConfirmDialog?.setCallbacks({
+          onConfirm: () => { void this.handleGoogleDocsSyncOverwrite(content); },
+          onCancel: () => { /* do nothing, button already set to ready */ },
+        });
+        this.googleDocsConfirmDialog?.show();
+        return;
       } else if (result.success) {
         this.toast?.success('Synced to Google Docs');
+        await this.updateGoogleDocsButtonState();
       } else {
         this.toast?.error(result.error ?? 'Sync failed');
       }
@@ -1123,6 +1155,33 @@ class App {
       this.toast?.error('Sync failed');
     } finally {
       this.googleDocsButton?.setState('ready');
+    }
+  }
+
+  /**
+   * Handle Google Docs sync overwrite after confirmation
+   */
+  private async handleGoogleDocsSyncOverwrite(content: string): Promise<void> {
+    if (!this.state.currentFilePath) return;
+
+    this.googleDocsButton?.setState('syncing');
+
+    try {
+      const result = await window.electronAPI.googleDocs.syncConfirmOverwrite(
+        this.state.currentFilePath,
+        content
+      );
+      if (result.success) {
+        this.toast?.success('Synced to Google Docs (overwritten)');
+      } else {
+        this.toast?.error(result.error ?? 'Sync failed');
+      }
+    } catch (error) {
+      console.error('Google Docs overwrite sync failed:', error);
+      this.toast?.error('Sync failed');
+    } finally {
+      this.googleDocsButton?.setState('ready');
+      await this.updateGoogleDocsButtonState();
     }
   }
 
@@ -1212,6 +1271,7 @@ class App {
     this.openExternalDropdown?.destroy();
     this.googleDocsButton?.destroy();
     this.googleDocsLinkDialog?.destroy();
+    this.googleDocsConfirmDialog?.destroy();
   }
 }
 

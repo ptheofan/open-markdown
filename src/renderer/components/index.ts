@@ -143,6 +143,13 @@ export {
   type GoogleDocsButtonCallbacks,
 } from './GoogleDocsButton';
 
+// GoogleDocsConfirmDialog
+export {
+  GoogleDocsConfirmDialog,
+  createGoogleDocsConfirmDialog,
+  type GoogleDocsConfirmDialogCallbacks,
+} from './GoogleDocsConfirmDialog';
+
 // GoogleDocsSettings
 export {
   GoogleDocsSettings,

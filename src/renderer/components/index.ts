@@ -128,3 +128,23 @@ export {
   createOpenExternalDropdown,
   type OpenExternalDropdownCallbacks,
 } from './OpenExternalDropdown';
+// GoogleDocsLinkDialog
+export {
+  GoogleDocsLinkDialog,
+  createGoogleDocsLinkDialog,
+  type GoogleDocsLinkDialogCallbacks,
+} from './GoogleDocsLinkDialog';
+
+// GoogleDocsButton
+export {
+  GoogleDocsButton,
+  createGoogleDocsButton,
+  type GoogleDocsButtonState,
+  type GoogleDocsButtonCallbacks,
+} from './GoogleDocsButton';
+
+// GoogleDocsSettings
+export {
+  GoogleDocsSettings,
+  createGoogleDocsSettings,
+} from './GoogleDocsSettings';

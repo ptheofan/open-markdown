@@ -23,6 +23,13 @@ export interface GoogleCredentialsConfig {
   customClientId?: string;
 }
 
+/** Mermaid diagram data extracted from the renderer for sync */
+export interface MermaidDiagramData {
+  code: string;
+  pngBase64: string;
+  liveUrl: string;
+}
+
 /** Represents a text segment with formatting for Docs API */
 export interface DocsTextRun {
   text: string;

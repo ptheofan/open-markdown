@@ -10,7 +10,7 @@ import { convertMarkdownToDocs } from '@main/services/MarkdownToDocsConverter';
 import { buildInsertRequests } from '@main/services/DocsDocumentBuilder';
 import type { GoogleDocsService } from '@main/services/GoogleDocsService';
 import type { GoogleDocsLinkStore } from '@main/services/GoogleDocsLinkStore';
-import type { DocsDocument, DocsElement, GoogleDocsSyncResult } from '@shared/types/google-docs';
+import type { DocsDocument, DocsElement, GoogleDocsSyncResult, MermaidDiagramData } from '@shared/types/google-docs';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -139,7 +139,7 @@ export class GoogleDocsSyncService {
    * Main sync method — performs three-way diffing to detect external edits
    * and apply minimal changes.
    */
-  async sync(filePath: string, docId: string, markdown: string): Promise<GoogleDocsSyncResult> {
+  async sync(filePath: string, docId: string, markdown: string, mermaidDiagrams?: MermaidDiagramData[]): Promise<GoogleDocsSyncResult> {
     try {
       // 1. Load baseline from linkStore
       const baseline = await this.linkStore.loadBaseline(docId);
@@ -153,21 +153,24 @@ export class GoogleDocsSyncService {
       // 4. Convert markdown to DocsDocument
       const docsDoc = convertMarkdownToDocs(markdown);
 
-      // 5. Extract plain text from DocsDocument ("ours")
+      // 5. Process mermaid diagrams — upload to Drive and set image links
+      await this.processMermaidDiagrams(docsDoc, mermaidDiagrams);
+
+      // 6. Extract plain text from DocsDocument ("ours")
       const ours = extractPlainTextFromDocsDoc(docsDoc);
 
       // Three-way check:
       if (baseline === null) {
-        // 6. First sync → fullPopulate
+        // 7. First sync → fullPopulate
         return await this.fullPopulate(docId, filePath, docsDoc, ours);
       }
 
       if (baseline !== theirs) {
-        // 7. External edits detected
+        // 8. External edits detected
         return { success: false, externalEditsDetected: true };
       }
 
-      // 8. No external edits → applyDiff
+      // 9. No external edits → applyDiff
       return await this.applyDiff(docId, filePath, theirs, docsDoc, ours);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -182,6 +185,7 @@ export class GoogleDocsSyncService {
     filePath: string,
     docId: string,
     markdown: string,
+    mermaidDiagrams?: MermaidDiagramData[],
   ): Promise<GoogleDocsSyncResult> {
     try {
       // 1. Load baseline (unused for check, but we still follow the flow)
@@ -196,7 +200,10 @@ export class GoogleDocsSyncService {
       // 4. Convert markdown to DocsDocument
       const docsDoc = convertMarkdownToDocs(markdown);
 
-      // 5. Extract plain text from DocsDocument ("ours")
+      // 5. Process mermaid diagrams — upload to Drive and set image links
+      await this.processMermaidDiagrams(docsDoc, mermaidDiagrams);
+
+      // 6. Extract plain text from DocsDocument ("ours")
       const ours = extractPlainTextFromDocsDoc(docsDoc);
 
       // Skip external edit check — apply diff directly
@@ -204,6 +211,40 @@ export class GoogleDocsSyncService {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return { success: false, error: message };
+    }
+  }
+
+  /**
+   * Process mermaid diagrams — match DocsElements with renderer-provided
+   * diagram data, upload PNGs to Google Drive, and set imageLink on the
+   * element so the builder can insert them as inline images.
+   */
+  private async processMermaidDiagrams(
+    docsDoc: DocsDocument,
+    mermaidDiagrams?: MermaidDiagramData[],
+  ): Promise<void> {
+    if (!mermaidDiagrams || mermaidDiagrams.length === 0) return;
+
+    for (const element of docsDoc.elements) {
+      if (element.type === 'image' && element.code) {
+        const diagram = mermaidDiagrams.find(d => d.code === element.code);
+        if (!diagram) continue;
+
+        try {
+          // Upload PNG to Google Drive
+          const imageBuffer = Buffer.from(diagram.pngBase64, 'base64');
+          const fileId = await this.docsService.uploadImage(
+            imageBuffer,
+            `mermaid-${Date.now()}.png`,
+          );
+
+          // Set image link to Drive content URI for InsertInlineImage
+          element.imageLink = `https://drive.google.com/uc?id=${fileId}`;
+        } catch (error) {
+          console.warn('Failed to upload mermaid diagram to Drive:', error);
+          // Continue without the image — it will be skipped by the builder
+        }
+      }
     }
   }
 

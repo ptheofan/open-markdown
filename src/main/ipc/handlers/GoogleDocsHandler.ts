@@ -4,6 +4,7 @@ import { getGoogleAuthService } from '@main/services/GoogleAuthService';
 import { getGoogleDocsLinkStore } from '@main/services/GoogleDocsLinkStore';
 import { createGoogleDocsService } from '@main/services/GoogleDocsService';
 import { createGoogleDocsSyncService } from '@main/services/GoogleDocsSyncService';
+import type { MermaidDiagramData } from '@shared/types/google-docs';
 
 function sendToAllWindows(channel: string, data: any): void {
   const windows = BrowserWindow.getAllWindows();
@@ -75,12 +76,12 @@ export function registerGoogleDocsHandlers(): void {
   // Sync
   ipcMain.handle(
     IPC_CHANNELS.GOOGLE_DOCS.SYNC,
-    async (_event, filePath: string, markdownContent: string) => {
+    async (_event, filePath: string, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[]) => {
       const link = linkStore.getLink(filePath);
       if (!link) throw new Error('File not linked to Google Docs');
       sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, { syncing: true });
       try {
-        const result = await syncService.sync(filePath, link.docId, markdownContent);
+        const result = await syncService.sync(filePath, link.docId, markdownContent, mermaidDiagrams);
         sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, { syncing: false });
         return result;
       } catch (error) {
@@ -96,7 +97,7 @@ export function registerGoogleDocsHandlers(): void {
   // Sync confirm overwrite
   ipcMain.handle(
     IPC_CHANNELS.GOOGLE_DOCS.SYNC_CONFIRM_OVERWRITE,
-    async (_event, filePath: string, markdownContent: string) => {
+    async (_event, filePath: string, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[]) => {
       const link = linkStore.getLink(filePath);
       if (!link) throw new Error('File not linked to Google Docs');
       sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, { syncing: true });
@@ -105,6 +106,7 @@ export function registerGoogleDocsHandlers(): void {
           filePath,
           link.docId,
           markdownContent,
+          mermaidDiagrams,
         );
         sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, { syncing: false });
         return result;

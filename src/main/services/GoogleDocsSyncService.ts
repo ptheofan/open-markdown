@@ -221,8 +221,9 @@ export class GoogleDocsSyncService {
             `mermaid-${Date.now()}.png`,
           );
 
-          // Set image link to Drive content URI for InsertInlineImage
+          // Set image link to Drive URI for insertInlineImage
           element.imageLink = `https://drive.google.com/uc?id=${fileId}`;
+          element.mermaidLiveUrl = diagram.liveUrl;
         } catch (error) {
           console.warn('Failed to upload mermaid diagram to Drive:', error);
           // Continue without the image — it will be skipped by the builder

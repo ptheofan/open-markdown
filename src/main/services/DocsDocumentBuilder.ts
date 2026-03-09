@@ -249,36 +249,53 @@ function buildHorizontalRule(ctx: BuildContext): void {
 }
 
 function buildImage(ctx: BuildContext, element: DocsElement): void {
-  // Insert a text placeholder with link to Mermaid Live editor
-  const label = '[Mermaid Diagram]';
-  const linkUrl = element.imageLink ?? '';
-  const text = linkUrl ? `${label}\n` : `${label}\n`;
-  const startIndex = ctx.index;
+  if (!element.imageLink) return;
 
   ctx.requests.push({
-    insertText: {
-      text,
-      location: { index: startIndex },
+    insertInlineImage: {
+      uri: element.imageLink,
+      location: { index: ctx.index },
+      objectSize: {
+        width: { magnitude: 400, unit: 'PT' },
+        height: { magnitude: 300, unit: 'PT' },
+      },
     },
   });
 
-  // Style the label as a link if we have a URL
-  if (linkUrl) {
+  // Inline image occupies 1 index position
+  ctx.index += 1;
+
+  // Add "Edit in Mermaid Live" link after the image
+  if (element.mermaidLiveUrl) {
+    const linkText = '\nEdit in Mermaid Live\n';
+    const linkStart = ctx.index;
     ctx.requests.push({
-      updateTextStyle: {
-        range: { startIndex, endIndex: startIndex + label.length },
-        textStyle: {
-          link: { url: linkUrl },
-          foregroundColor: {
-            color: { rgbColor: { red: 0.1, green: 0.45, blue: 0.85 } },
-          },
-        },
-        fields: 'link,foregroundColor',
+      insertText: {
+        text: linkText,
+        location: { index: linkStart },
       },
     });
+    ctx.requests.push({
+      updateTextStyle: {
+        range: { startIndex: linkStart + 1, endIndex: linkStart + linkText.length - 1 },
+        textStyle: {
+          link: { url: element.mermaidLiveUrl },
+          fontSize: { magnitude: 9, unit: 'PT' },
+        },
+        fields: 'link,fontSize',
+      },
+    });
+    ctx.index += linkText.length;
+  } else {
+    // Just a newline after the image
+    ctx.requests.push({
+      insertText: {
+        text: '\n',
+        location: { index: ctx.index },
+      },
+    });
+    ctx.index += 1;
   }
-
-  ctx.index += text.length;
 }
 
 function buildBlockquote(ctx: BuildContext, element: DocsElement): void {

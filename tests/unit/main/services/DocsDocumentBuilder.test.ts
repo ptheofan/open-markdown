@@ -222,15 +222,16 @@ describe('DocsDocumentBuilder', () => {
     };
     const requests = buildInsertRequests(doc, 1);
 
-    // Images are now rendered as "[Mermaid Diagram]" text with a link style
+    // Images with imageLink produce an insertInlineImage request
+    const inlineImage = requests.find((r: any) => r.insertInlineImage);
+    expect(inlineImage).toBeDefined();
+    expect(inlineImage.insertInlineImage.uri).toBe('https://drive.google.com/uc?id=FILE_ID');
+    expect(inlineImage.insertInlineImage.location.index).toBe(1);
+
+    // Should also have an insertText for the newline after the image
     const insertText = requests.find((r: any) => r.insertText);
     expect(insertText).toBeDefined();
-    expect(insertText.insertText.text).toContain('[Mermaid Diagram]');
-
-    const linkStyle = requests.find((r: any) =>
-      r.updateTextStyle?.textStyle?.link?.url === 'https://drive.google.com/uc?id=FILE_ID'
-    );
-    expect(linkStyle).toBeDefined();
+    expect(insertText.insertText.text).toBe('\n');
   });
 
   it('should skip image without imageLink', () => {
@@ -242,16 +243,8 @@ describe('DocsDocumentBuilder', () => {
     };
     const requests = buildInsertRequests(doc, 1);
 
-    // Images without imageLink still produce "[Mermaid Diagram]" text, just without a link style
-    const insertText = requests.find((r: any) => r.insertText);
-    expect(insertText).toBeDefined();
-    expect(insertText.insertText.text).toContain('[Mermaid Diagram]');
-
-    // Should NOT have a link style
-    const linkStyle = requests.find((r: any) =>
-      r.updateTextStyle?.textStyle?.link
-    );
-    expect(linkStyle).toBeUndefined();
+    // Images without imageLink are skipped entirely (buildImage returns early)
+    expect(requests).toEqual([]);
   });
 
   it('should build strikethrough style requests', () => {

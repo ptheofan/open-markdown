@@ -51,6 +51,8 @@ export interface DocsElement {
   imageBase64?: string;
   imageAlt?: string;
   imageLink?: string;
+  /** For mermaid diagrams: link to mermaid.live editor */
+  mermaidLiveUrl?: string;
   listDepth?: number;
   listOrdered?: boolean;
   children?: DocsElement[];

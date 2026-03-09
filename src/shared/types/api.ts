@@ -13,6 +13,7 @@ import type {
   ExternalFileOpenEvent,
 } from './fileAssociation';
 import type { RecentFileEntry } from './recentFiles';
+import type { GoogleDocLink, GoogleDocsSyncResult, GoogleAuthState } from './google-docs';
 
 /**
  * IPC Channel names for type-safe communication
@@ -80,6 +81,18 @@ export const IPC_CHANNELS = {
     OPEN_IN_EDITOR: 'shell:open-in-editor',
     OPEN_EXTERNAL: 'shell:open-external',
   },
+  GOOGLE_DOCS: {
+    AUTH_STATUS: 'google-docs:auth-status',
+    AUTH_SIGN_IN: 'google-docs:auth-sign-in',
+    AUTH_SIGN_OUT: 'google-docs:auth-sign-out',
+    LINK: 'google-docs:link',
+    UNLINK: 'google-docs:unlink',
+    GET_LINK: 'google-docs:get-link',
+    SYNC: 'google-docs:sync',
+    SYNC_CONFIRM_OVERWRITE: 'google-docs:sync-confirm-overwrite',
+    ON_AUTH_CHANGE: 'google-docs:on-auth-change',
+    ON_SYNC_STATUS: 'google-docs:on-sync-status',
+  },
 } as const;
 
 /**
@@ -96,7 +109,8 @@ export type IpcChannel =
   | (typeof IPC_CHANNELS.FILE_ASSOCIATION)[keyof typeof IPC_CHANNELS.FILE_ASSOCIATION]
   | (typeof IPC_CHANNELS.RECENT_FILES)[keyof typeof IPC_CHANNELS.RECENT_FILES]
   | (typeof IPC_CHANNELS.MENU)[keyof typeof IPC_CHANNELS.MENU]
-  | (typeof IPC_CHANNELS.SHELL)[keyof typeof IPC_CHANNELS.SHELL];
+  | (typeof IPC_CHANNELS.SHELL)[keyof typeof IPC_CHANNELS.SHELL]
+  | (typeof IPC_CHANNELS.GOOGLE_DOCS)[keyof typeof IPC_CHANNELS.GOOGLE_DOCS];
 
 /**
  * Fullscreen change event data
@@ -271,6 +285,22 @@ export interface AssetsAPI {
 }
 
 /**
+ * Google Docs API exposed to renderer
+ */
+export interface GoogleDocsAPI {
+  getAuthStatus: () => Promise<GoogleAuthState>;
+  signIn: () => Promise<GoogleAuthState>;
+  signOut: () => Promise<void>;
+  link: (filePath: string, docUrl: string) => Promise<GoogleDocLink>;
+  unlink: (filePath: string) => Promise<void>;
+  getLink: (filePath: string) => Promise<GoogleDocLink | null>;
+  sync: (filePath: string, markdownContent: string) => Promise<GoogleDocsSyncResult>;
+  syncConfirmOverwrite: (filePath: string, markdownContent: string) => Promise<GoogleDocsSyncResult>;
+  onAuthChange: (callback: (state: GoogleAuthState) => void) => () => void;
+  onSyncStatus: (callback: (status: { syncing: boolean; error?: string }) => void) => () => void;
+}
+
+/**
  * Complete Electron API exposed via contextBridge
  */
 export interface ElectronAPI {
@@ -286,6 +316,7 @@ export interface ElectronAPI {
   menu: MenuAPI;
   shell: ShellAPI;
   assets: AssetsAPI;
+  googleDocs: GoogleDocsAPI;
 }
 
 /**

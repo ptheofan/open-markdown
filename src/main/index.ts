@@ -14,6 +14,8 @@ import { getPreferencesService } from './services/PreferencesService';
 import { getRecentFilesService } from './services/RecentFilesService';
 import { getWindowManager } from './window/WindowManager';
 import { getFileService } from './services/FileService';
+import { getGoogleDocsLinkStore } from '@main/services/GoogleDocsLinkStore';
+import { getGoogleAuthService } from '@main/services/GoogleAuthService';
 import { IPC_CHANNELS } from '@shared/types';
 import { MARKDOWN_EXTENSIONS } from '@shared/constants';
 
@@ -115,6 +117,8 @@ async function initialize(): Promise<void> {
   // PreferencesService is the single source of truth for theme mode preference.
   await getPreferencesService().initialize();
   await getRecentFilesService().initialize();
+  await getGoogleDocsLinkStore().initialize();
+  await getGoogleAuthService().initialize();
 
   // Serve local image assets referenced by markdown documents
   registerAssetProtocolHandler();

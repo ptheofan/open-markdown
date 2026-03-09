@@ -253,15 +253,123 @@ export class GoogleDocsSyncService {
       }]);
     }
 
-    // Now insert our content into the clean doc
-    const requests = buildInsertRequests(docsDoc, 1);
-    console.log(`[SyncService] fullPopulate: ${requests.length} total requests`);
+    // Phase 1: Insert all text content (tables as placeholders)
+    const { requests, pendingTables } = buildInsertRequests(docsDoc, 1);
+    console.log(`[SyncService] fullPopulate: ${requests.length} requests, ${pendingTables.length} pending tables`);
     if (requests.length > 0) {
       await this.docsService.batchUpdate(docId, requests);
     }
+
+    // Phase 2: Replace table placeholders with real tables
+    if (pendingTables.length > 0) {
+      await this.populateTables(docId, pendingTables);
+    }
+
     await this.linkStore.saveBaseline(docId, plainText);
     await this.linkStore.updateLastSynced(filePath, new Date().toISOString());
     return { success: true };
+  }
+
+  /**
+   * Phase 2: Find table placeholders in the doc, replace each with a real table,
+   * then populate cells.
+   */
+  private async populateTables(
+    docId: string,
+    pendingTables: import('./DocsDocumentBuilder').PendingTable[],
+  ): Promise<void> {
+    for (const table of pendingTables) {
+      // Read doc to find the placeholder
+      const doc = await this.docsService.getDocument(docId);
+      const content = doc?.body?.content ?? [];
+
+      let placeholderIndex = -1;
+      let placeholderEndIndex = -1;
+
+      for (const el of content) {
+        if (el.paragraph) {
+          for (const pe of el.paragraph.elements ?? []) {
+            if (pe.textRun?.content?.includes(table.placeholderText.trim())) {
+              placeholderIndex = el.startIndex;
+              placeholderEndIndex = el.endIndex;
+              break;
+            }
+          }
+          if (placeholderIndex >= 0) break;
+        }
+      }
+
+      if (placeholderIndex < 0) {
+        console.warn('[SyncService] Table placeholder not found:', table.placeholderText.trim());
+        continue;
+      }
+
+      // Delete placeholder and insert table
+      const numRows = table.rows.length;
+      const numCols = table.rows[0]?.length ?? 1;
+
+      await this.docsService.batchUpdate(docId, [
+        { deleteContentRange: { range: { startIndex: placeholderIndex, endIndex: placeholderEndIndex } } },
+        { insertTable: { rows: numRows, columns: numCols, location: { index: placeholderIndex } } },
+      ]);
+
+      // Read doc again to find actual cell indices
+      const docAfterTable = await this.docsService.getDocument(docId);
+      const tableEl = (docAfterTable?.body?.content ?? []).find(
+        (el: any) => el.table && el.startIndex >= placeholderIndex
+      );
+
+      if (!tableEl?.table) {
+        console.warn('[SyncService] Inserted table not found at index', placeholderIndex);
+        continue;
+      }
+
+      // Populate cells — insert text into each cell's paragraph
+      // Process in reverse order to preserve indices
+      const cellRequests: any[] = [];
+      const tableRows = tableEl.table.tableRows ?? [];
+
+      for (let r = tableRows.length - 1; r >= 0; r--) {
+        const cells = tableRows[r].tableCells ?? [];
+        for (let c = cells.length - 1; c >= 0; c--) {
+          const cell = cells[c];
+          const cellContent = cell.content?.[0];
+          if (!cellContent?.paragraph) continue;
+
+          const cellIndex = cellContent.paragraph.elements?.[0]?.startIndex;
+          if (cellIndex === undefined) continue;
+
+          const dataRow = table.rows[r];
+          const dataCell = dataRow?.[c];
+          if (!dataCell || dataCell.length === 0) continue;
+
+          const text = dataCell.map((run: any) => run.text).join('');
+          if (!text) continue;
+
+          cellRequests.push({
+            insertText: {
+              text,
+              location: { index: cellIndex },
+            },
+          });
+
+          // Bold header row
+          if (r === 0) {
+            cellRequests.push({
+              updateTextStyle: {
+                range: { startIndex: cellIndex, endIndex: cellIndex + text.length },
+                textStyle: { bold: true },
+                fields: 'bold',
+              },
+            });
+          }
+        }
+      }
+
+      if (cellRequests.length > 0) {
+        await this.docsService.batchUpdate(docId, cellRequests);
+      }
+    }
   }
 
   /**

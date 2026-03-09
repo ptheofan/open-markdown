@@ -12,6 +12,17 @@ import type { DocsDocument, DocsElement, DocsTextRun } from '@shared/types/googl
 interface BuildContext {
   index: number;
   requests: any[];
+  pendingTables: PendingTable[];
+}
+
+export interface PendingTable {
+  placeholderText: string;
+  rows: DocsTextRun[][][];
+}
+
+export interface BuildResult {
+  requests: any[];
+  pendingTables: PendingTable[];
 }
 
 function collectFields(style: Record<string, unknown>): string {
@@ -196,42 +207,19 @@ function buildTable(ctx: BuildContext, element: DocsElement): void {
   const rows = element.rows ?? [];
   if (rows.length === 0) return;
 
-  // Render table as tab-separated text (avoids insertTable index calculation issues)
-  for (let r = 0; r < rows.length; r++) {
-    const row = rows[r]!;
-    const cells = row.map(cell => cell.map(run => run.text).join('')).join('\t');
-    const rowText = cells + '\n';
-    const startIndex = ctx.index;
+  // Insert a unique placeholder — real table will be inserted in phase 2
+  const tableId = ctx.pendingTables.length;
+  const placeholderText = `<<TABLE_${tableId}>>\n`;
 
-    ctx.requests.push({
-      insertText: {
-        text: rowText,
-        location: { index: startIndex },
-      },
-    });
-
-    ctx.index += rowText.length;
-
-    // Bold the header row
-    if (r === 0) {
-      ctx.requests.push({
-        updateTextStyle: {
-          range: { startIndex, endIndex: startIndex + rowText.length - 1 },
-          textStyle: { bold: true },
-          fields: 'bold',
-        },
-      });
-    }
-  }
-
-  // Add a blank line after the table
   ctx.requests.push({
     insertText: {
-      text: '\n',
+      text: placeholderText,
       location: { index: ctx.index },
     },
   });
-  ctx.index += 1;
+
+  ctx.pendingTables.push({ placeholderText, rows });
+  ctx.index += placeholderText.length;
 }
 
 function buildHorizontalRule(ctx: BuildContext): void {
@@ -368,15 +356,16 @@ function buildElement(ctx: BuildContext, element: DocsElement): void {
   }
 }
 
-export function buildInsertRequests(doc: DocsDocument, startIndex: number): any[] {
+export function buildInsertRequests(doc: DocsDocument, startIndex: number): BuildResult {
   const ctx: BuildContext = {
     index: startIndex,
     requests: [],
+    pendingTables: [],
   };
 
   for (const element of doc.elements) {
     buildElement(ctx, element);
   }
 
-  return ctx.requests;
+  return { requests: ctx.requests, pendingTables: ctx.pendingTables };
 }

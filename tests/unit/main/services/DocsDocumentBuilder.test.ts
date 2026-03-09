@@ -104,10 +104,24 @@ describe('DocsDocumentBuilder', () => {
       }],
     };
     const requests = buildInsertRequests(doc, 1);
-    const insertTable = requests.find((r: any) => r.insertTable);
-    expect(insertTable).toBeDefined();
-    expect(insertTable.insertTable.rows).toBe(2);
-    expect(insertTable.insertTable.columns).toBe(2);
+
+    // Tables are now rendered as tab-separated text rows
+    const insertTexts = requests.filter((r: any) => r.insertText);
+    expect(insertTexts.length).toBeGreaterThanOrEqual(2); // at least one per row + trailing newline
+
+    // Header row should be tab-separated
+    const headerInsert = insertTexts.find((r: any) => r.insertText.text === 'H1\tH2\n');
+    expect(headerInsert).toBeDefined();
+
+    // Data row should be tab-separated
+    const dataInsert = insertTexts.find((r: any) => r.insertText.text === 'C1\tC2\n');
+    expect(dataInsert).toBeDefined();
+
+    // Header row should be bolded
+    const boldStyle = requests.find((r: any) =>
+      r.updateTextStyle?.textStyle?.bold === true
+    );
+    expect(boldStyle).toBeDefined();
   });
 
   it('should build requests for horizontal rule', () => {
@@ -207,9 +221,16 @@ describe('DocsDocumentBuilder', () => {
       }],
     };
     const requests = buildInsertRequests(doc, 1);
-    const inlineImage = requests.find((r: any) => r.insertInlineImage);
-    expect(inlineImage).toBeDefined();
-    expect(inlineImage.insertInlineImage.uri).toBe('https://drive.google.com/uc?id=FILE_ID');
+
+    // Images are now rendered as "[Mermaid Diagram]" text with a link style
+    const insertText = requests.find((r: any) => r.insertText);
+    expect(insertText).toBeDefined();
+    expect(insertText.insertText.text).toContain('[Mermaid Diagram]');
+
+    const linkStyle = requests.find((r: any) =>
+      r.updateTextStyle?.textStyle?.link?.url === 'https://drive.google.com/uc?id=FILE_ID'
+    );
+    expect(linkStyle).toBeDefined();
   });
 
   it('should skip image without imageLink', () => {
@@ -220,7 +241,17 @@ describe('DocsDocumentBuilder', () => {
       }],
     };
     const requests = buildInsertRequests(doc, 1);
-    expect(requests).toHaveLength(0);
+
+    // Images without imageLink still produce "[Mermaid Diagram]" text, just without a link style
+    const insertText = requests.find((r: any) => r.insertText);
+    expect(insertText).toBeDefined();
+    expect(insertText.insertText.text).toContain('[Mermaid Diagram]');
+
+    // Should NOT have a link style
+    const linkStyle = requests.find((r: any) =>
+      r.updateTextStyle?.textStyle?.link
+    );
+    expect(linkStyle).toBeUndefined();
   });
 
   it('should build strikethrough style requests', () => {

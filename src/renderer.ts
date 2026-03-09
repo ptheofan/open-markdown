@@ -988,11 +988,12 @@ class App {
         this.toast?.success('Synced to Google Docs');
         await this.updateGoogleDocsButtonState();
       } else {
+        console.error('Google Docs sync error result:', result);
         this.toast?.error(result.error ?? 'Sync failed');
       }
     } catch (error) {
-      console.error('Google Docs sync failed:', error);
-      this.toast?.error('Sync failed');
+      console.error('Google Docs sync exception:', error);
+      this.toast?.error(error instanceof Error ? error.message : 'Sync failed');
     } finally {
       this.googleDocsButton?.setState('ready');
     }

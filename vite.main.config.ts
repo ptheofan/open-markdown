@@ -22,6 +22,7 @@ export default defineConfig(({ mode }) => {
   return {
     define: {
       '__GOOGLE_OAUTH_CLIENT_ID_ENC__': JSON.stringify(obfuscate(env.GOOGLE_OAUTH_CLIENT_ID ?? '')),
+      '__GOOGLE_OAUTH_CLIENT_SECRET_ENC__': JSON.stringify(obfuscate(env.GOOGLE_OAUTH_CLIENT_SECRET ?? '')),
     },
     resolve: {
       alias: {

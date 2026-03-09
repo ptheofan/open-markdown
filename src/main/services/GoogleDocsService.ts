@@ -40,6 +40,8 @@ export class GoogleDocsService {
    */
   async batchUpdate(docId: string, requests: any[]): Promise<any> {
     const token = await this.tokenProvider();
+    console.log(`[DocsAPI] batchUpdate: ${requests.length} requests for doc ${docId}`);
+    console.log('[DocsAPI] First 3 requests:', JSON.stringify(requests.slice(0, 3), null, 2));
     const response = await fetch(`${DOCS_API_BASE}/${docId}:batchUpdate`, {
       method: 'POST',
       headers: {
@@ -49,9 +51,10 @@ export class GoogleDocsService {
       body: JSON.stringify({ requests }),
     });
     if (!response.ok) {
-      const error = await response.json();
+      const errorText = await response.text();
+      console.error(`[DocsAPI] batchUpdate failed (${response.status}):`, errorText);
       throw new Error(
-        error.error?.message ?? `API error: ${response.status} ${response.statusText}`,
+        `Google Docs API error (${response.status}): ${errorText}`,
       );
     }
     return response.json();
@@ -93,7 +96,19 @@ export class GoogleDocsService {
       throw new Error(error.error?.message ?? `Upload failed: ${response.status}`);
     }
     const result = await response.json();
-    return result.id;
+    const fileId = result.id;
+
+    // Make the image publicly accessible so insertInlineImage can use it
+    await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ role: 'reader', type: 'anyone' }),
+    });
+
+    return fileId;
   }
 
   /**

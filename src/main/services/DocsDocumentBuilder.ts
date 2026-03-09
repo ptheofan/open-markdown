@@ -196,25 +196,42 @@ function buildTable(ctx: BuildContext, element: DocsElement): void {
   const rows = element.rows ?? [];
   if (rows.length === 0) return;
 
-  const numRows = rows.length;
-  const numCols = rows[0]!.length;
-  const startIndex = ctx.index;
+  // Render table as tab-separated text (avoids insertTable index calculation issues)
+  for (let r = 0; r < rows.length; r++) {
+    const row = rows[r]!;
+    const cells = row.map(cell => cell.map(run => run.text).join('')).join('\t');
+    const rowText = cells + '\n';
+    const startIndex = ctx.index;
 
+    ctx.requests.push({
+      insertText: {
+        text: rowText,
+        location: { index: startIndex },
+      },
+    });
+
+    ctx.index += rowText.length;
+
+    // Bold the header row
+    if (r === 0) {
+      ctx.requests.push({
+        updateTextStyle: {
+          range: { startIndex, endIndex: startIndex + rowText.length - 1 },
+          textStyle: { bold: true },
+          fields: 'bold',
+        },
+      });
+    }
+  }
+
+  // Add a blank line after the table
   ctx.requests.push({
-    insertTable: {
-      rows: numRows,
-      columns: numCols,
-      location: { index: startIndex },
+    insertText: {
+      text: '\n',
+      location: { index: ctx.index },
     },
   });
-
-  // Table structure occupies indices. For v1, we just insert the table
-  // without populating cell content. Cell content population would require
-  // knowing the exact cell indices, which needs a document re-read.
-  // The table itself takes: 1 (table start) + for each row: 1 (row start) + for each cell: 3 (cell start + paragraph + newline) + 1 (row end) + 1 (table end)
-  // Total = 1 + numRows * (1 + numCols * 3 + 1) + 1 + 1 (trailing newline)
-  const tableSize = 1 + numRows * (1 + numCols * 3) + numRows + 1 + 1;
-  ctx.index += tableSize;
+  ctx.index += 1;
 }
 
 function buildHorizontalRule(ctx: BuildContext): void {
@@ -232,31 +249,36 @@ function buildHorizontalRule(ctx: BuildContext): void {
 }
 
 function buildImage(ctx: BuildContext, element: DocsElement): void {
-  // Only insert if imageLink is available (uploaded to Drive)
-  if (!element.imageLink) return;
+  // Insert a text placeholder with link to Mermaid Live editor
+  const label = '[Mermaid Diagram]';
+  const linkUrl = element.imageLink ?? '';
+  const text = linkUrl ? `${label}\n` : `${label}\n`;
+  const startIndex = ctx.index;
 
-  ctx.requests.push({
-    insertInlineImage: {
-      uri: element.imageLink,
-      location: { index: ctx.index },
-      objectSize: {
-        width: { magnitude: 400, unit: 'PT' },
-        height: { magnitude: 300, unit: 'PT' },
-      },
-    },
-  });
-
-  // Inline image occupies 1 index position
-  ctx.index += 1;
-
-  // Add a newline after the image
   ctx.requests.push({
     insertText: {
-      text: '\n',
-      location: { index: ctx.index },
+      text,
+      location: { index: startIndex },
     },
   });
-  ctx.index += 1;
+
+  // Style the label as a link if we have a URL
+  if (linkUrl) {
+    ctx.requests.push({
+      updateTextStyle: {
+        range: { startIndex, endIndex: startIndex + label.length },
+        textStyle: {
+          link: { url: linkUrl },
+          foregroundColor: {
+            color: { rgbColor: { red: 0.1, green: 0.45, blue: 0.85 } },
+          },
+        },
+        fields: 'link,foregroundColor',
+      },
+    });
+  }
+
+  ctx.index += text.length;
 }
 
 function buildBlockquote(ctx: BuildContext, element: DocsElement): void {

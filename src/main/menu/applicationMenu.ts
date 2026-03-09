@@ -58,7 +58,9 @@ export function setupApplicationMenu(): void {
     {
       label: 'Edit',
       submenu: [
+        { role: 'cut' },
         { role: 'copy' },
+        { role: 'paste' },
         { role: 'selectAll' },
         { type: 'separator' },
         {

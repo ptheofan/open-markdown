@@ -116,9 +116,9 @@ describe('GoogleDocsSyncService Integration', () => {
       );
       expect(codeFont.length).toBeGreaterThan(0);
 
-      // Should contain table insertion
+      // Tables are now rendered as text (no insertTable requests)
       const tables = requests.filter((r: any) => r.insertTable);
-      expect(tables.length).toBe(1);
+      expect(tables.length).toBe(0);
     });
 
     it('should handle blockquotes with indentation', async () => {
@@ -416,11 +416,16 @@ describe('GoogleDocsSyncService Integration', () => {
       expect(Buffer.isBuffer(uploadCall[0])).toBe(true);
       expect(uploadCall[1]).toContain('mermaid-');
 
-      // Should contain insertInlineImage in the requests
+      // Images are now rendered as "[Mermaid Diagram]" text with a link style
       const requests: any[] = mockDocsService.batchUpdate.mock.calls[0]![1];
+      const mermaidTexts = requests.filter(
+        (r: any) => r.insertText?.text?.includes('[Mermaid Diagram]'),
+      );
+      expect(mermaidTexts.length).toBe(1);
+
+      // No insertInlineImage requests
       const imageInserts = requests.filter((r: any) => r.insertInlineImage);
-      expect(imageInserts.length).toBe(1);
-      expect(imageInserts[0].insertInlineImage.uri).toContain('drive-file-123');
+      expect(imageInserts.length).toBe(0);
     });
 
     it('should gracefully handle upload failure for mermaid diagrams', async () => {

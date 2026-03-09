@@ -112,3 +112,24 @@ export {
   createRecentFilesDropdown,
   type RecentFilesDropdownCallbacks,
 } from './RecentFilesDropdown';
+
+// GoogleDocsLinkDialog
+export {
+  GoogleDocsLinkDialog,
+  createGoogleDocsLinkDialog,
+  type GoogleDocsLinkDialogCallbacks,
+} from './GoogleDocsLinkDialog';
+
+// GoogleDocsButton
+export {
+  GoogleDocsButton,
+  createGoogleDocsButton,
+  type GoogleDocsButtonState,
+  type GoogleDocsButtonCallbacks,
+} from './GoogleDocsButton';
+
+// GoogleDocsSettings
+export {
+  GoogleDocsSettings,
+  createGoogleDocsSettings,
+} from './GoogleDocsSettings';

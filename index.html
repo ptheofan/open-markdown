@@ -33,6 +33,16 @@
         </div>
         <div class="toolbar-right">
           <div class="toolbar-spacer"></div>
+          <!-- Google Docs Sync Button -->
+          <button id="gdocs-sync-btn" class="toolbar-btn" title="Google Docs" disabled>
+            <svg id="gdocs-icon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M4 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.5L9.5 0H4zM9 1v3.5A1.5 1.5 0 0 0 10.5 6H14v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h5z"/>
+              <path d="M4.5 8a.5.5 0 0 1 .5-.5h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5zm0 2a.5.5 0 0 1 .5-.5h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5zm0 2a.5.5 0 0 1 .5-.5h4a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5z"/>
+            </svg>
+            <svg id="gdocs-spinner" class="spinner-icon hidden" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M8 0a8 8 0 1 0 8 8h-1.5A6.5 6.5 0 1 1 8 1.5V0z"/>
+            </svg>
+          </button>
           <!-- Copy Document Dropdown -->
           <div id="copy-dropdown" class="toolbar-dropdown">
             <button id="copy-dropdown-btn" class="toolbar-btn toolbar-btn-dropdown" title="Copy document" disabled>
@@ -109,6 +119,20 @@
           </span>
         </div>
       </footer>
+
+      <!-- Google Docs Link Dialog -->
+      <div id="gdocs-link-dialog" class="gdocs-dialog-overlay hidden">
+        <div class="gdocs-dialog">
+          <h3 class="gdocs-dialog-title">Link to Google Docs</h3>
+          <p class="gdocs-dialog-text">Paste the URL of a Google Doc to sync this file:</p>
+          <input type="text" id="gdocs-url-input" class="gdocs-dialog-input" placeholder="https://docs.google.com/document/d/..." autocomplete="off" spellcheck="false" />
+          <div id="gdocs-link-error" class="gdocs-dialog-error hidden"></div>
+          <div class="gdocs-dialog-actions">
+            <button id="gdocs-link-cancel" class="gdocs-dialog-btn gdocs-dialog-btn-secondary">Cancel</button>
+            <button id="gdocs-link-confirm" class="gdocs-dialog-btn gdocs-dialog-btn-primary">Link</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Plugin Styles Container -->

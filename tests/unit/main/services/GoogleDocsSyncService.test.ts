@@ -115,8 +115,9 @@ describe('GoogleDocsSyncService', () => {
       expect(mockDocsService.batchUpdate).toHaveBeenCalled();
 
       // Should have generated diff operations, not full populate
-      const batchArgs = mockDocsService.batchUpdate.mock.calls[0]!;
-      const requests = batchArgs[1] as any[];
+      const batchArgs = mockDocsService.batchUpdate.mock.calls[0];
+      expect(batchArgs).toBeDefined();
+      const requests = batchArgs![1] as any[];
       // Should contain delete and/or insert operations (not a full document build)
       const hasDeleteOrInsert = requests.some((r: any) => r.deleteContentRange || r.insertText);
       expect(hasDeleteOrInsert).toBe(true);

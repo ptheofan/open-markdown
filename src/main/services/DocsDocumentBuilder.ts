@@ -235,17 +235,33 @@ function buildTable(ctx: BuildContext, element: DocsElement): void {
 }
 
 function buildHorizontalRule(ctx: BuildContext): void {
-  const ruleText = '\u2015'.repeat(30) + '\n'; // horizontal bar character
+  // Insert an empty paragraph, then style it with a bottom border to create a clean line
   const startIndex = ctx.index;
 
   ctx.requests.push({
     insertText: {
-      text: ruleText,
+      text: '\n',
       location: { index: startIndex },
     },
   });
 
-  ctx.index += ruleText.length;
+  ctx.requests.push({
+    updateParagraphStyle: {
+      range: { startIndex, endIndex: startIndex + 1 },
+      paragraphStyle: {
+        borderBottom: {
+          color: { color: { rgbColor: { red: 0.855, green: 0.82, blue: 0.878 } } }, // #dadce0
+          width: { magnitude: 1, unit: 'PT' },
+          dashStyle: 'SOLID',
+          padding: { magnitude: 8, unit: 'PT' },
+        },
+        spaceBelow: { magnitude: 8, unit: 'PT' },
+      },
+      fields: 'borderBottom,spaceBelow',
+    },
+  });
+
+  ctx.index += 1;
 }
 
 function buildImage(ctx: BuildContext, element: DocsElement): void {

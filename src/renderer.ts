@@ -745,14 +745,9 @@ class App {
       const updatedPrefs = await window.electronAPI.preferences.set(updates);
       this.preferencesPanel?.updateValues(updatedPrefs);
 
-      // Update current preferences state
+      // Update current preferences state (PreferencesService is the single source of truth)
       this.state.currentPreferences = updatedPrefs.core;
-
-      // Update theme mode if changed — sync to ThemeService so it persists on restart
-      if (updates.core?.theme?.mode) {
-        this.state.currentTheme = updates.core.theme.mode;
-        await window.electronAPI.theme.set(updates.core.theme.mode);
-      }
+      this.state.currentTheme = updatedPrefs.core.theme.mode;
 
       // Notify plugins of preference changes
       if (updates.plugins) {

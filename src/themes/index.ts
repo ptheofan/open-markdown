@@ -118,6 +118,14 @@ export function generateTypographyCSS(
   const lines: string[] = [];
   const { typography, lists } = preferences;
 
+  // Font families (override theme defaults when set in preferences)
+  if (typography.fontFamily) {
+    lines.push(`  --font-body: ${typography.fontFamily};`);
+  }
+  if (typography.monoFontFamily) {
+    lines.push(`  --font-mono: ${typography.monoFontFamily};`);
+  }
+
   // Base font size
   lines.push(`  --base-font-size: ${typography.baseFontSize};`);
 

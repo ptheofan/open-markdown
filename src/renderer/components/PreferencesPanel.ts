@@ -330,6 +330,28 @@ export class PreferencesPanel {
 
     const fields: HTMLElement[] = [];
 
+    // Font family
+    const fontFamilyInput = new TextInput({
+      label: 'Font Family',
+      value: this.currentPreferences.core.typography.fontFamily,
+      placeholder: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    });
+    fontFamilyInput.setOnChange((value) => {
+      this.emitChange({ core: { typography: { fontFamily: value } } });
+    });
+    fields.push(fontFamilyInput.getElement());
+
+    // Monospace font family
+    const monoFontFamilyInput = new TextInput({
+      label: 'Monospace Font Family',
+      value: this.currentPreferences.core.typography.monoFontFamily,
+      placeholder: "ui-monospace, SFMono-Regular, 'SF Mono', monospace",
+    });
+    monoFontFamilyInput.setOnChange((value) => {
+      this.emitChange({ core: { typography: { monoFontFamily: value } } });
+    });
+    fields.push(monoFontFamilyInput.getElement());
+
     // Base font size
     const fontSizeInput = new TextInput({
       label: 'Base Font Size',

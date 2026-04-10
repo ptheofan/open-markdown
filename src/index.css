@@ -1353,8 +1353,10 @@ button:focus:not(:focus-visible) {
 .change-gutter-reset-btn {
   position: sticky;
   bottom: 20px;
-  float: right;
+  display: block;
+  margin-left: auto;
   margin-right: 8px;
+  width: fit-content;
   padding: 6px 14px;
   background-color: var(--toolbar-bg);
   color: var(--text-color);

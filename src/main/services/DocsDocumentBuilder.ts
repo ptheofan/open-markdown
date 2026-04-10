@@ -243,9 +243,8 @@ function buildHorizontalRule(ctx: BuildContext): void {
           dashStyle: 'SOLID',
           padding: { magnitude: 8, unit: 'PT' },
         },
-        spaceBelow: { magnitude: 8, unit: 'PT' },
       },
-      fields: 'borderBottom,spaceBelow',
+      fields: 'borderBottom',
     },
   });
 
@@ -328,6 +327,8 @@ function buildBlockquote(ctx: BuildContext, element: DocsElement): void {
 }
 
 function buildElement(ctx: BuildContext, element: DocsElement): void {
+  const startIndex = ctx.index;
+
   switch (element.type) {
     case 'paragraph':
       buildParagraph(ctx, element);
@@ -353,6 +354,21 @@ function buildElement(ctx: BuildContext, element: DocsElement): void {
     case 'blockquote':
       buildBlockquote(ctx, element);
       break;
+  }
+
+  // Reset foreground color after each element to prevent color bleeding
+  // (e.g., heading styles setting a color that subsequent text inherits)
+  const endIndex = ctx.index;
+  if (endIndex > startIndex && element.type !== 'table' && element.type !== 'image') {
+    ctx.requests.push({
+      updateTextStyle: {
+        range: { startIndex, endIndex },
+        textStyle: {
+          foregroundColor: {},
+        },
+        fields: 'foregroundColor',
+      },
+    });
   }
 }
 

@@ -7,7 +7,7 @@
  */
 import { diffChars } from 'diff';
 import { convertMarkdownToDocs } from '@main/services/MarkdownToDocsConverter';
-import { buildInsertRequests } from '@main/services/DocsDocumentBuilder';
+import { buildInsertRequests, buildFormattingFromApiDoc } from '@main/services/DocsDocumentBuilder';
 import type { GoogleDocsService } from '@main/services/GoogleDocsService';
 import type { GoogleDocsLinkStore } from '@main/services/GoogleDocsLinkStore';
 import type { DocsDocument, DocsElement, GoogleDocsSyncResult, MermaidDiagramData } from '@shared/types/google-docs';
@@ -41,18 +41,19 @@ function extractElementText(element: DocsElement): string {
       text += (element.code ?? '') + '\n';
       break;
     case 'horizontal_rule':
-      text += '───\n';
+      // Builder inserts '\n' (empty paragraph with border) — API returns '\n'
+      text += '\n';
       break;
     case 'table':
+      // Match API format: each cell is a paragraph ending with '\n'
       if (element.rows) {
         for (const row of element.rows) {
           for (const cell of row) {
             for (const run of cell) {
               text += run.text;
             }
-            text += '\t';
+            text += '\n';
           }
-          text += '\n';
         }
       }
       break;
@@ -62,7 +63,16 @@ function extractElementText(element: DocsElement): string {
       }
       break;
     case 'image':
-      text += '[image]\n';
+      // Match API format: inline image objects produce no text in extractPlainText.
+      // Only the accompanying text runs (mermaid link) appear.
+      if (element.imageLink) {
+        if (element.mermaidLiveUrl) {
+          text += '\nEdit in Mermaid Live\n';
+        } else {
+          text += '\n';
+        }
+      }
+      // If no imageLink (upload failed), builder skips entirely — no text output
       break;
   }
   return text;
@@ -156,7 +166,7 @@ export class GoogleDocsSyncService {
 
       if (baseline === null) {
         console.log('[SyncService] First sync → fullPopulate');
-        return await this.fullPopulate(docId, filePath, docsDoc, ours);
+        return await this.fullPopulate(docId, filePath, docsDoc);
       }
 
       if (baseline !== theirs) {
@@ -187,10 +197,9 @@ export class GoogleDocsSyncService {
       console.log('[SyncService] Force overwrite — clearing doc and repopulating');
       const docsDoc = convertMarkdownToDocs(markdown);
       await this.processMermaidDiagrams(docsDoc, mermaidDiagrams);
-      const ours = extractPlainTextFromDocsDoc(docsDoc);
 
       // Full clear + repopulate (same as first sync)
-      return await this.fullPopulate(docId, filePath, docsDoc, ours);
+      return await this.fullPopulate(docId, filePath, docsDoc);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return { success: false, error: message };
@@ -239,7 +248,6 @@ export class GoogleDocsSyncService {
     docId: string,
     filePath: string,
     docsDoc: DocsDocument,
-    plainText: string,
   ): Promise<GoogleDocsSyncResult> {
     // First, clear any existing content from the doc
     const currentDoc = await this.docsService.getDocument(docId);
@@ -265,7 +273,12 @@ export class GoogleDocsSyncService {
       await this.populateTables(docId, pendingTables);
     }
 
-    await this.linkStore.saveBaseline(docId, plainText);
+    // Read back the doc from API and save its text as baseline.
+    // This ensures baseline matches future API reads (avoiding false
+    // external-edit detection from format differences in tables/images).
+    const populatedDoc = await this.docsService.getDocument(docId);
+    const actualText = this.docsService.extractPlainText(populatedDoc);
+    await this.linkStore.saveBaseline(docId, actualText);
     await this.linkStore.updateLastSynced(filePath, new Date().toISOString());
     return { success: true };
   }
@@ -373,31 +386,58 @@ export class GoogleDocsSyncService {
   }
 
   /**
-   * Apply diff — computes minimal changes between current and new text,
-   * then applies them in reverse document order to preserve indices.
+   * Apply diff — computes minimal text changes between current and new
+   * content, then reapplies all formatting (paragraph styles, text styles,
+   * bullets) so that headings, bold, lists, etc. are correct after the diff.
+   *
+   * Text diff operations use deleteContentRange / insertText which
+   * preserve Google Docs comment anchors on text that was not deleted.
+   * Formatting operations (updateParagraphStyle, updateTextStyle) never
+   * affect comment anchors.
    */
   private async applyDiff(
     docId: string,
     filePath: string,
     currentText: string,
-    _newDocsDoc: DocsDocument,
+    newDocsDoc: DocsDocument,
     newText: string,
   ): Promise<GoogleDocsSyncResult> {
     // If content is identical, no update needed
     if (currentText === newText) {
-      await this.linkStore.saveBaseline(docId, newText);
+      // Even if text matches, styles might have changed (e.g. paragraph
+      // was changed to a heading).  Re-read doc and apply formatting.
+      const apiDoc = await this.docsService.getDocument(docId);
+      const formattingOps = buildFormattingFromApiDoc(apiDoc, newDocsDoc);
+      if (formattingOps.length > 0) {
+        console.log(`[SyncService] applyDiff: text identical, reapplying ${formattingOps.length} formatting requests`);
+        await this.docsService.batchUpdate(docId, formattingOps);
+      }
+      const baselineText = this.docsService.extractPlainText(apiDoc);
+      await this.linkStore.saveBaseline(docId, baselineText);
       await this.linkStore.updateLastSynced(filePath, new Date().toISOString());
       return { success: true };
     }
 
-    // Google Docs body content starts at index 1
+    // Step 1: Apply text diff (minimal deletions preserve comment anchors)
     const operations = generateDiffOperations(currentText, newText, 1);
-
     if (operations.length > 0) {
+      console.log(`[SyncService] applyDiff: ${operations.length} text diff operations`);
       await this.docsService.batchUpdate(docId, operations);
     }
 
-    await this.linkStore.saveBaseline(docId, newText);
+    // Step 2: Read doc back to get actual paragraph indices after text changes
+    const updatedDoc = await this.docsService.getDocument(docId);
+
+    // Step 3: Apply formatting using actual API indices
+    const formattingOps = buildFormattingFromApiDoc(updatedDoc, newDocsDoc);
+    if (formattingOps.length > 0) {
+      console.log(`[SyncService] applyDiff: ${formattingOps.length} formatting requests`);
+      await this.docsService.batchUpdate(docId, formattingOps);
+    }
+
+    // Step 4: Save baseline from API text (consistent with future reads)
+    const baselineText = this.docsService.extractPlainText(updatedDoc);
+    await this.linkStore.saveBaseline(docId, baselineText);
     await this.linkStore.updateLastSynced(filePath, new Date().toISOString());
     return { success: true };
   }

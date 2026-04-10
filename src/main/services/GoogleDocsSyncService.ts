@@ -304,16 +304,16 @@ export class GoogleDocsSyncService {
         continue;
       }
 
-      // Delete placeholder and insert table
       const numRows = table.rows.length;
       const numCols = table.rows[0]?.length ?? 1;
 
+      // Delete placeholder paragraph, then insert table at that position
       await this.docsService.batchUpdate(docId, [
         { deleteContentRange: { range: { startIndex: placeholderIndex, endIndex: placeholderEndIndex } } },
         { insertTable: { rows: numRows, columns: numCols, location: { index: placeholderIndex } } },
       ]);
 
-      // Read doc again to find actual cell indices
+      // Read doc to find actual cell indices
       const docAfterTable = await this.docsService.getDocument(docId);
       const tableEl = (docAfterTable?.body?.content ?? []).find(
         (el: any) => el.table && el.startIndex >= placeholderIndex

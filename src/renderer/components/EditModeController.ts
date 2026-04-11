@@ -46,8 +46,6 @@ export class EditModeController {
     this.container = container;
     this.pluginManager = pluginManager;
     this.slicer = new MarkdownSlicer();
-
-    this.handleDocumentClick = this.handleDocumentClick.bind(this);
   }
 
   /**
@@ -387,7 +385,7 @@ export class EditModeController {
   /**
    * Handle document click to close menu and commit edits
    */
-  private handleDocumentClick(e: MouseEvent): void {
+  private handleDocumentClick = (e: MouseEvent): void => {
     const target = e.target as HTMLElement;
 
     // Close menu if clicking outside

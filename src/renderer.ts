@@ -273,10 +273,12 @@ class App {
         },
       });
 
-      // Load initial preferences
+      // Load initial preferences and re-apply theme so typography/colors take effect
       const preferences = await window.electronAPI.preferences.get();
       this.state.currentPreferences = preferences.core;
+      this.state.currentTheme = preferences.core.theme.mode;
       this.preferencesPanel.updateValues(preferences);
+      await this.applyTheme(this.state.currentTheme);
 
       // Load plugin preference schemas
       const pluginSchemas = this.markdownViewer?.getPluginPreferencesSchemas();
@@ -746,9 +748,10 @@ class App {
       // Update current preferences state
       this.state.currentPreferences = updatedPrefs.core;
 
-      // Update theme mode if changed
+      // Update theme mode if changed — sync to ThemeService so it persists on restart
       if (updates.core?.theme?.mode) {
         this.state.currentTheme = updates.core.theme.mode;
+        await window.electronAPI.theme.set(updates.core.theme.mode);
       }
 
       // Notify plugins of preference changes

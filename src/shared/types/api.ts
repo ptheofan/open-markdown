@@ -1,6 +1,7 @@
 import type {
   FileOpenResult,
   FileReadResult,
+  FileWriteResult,
   FileChangeEvent,
   FileDeleteEvent,
 } from './file';
@@ -22,6 +23,7 @@ export const IPC_CHANNELS = {
     READ: 'file:read',
     WATCH: 'file:watch',
     UNWATCH: 'file:unwatch',
+    WRITE: 'file:write',
     ON_CHANGE: 'file:on-change',
     ON_DELETE: 'file:on-delete',
   },
@@ -103,6 +105,7 @@ export interface FullscreenChangeEvent {
 export interface FileAPI {
   openDialog: () => Promise<FileOpenResult>;
   read: (filePath: string) => Promise<FileReadResult>;
+  write: (filePath: string, content: string) => Promise<FileWriteResult>;
   watch: (filePath: string) => Promise<void>;
   unwatch: (filePath: string) => Promise<void>;
   getDroppedFilePath: (file: File) => string;

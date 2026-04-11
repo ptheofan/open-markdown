@@ -51,3 +51,11 @@ export interface FileChangeEvent {
 export interface FileDeleteEvent {
   filePath: string;
 }
+
+/**
+ * Result of writing a file
+ */
+export interface FileWriteResult {
+  success: boolean;
+  error?: string;
+}

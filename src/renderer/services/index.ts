@@ -13,3 +13,9 @@ export {
 export { DiffService } from './DiffService';
 
 export { FindService, type FindResult } from './FindService';
+
+export {
+  MarkdownSlicer,
+  type MarkdownSlice,
+  type SliceType,
+} from './MarkdownSlicer';

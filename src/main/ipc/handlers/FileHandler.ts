@@ -8,7 +8,7 @@ import { getFileWatcherService } from '../../services/FileWatcherService';
 import { getWindowManager } from '@main/window/WindowManager';
 import { IPC_CHANNELS } from '../channels';
 
-import type { FileOpenResult, FileReadResult } from '@shared/types';
+import type { FileOpenResult, FileReadResult, FileWriteResult } from '@shared/types';
 
 // Track per-window subscription cleanup functions to prevent duplicate callbacks
 const windowSubscriptions = new Map<number, () => void>();
@@ -34,6 +34,14 @@ export function registerFileHandlers(): void {
     IPC_CHANNELS.FILE.READ,
     async (_event, filePath: string): Promise<FileReadResult> => {
       return fileService.readFile(filePath);
+    }
+  );
+
+  // Handle file write
+  ipcMain.handle(
+    IPC_CHANNELS.FILE.WRITE,
+    async (_event, filePath: string, content: string): Promise<FileWriteResult> => {
+      return fileService.writeFile(filePath, content);
     }
   );
 
@@ -104,6 +112,7 @@ export function registerFileHandlers(): void {
 export function unregisterFileHandlers(): void {
   ipcMain.removeHandler(IPC_CHANNELS.FILE.OPEN_DIALOG);
   ipcMain.removeHandler(IPC_CHANNELS.FILE.READ);
+  ipcMain.removeHandler(IPC_CHANNELS.FILE.WRITE);
   ipcMain.removeHandler(IPC_CHANNELS.FILE.WATCH);
   ipcMain.removeHandler(IPC_CHANNELS.FILE.UNWATCH);
 }

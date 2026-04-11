@@ -126,6 +126,10 @@ export const DEFAULT_CORE_PREFERENCES: CorePreferences = {
       itemSpacing: '0.25em',
     },
   },
+  editor: {
+    autoSave: true,
+    autoSaveDelay: 1000,
+  },
 };
 
 /**

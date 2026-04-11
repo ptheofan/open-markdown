@@ -90,6 +90,10 @@ export interface CorePreferences {
     ul: ListStyle;
     ol: ListStyle;
   };
+  editor: {
+    autoSave: boolean;
+    autoSaveDelay: number;
+  };
 }
 
 /**

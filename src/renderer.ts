@@ -27,6 +27,7 @@ import {
   type FindBar,
   type RecentFilesDropdown,
 } from './renderer/components';
+import type { EditModeCallbacks } from './renderer/components/EditModeController';
 import {
   createDocumentCopyService,
   DiffService,
@@ -59,6 +60,8 @@ interface AppState {
   currentPreferences: CorePreferences | null;
   isWatching: boolean;
   isFullscreen: boolean;
+  isEditMode: boolean;
+  hasUnsavedChanges: boolean;
 }
 
 /**
@@ -86,7 +89,11 @@ class App {
     currentPreferences: null,
     isWatching: false,
     isFullscreen: false,
+    isEditMode: false,
+    hasUnsavedChanges: false,
   };
+
+  private autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
   private cleanupFunctions: Array<() => void> = [];
   private contentRenderTimer: ReturnType<typeof setTimeout> | null = null;
@@ -233,6 +240,12 @@ class App {
       },
       onOpenPreferences: () => {
         this.handleOpenPreferences();
+      },
+      onToggleEditMode: () => {
+        void this.handleToggleEditMode();
+      },
+      onSave: () => {
+        void this.handleManualSave();
       },
     });
 
@@ -428,6 +441,14 @@ class App {
           case 'zoom-reset':
             this.zoomController?.resetZoom();
             break;
+          case 'save':
+            if (this.state.isEditMode) {
+              void this.handleManualSave();
+            }
+            break;
+          case 'toggle-edit-mode':
+            void this.handleToggleEditMode();
+            break;
         }
       }
     );
@@ -460,6 +481,10 @@ class App {
 
     // Disable copy dropdown when no document
     this.copyDropdown?.setEnabled(false);
+
+    // Disable edit mode button
+    const editModeBtn = document.getElementById('edit-mode-btn') as HTMLButtonElement | null;
+    if (editModeBtn) editModeBtn.disabled = true;
   }
 
   /**
@@ -474,6 +499,10 @@ class App {
 
     // Enable copy dropdown when document is loaded
     this.copyDropdown?.setEnabled(true);
+
+    // Enable edit mode button
+    const editModeBtn = document.getElementById('edit-mode-btn') as HTMLButtonElement | null;
+    if (editModeBtn) editModeBtn.disabled = false;
   }
 
   /**
@@ -506,6 +535,15 @@ class App {
    */
   private async loadFile(filePath: string): Promise<void> {
     try {
+      // Exit edit mode if active
+      if (this.state.isEditMode && this.markdownViewer) {
+        await this.markdownViewer.exitEditMode();
+        this.state.isEditMode = false;
+        this.state.hasUnsavedChanges = false;
+        this.toolbar?.setEditMode(false);
+        this.toolbar?.setSaveButtonVisible(false);
+      }
+
       // Stop watching previous file
       if (this.state.currentFilePath && this.state.isWatching) {
         await this.stopWatching();
@@ -595,6 +633,9 @@ class App {
   private async handleFileChange(event: FileChangeEvent): Promise<void> {
     if (event.filePath !== this.state.currentFilePath) return;
 
+    // In edit mode, ignore external changes to avoid conflicts
+    if (this.state.isEditMode) return;
+
     try {
       // Update modified time
       this.statusBar?.setModifiedTime(new Date());
@@ -681,6 +722,109 @@ class App {
    */
   private handleOpenPreferences(): void {
     this.preferencesPanel?.open();
+  }
+
+  /**
+   * Toggle edit mode on/off
+   */
+  private async handleToggleEditMode(): Promise<void> {
+    if (!this.markdownViewer || !this.state.currentFilePath) return;
+
+    if (this.state.isEditMode) {
+      // Exit edit mode
+      await this.markdownViewer.exitEditMode();
+      this.state.isEditMode = false;
+      this.toolbar?.setEditMode(false);
+      this.toolbar?.setSaveButtonVisible(false);
+
+      // Clear auto-save timer
+      if (this.autoSaveTimer) {
+        clearTimeout(this.autoSaveTimer);
+        this.autoSaveTimer = null;
+      }
+
+      // Save any pending changes
+      if (this.state.hasUnsavedChanges) {
+        await this.saveFile();
+      }
+    } else {
+      // Enter edit mode
+      const callbacks: EditModeCallbacks = {
+        onContentChange: (markdown: string) => {
+          this.handleEditContentChange(markdown);
+        },
+      };
+      await this.markdownViewer.enterEditMode(callbacks);
+      this.state.isEditMode = true;
+      this.toolbar?.setEditMode(true);
+
+      // Show save button if auto-save is disabled
+      const autoSave = this.state.currentPreferences?.editor?.autoSave ?? true;
+      if (!autoSave) {
+        this.toolbar?.setSaveButtonVisible(true);
+        this.toolbar?.setSaveButtonEnabled(false);
+      }
+    }
+  }
+
+  /**
+   * Handle content changes during edit mode
+   */
+  private handleEditContentChange(markdown: string): void {
+    this.state.hasUnsavedChanges = true;
+
+    const autoSave = this.state.currentPreferences?.editor?.autoSave ?? true;
+    const autoSaveDelay = this.state.currentPreferences?.editor?.autoSaveDelay ?? 1000;
+
+    if (autoSave) {
+      // Debounced auto-save
+      if (this.autoSaveTimer) {
+        clearTimeout(this.autoSaveTimer);
+      }
+      this.autoSaveTimer = setTimeout(() => {
+        void this.saveFile();
+      }, autoSaveDelay);
+    } else {
+      // Enable save button
+      this.toolbar?.setSaveButtonEnabled(true);
+    }
+
+    // Update the diff service baseline for the gutter
+    this.diffService?.setBaseline(markdown);
+  }
+
+  /**
+   * Handle manual save (when auto-save is off)
+   */
+  private async handleManualSave(): Promise<void> {
+    await this.saveFile();
+    this.toolbar?.setSaveButtonEnabled(false);
+  }
+
+  /**
+   * Save the current markdown content to file
+   */
+  private async saveFile(): Promise<void> {
+    if (!this.state.currentFilePath || !this.markdownViewer) return;
+
+    const markdown = this.markdownViewer.getCurrentMarkdown();
+
+    try {
+      const result = await window.electronAPI.file.write(
+        this.state.currentFilePath,
+        markdown
+      );
+
+      if (result.success) {
+        this.state.hasUnsavedChanges = false;
+        this.statusBar?.setModifiedTime(new Date());
+      } else {
+        this.toast?.error(`Save failed: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Failed to save file:', error);
+      this.toast?.error('Failed to save file');
+    }
   }
 
   /**

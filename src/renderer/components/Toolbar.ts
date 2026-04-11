@@ -10,6 +10,8 @@ export interface ToolbarCallbacks {
   onOpenFile?: () => void;
   onToggleTheme?: () => void;
   onOpenPreferences?: () => void;
+  onToggleEditMode?: () => void;
+  onSave?: () => void;
 }
 
 /**
@@ -20,6 +22,8 @@ export class Toolbar {
   private openFileBtn: HTMLButtonElement | null = null;
   private preferencesBtn: HTMLButtonElement | null = null;
   private themeToggleBtn: HTMLButtonElement | null = null;
+  private editModeBtn: HTMLButtonElement | null = null;
+  private saveBtn: HTMLButtonElement | null = null;
   private fileNameElement: HTMLElement | null = null;
   private themeIconLight: HTMLElement | null = null;
   private themeIconDark: HTMLElement | null = null;
@@ -38,6 +42,8 @@ export class Toolbar {
     this.openFileBtn = this.element.querySelector('#open-file-btn');
     this.preferencesBtn = this.element.querySelector('#preferences-btn');
     this.themeToggleBtn = this.element.querySelector('#theme-toggle-btn');
+    this.editModeBtn = this.element.querySelector('#edit-mode-btn');
+    this.saveBtn = this.element.querySelector('#save-btn');
     this.fileNameElement = this.element.querySelector('#file-name');
     this.themeIconLight = this.element.querySelector('#theme-icon-light');
     this.themeIconDark = this.element.querySelector('#theme-icon-dark');
@@ -57,6 +63,14 @@ export class Toolbar {
 
     this.themeToggleBtn?.addEventListener('click', () => {
       this.callbacks.onToggleTheme?.();
+    });
+
+    this.editModeBtn?.addEventListener('click', () => {
+      this.callbacks.onToggleEditMode?.();
+    });
+
+    this.saveBtn?.addEventListener('click', () => {
+      this.callbacks.onSave?.();
     });
   }
 
@@ -100,6 +114,39 @@ export class Toolbar {
     // Update button title
     if (this.themeToggleBtn) {
       this.themeToggleBtn.title = `Switch to ${isDark ? 'light' : 'dark'} theme`;
+    }
+  }
+
+  /**
+   * Update the edit mode toggle button state
+   */
+  setEditMode(isActive: boolean): void {
+    if (this.editModeBtn) {
+      if (isActive) {
+        this.editModeBtn.classList.add('toolbar-btn-active');
+        this.editModeBtn.title = 'Exit edit mode';
+      } else {
+        this.editModeBtn.classList.remove('toolbar-btn-active');
+        this.editModeBtn.title = 'Enter edit mode';
+      }
+    }
+  }
+
+  /**
+   * Show or hide the save button (visible when auto-save is off in edit mode)
+   */
+  setSaveButtonVisible(visible: boolean): void {
+    if (this.saveBtn) {
+      this.saveBtn.classList.toggle('hidden', !visible);
+    }
+  }
+
+  /**
+   * Set the save button enabled state
+   */
+  setSaveButtonEnabled(enabled: boolean): void {
+    if (this.saveBtn) {
+      this.saveBtn.disabled = !enabled;
     }
   }
 

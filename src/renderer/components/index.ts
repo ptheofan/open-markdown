@@ -112,3 +112,12 @@ export {
   createRecentFilesDropdown,
   type RecentFilesDropdownCallbacks,
 } from './RecentFilesDropdown';
+
+// EditModeController
+export {
+  EditModeController,
+  createEditModeController,
+  type EditModeCallbacks,
+  type SliceAction,
+  type BlockType,
+} from './EditModeController';

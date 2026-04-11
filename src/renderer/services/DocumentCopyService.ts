@@ -166,9 +166,9 @@ export class DocumentCopyService {
       const fullWidth = scrollContainer.scrollWidth;
       const fullHeight = scrollContainer.scrollHeight;
 
-      // Get background color from theme
+      // Get background color from document preferences, falling back to theme default
       const bgColor = getComputedStyle(document.documentElement)
-        .getPropertyValue('--bg')
+        .getPropertyValue('--doc-bg-color')
         .trim() || getComputedStyle(document.documentElement)
         .getPropertyValue('--bg-color')
         .trim() || '#ffffff';

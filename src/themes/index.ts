@@ -118,19 +118,27 @@ export function generateTypographyCSS(
   const lines: string[] = [];
   const { typography, lists } = preferences;
 
+  // Font families (override theme defaults when set in preferences)
+  if (typography.fontFamily) {
+    lines.push(`  --doc-font-body: ${typography.fontFamily};`);
+  }
+  if (typography.monoFontFamily) {
+    lines.push(`  --doc-font-mono: ${typography.monoFontFamily};`);
+  }
+
   // Base font size
-  lines.push(`  --base-font-size: ${typography.baseFontSize};`);
+  lines.push(`  --doc-font-size: ${typography.baseFontSize};`);
 
   // Background color from preferences
   lines.push(
-    `  --user-bg-color: ${getColorForTheme(preferences.theme.background, theme)};`
+    `  --doc-bg-color: ${getColorForTheme(preferences.theme.background, theme)};`
   );
 
   // Heading styles (h1-h6)
   const headingLevels = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] as const;
   for (const level of headingLevels) {
     const style = typography[level];
-    const prefix = `--${level}`;
+    const prefix = `--doc-${level}`;
 
     lines.push(`  ${prefix}-font-size: ${style.fontSize};`);
     lines.push(`  ${prefix}-font-weight: ${style.fontWeight};`);
@@ -149,43 +157,43 @@ export function generateTypographyCSS(
   }
 
   // Paragraph
-  lines.push(`  --paragraph-margin-bottom: ${typography.paragraph.marginBottom};`);
+  lines.push(`  --doc-paragraph-margin-bottom: ${typography.paragraph.marginBottom};`);
 
   // Link
   lines.push(
-    `  --user-link-color: ${getColorForTheme(typography.link.color, theme)};`
+    `  --doc-link-color: ${getColorForTheme(typography.link.color, theme)};`
   );
 
   // Blockquote
-  lines.push(`  --blockquote-border-width: ${typography.blockquote.borderWidth};`);
+  lines.push(`  --doc-blockquote-border-width: ${typography.blockquote.borderWidth};`);
   lines.push(
-    `  --blockquote-border-color: ${getColorForTheme(typography.blockquote.borderColor, theme)};`
+    `  --doc-blockquote-border-color: ${getColorForTheme(typography.blockquote.borderColor, theme)};`
   );
   lines.push(
-    `  --blockquote-text-color: ${getColorForTheme(typography.blockquote.textColor, theme)};`
+    `  --doc-blockquote-text-color: ${getColorForTheme(typography.blockquote.textColor, theme)};`
   );
 
   // Code
-  lines.push(`  --code-font-size: ${typography.code.fontSize};`);
+  lines.push(`  --doc-code-font-size: ${typography.code.fontSize};`);
   lines.push(
-    `  --user-code-bg: ${getColorForTheme(typography.code.background, theme)};`
+    `  --doc-code-bg: ${getColorForTheme(typography.code.background, theme)};`
   );
-  lines.push(`  --code-border-radius: ${typography.code.borderRadius};`);
+  lines.push(`  --doc-code-border-radius: ${typography.code.borderRadius};`);
 
   // Lists
-  lines.push(`  --ul-padding-left: ${lists.ul.paddingLeft};`);
-  lines.push(`  --ul-item-spacing: ${lists.ul.itemSpacing};`);
+  lines.push(`  --doc-ul-padding-left: ${lists.ul.paddingLeft};`);
+  lines.push(`  --doc-ul-item-spacing: ${lists.ul.itemSpacing};`);
   if (lists.ul.markerColor) {
     lines.push(
-      `  --ul-marker-color: ${getColorForTheme(lists.ul.markerColor, theme)};`
+      `  --doc-ul-marker-color: ${getColorForTheme(lists.ul.markerColor, theme)};`
     );
   }
 
-  lines.push(`  --ol-padding-left: ${lists.ol.paddingLeft};`);
-  lines.push(`  --ol-item-spacing: ${lists.ol.itemSpacing};`);
+  lines.push(`  --doc-ol-padding-left: ${lists.ol.paddingLeft};`);
+  lines.push(`  --doc-ol-item-spacing: ${lists.ol.itemSpacing};`);
   if (lists.ol.markerColor) {
     lines.push(
-      `  --ol-marker-color: ${getColorForTheme(lists.ol.markerColor, theme)};`
+      `  --doc-ol-marker-color: ${getColorForTheme(lists.ol.markerColor, theme)};`
     );
   }
 

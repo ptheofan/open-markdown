@@ -61,6 +61,8 @@ export interface CorePreferences {
   };
   typography: {
     baseFontSize: string;
+    fontFamily: string;
+    monoFontFamily: string;
     h1: TypographyStyle;
     h2: TypographyStyle;
     h3: TypographyStyle;

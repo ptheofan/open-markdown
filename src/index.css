@@ -80,7 +80,7 @@ html, body {
 }
 
 body {
-  font-family: var(--font-body, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
   font-size: 14px;
   line-height: 1.5;
   color: var(--text-color);
@@ -270,6 +270,7 @@ body {
 .markdown-body {
   max-width: 900px;
   margin: 0 auto;
+  font-family: var(--font-body, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif);
   font-size: var(--base-font-size, 14px);
 }
 
@@ -1072,7 +1073,7 @@ button:focus:not(:focus-visible) {
   border-radius: 4px;
   color: var(--text-color);
   font-size: 11px;
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, SF Mono, Menlo, monospace);
+  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, monospace;
   transition: border-color 0.15s;
 }
 

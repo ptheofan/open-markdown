@@ -241,11 +241,14 @@ class App {
       onOpenPreferences: () => {
         this.handleOpenPreferences();
       },
-      onToggleEditMode: () => {
-        void this.handleToggleEditMode();
+      onEnterEditMode: () => {
+        void this.handleEnterEditMode();
       },
       onSave: () => {
-        void this.handleManualSave();
+        void this.handleSaveAndExitEditMode();
+      },
+      onCancelEdit: () => {
+        void this.handleCancelEdit();
       },
     });
 
@@ -443,11 +446,15 @@ class App {
             break;
           case 'save':
             if (this.state.isEditMode) {
-              void this.handleManualSave();
+              void this.handleSaveAndExitEditMode();
             }
             break;
           case 'toggle-edit-mode':
-            void this.handleToggleEditMode();
+            if (this.state.isEditMode) {
+              void this.handleSaveAndExitEditMode();
+            } else {
+              void this.handleEnterEditMode();
+            }
             break;
         }
       }
@@ -536,12 +543,8 @@ class App {
   private async loadFile(filePath: string): Promise<void> {
     try {
       // Exit edit mode if active
-      if (this.state.isEditMode && this.markdownViewer) {
-        await this.markdownViewer.exitEditMode();
-        this.state.isEditMode = false;
-        this.state.hasUnsavedChanges = false;
-        this.toolbar?.setEditMode(false);
-        this.toolbar?.setSaveButtonVisible(false);
+      if (this.state.isEditMode) {
+        await this.exitEditMode();
       }
 
       // Stop watching previous file
@@ -725,80 +728,67 @@ class App {
   }
 
   /**
-   * Toggle edit mode on/off
+   * Enter edit mode
    */
-  private async handleToggleEditMode(): Promise<void> {
+  private async handleEnterEditMode(): Promise<void> {
     if (!this.markdownViewer || !this.state.currentFilePath) return;
 
-    if (this.state.isEditMode) {
-      // Exit edit mode
-      await this.markdownViewer.exitEditMode();
-      this.state.isEditMode = false;
-      this.toolbar?.setEditMode(false);
-      this.toolbar?.setSaveButtonVisible(false);
+    const callbacks: EditModeCallbacks = {
+      onContentChange: (_markdown: string) => {
+        this.state.hasUnsavedChanges = true;
+      },
+    };
+    await this.markdownViewer.enterEditMode(callbacks);
+    this.state.isEditMode = true;
+    this.toolbar?.setEditMode(true);
+  }
 
-      // Clear auto-save timer
-      if (this.autoSaveTimer) {
-        clearTimeout(this.autoSaveTimer);
-        this.autoSaveTimer = null;
-      }
+  /**
+   * Save changes and exit edit mode
+   */
+  private async handleSaveAndExitEditMode(): Promise<void> {
+    if (!this.markdownViewer) return;
 
-      // Save any pending changes
-      if (this.state.hasUnsavedChanges) {
-        await this.saveFile();
-      }
-    } else {
-      // Enter edit mode
-      const callbacks: EditModeCallbacks = {
-        onContentChange: (markdown: string) => {
-          this.handleEditContentChange(markdown);
-        },
-      };
-      await this.markdownViewer.enterEditMode(callbacks);
-      this.state.isEditMode = true;
-      this.toolbar?.setEditMode(true);
+    // Save before exiting
+    if (this.state.hasUnsavedChanges) {
+      await this.saveFile();
+    }
 
-      // Show save button if auto-save is disabled
-      const autoSave = this.state.currentPreferences?.editor?.autoSave ?? true;
-      if (!autoSave) {
-        this.toolbar?.setSaveButtonVisible(true);
-        this.toolbar?.setSaveButtonEnabled(false);
-      }
+    await this.exitEditMode();
+  }
+
+  /**
+   * Cancel edit mode - discard unsaved changes and re-render from disk
+   */
+  private async handleCancelEdit(): Promise<void> {
+    if (!this.markdownViewer || !this.state.currentFilePath) return;
+
+    // Discard changes - exit without saving
+    this.state.hasUnsavedChanges = false;
+    await this.exitEditMode();
+
+    // Re-read from disk to restore original content
+    const result = await window.electronAPI.file.read(this.state.currentFilePath);
+    if (result.success && result.content != null) {
+      await this.markdownViewer.render(result.content, this.state.currentFilePath);
     }
   }
 
   /**
-   * Handle content changes during edit mode
+   * Common exit-edit-mode cleanup
    */
-  private handleEditContentChange(markdown: string): void {
-    this.state.hasUnsavedChanges = true;
+  private async exitEditMode(): Promise<void> {
+    if (!this.markdownViewer) return;
 
-    const autoSave = this.state.currentPreferences?.editor?.autoSave ?? true;
-    const autoSaveDelay = this.state.currentPreferences?.editor?.autoSaveDelay ?? 1000;
+    await this.markdownViewer.exitEditMode();
+    this.state.isEditMode = false;
+    this.state.hasUnsavedChanges = false;
+    this.toolbar?.setEditMode(false);
 
-    if (autoSave) {
-      // Debounced auto-save
-      if (this.autoSaveTimer) {
-        clearTimeout(this.autoSaveTimer);
-      }
-      this.autoSaveTimer = setTimeout(() => {
-        void this.saveFile();
-      }, autoSaveDelay);
-    } else {
-      // Enable save button
-      this.toolbar?.setSaveButtonEnabled(true);
+    if (this.autoSaveTimer) {
+      clearTimeout(this.autoSaveTimer);
+      this.autoSaveTimer = null;
     }
-
-    // Update the diff service baseline for the gutter
-    this.diffService?.setBaseline(markdown);
-  }
-
-  /**
-   * Handle manual save (when auto-save is off)
-   */
-  private async handleManualSave(): Promise<void> {
-    await this.saveFile();
-    this.toolbar?.setSaveButtonEnabled(false);
   }
 
   /**

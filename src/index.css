@@ -1625,7 +1625,56 @@ button:focus:not(:focus-visible) {
    Edit Mode Styles
    =========================== */
 
-/* Active toggle button */
+/* Edit / Save split button group */
+.edit-save-group {
+  display: inline-flex;
+  position: relative;
+}
+
+.edit-save-group.is-editing .edit-save-main {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right: none;
+  background-color: var(--active-bg);
+  border-color: var(--link-color);
+  color: var(--link-color);
+}
+
+.edit-save-group.is-editing .edit-save-main:hover {
+  background-color: var(--hover-bg);
+}
+
+.edit-save-arrow {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  padding: 6px 6px;
+  border-color: var(--link-color);
+  color: var(--link-color);
+  background-color: var(--active-bg);
+}
+
+.edit-save-arrow:hover {
+  background-color: var(--hover-bg);
+}
+
+.edit-save-arrow .dropdown-chevron {
+  opacity: 0.6;
+  transition: transform 0.15s ease;
+}
+
+.edit-save-group.is-open .edit-save-arrow .dropdown-chevron {
+  transform: rotate(180deg);
+}
+
+.edit-save-group .dropdown-menu {
+  right: 0;
+  left: auto;
+  top: 100%;
+  margin-top: 4px;
+  min-width: 200px;
+}
+
+/* Active toggle button (generic) */
 .toolbar-btn-active {
   background-color: var(--active-bg);
   border-color: var(--link-color);
@@ -1633,7 +1682,7 @@ button:focus:not(:focus-visible) {
 }
 
 .toolbar-btn-active:hover {
-  background-color: var(--active-bg);
+  background-color: var(--hover-bg);
 }
 
 /* Edit mode container */

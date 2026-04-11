@@ -1,10 +1,9 @@
 /**
  * ThemeService unit tests
+ *
+ * ThemeService is now responsible only for OS-level system theme detection.
+ * Theme mode preference storage is handled by PreferencesService.
  */
-import { promises as fs } from 'fs';
-import os from 'os';
-import path from 'path';
-
 import {
   ThemeService,
   createThemeService,
@@ -13,174 +12,27 @@ import {
 } from '@main/services/ThemeService';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// Use a platform-agnostic mock path
-const MOCK_USER_DATA = path.join('mock', 'user', 'data');
-
 // Mock Electron modules
-vi.mock('electron', async () => {
-  const pathModule = await import('path');
+vi.mock('electron', () => {
   return {
     nativeTheme: {
       shouldUseDarkColors: false,
       on: vi.fn(),
       off: vi.fn(),
     },
-    app: {
-      getPath: vi.fn(() => pathModule.join('mock', 'user', 'data')),
-    },
   };
 });
 
 describe('ThemeService', () => {
-  let tempDir: string;
   let service: ThemeService;
 
-  beforeEach(async () => {
-    // Create temp directory for tests
-    tempDir = path.join(os.tmpdir(), `theme-test-${Date.now()}`);
-    await fs.mkdir(tempDir, { recursive: true });
-
-    // Reset singleton
+  beforeEach(() => {
     resetThemeService();
-
-    // Create fresh service for each test
-    service = createThemeService(tempDir);
+    service = createThemeService();
   });
 
-  afterEach(async () => {
-    // Cleanup temp directory
-    try {
-      await fs.rm(tempDir, { recursive: true, force: true });
-    } catch {
-      // Ignore cleanup errors
-    }
-  });
-
-  describe('constructor', () => {
-    it('should create service with custom preferences directory', () => {
-      const customPath = path.join('custom', 'path');
-      const customService = createThemeService(customPath);
-      expect(customService.getPreferencesPath()).toBe(path.join(customPath, 'theme-preferences.json'));
-    });
-
-    it('should create service with default directory when not provided', () => {
-      const defaultService = new ThemeService();
-      expect(defaultService.getPreferencesPath()).toBe(path.join(MOCK_USER_DATA, 'theme-preferences.json'));
-    });
-  });
-
-  describe('initialize', () => {
-    it('should initialize with default theme when no preferences exist', async () => {
-      await service.initialize();
-      expect(service.getCurrentTheme()).toBe('system');
-    });
-
-    it('should load saved preferences on initialize', async () => {
-      // Write preferences file
-      const prefsPath = path.join(tempDir, 'theme-preferences.json');
-      await fs.writeFile(prefsPath, JSON.stringify({ theme: 'dark' }));
-
-      await service.initialize();
-      expect(service.getCurrentTheme()).toBe('dark');
-    });
-
-    it('should handle corrupted preferences file gracefully', async () => {
-      // Write invalid JSON
-      const prefsPath = path.join(tempDir, 'theme-preferences.json');
-      await fs.writeFile(prefsPath, 'invalid json {{{');
-
-      await service.initialize();
-      expect(service.getCurrentTheme()).toBe('system');
-    });
-
-    it('should handle invalid theme value in preferences', async () => {
-      // Write preferences with invalid theme
-      const prefsPath = path.join(tempDir, 'theme-preferences.json');
-      await fs.writeFile(prefsPath, JSON.stringify({ theme: 'invalid' }));
-
-      await service.initialize();
-      expect(service.getCurrentTheme()).toBe('system');
-    });
-
-    it('should only initialize once', async () => {
-      const prefsPath = path.join(tempDir, 'theme-preferences.json');
-      await fs.writeFile(prefsPath, JSON.stringify({ theme: 'dark' }));
-
-      await service.initialize();
-      expect(service.getCurrentTheme()).toBe('dark');
-
-      // Change file
-      await fs.writeFile(prefsPath, JSON.stringify({ theme: 'light' }));
-
-      // Initialize again - should not reload
-      await service.initialize();
-      expect(service.getCurrentTheme()).toBe('dark');
-    });
-  });
-
-  describe('getCurrentTheme', () => {
-    it('should return system as default', async () => {
-      await service.initialize();
-      expect(service.getCurrentTheme()).toBe('system');
-    });
-
-    it('should return the set theme after setTheme', async () => {
-      await service.initialize();
-      await service.setTheme('dark');
-      expect(service.getCurrentTheme()).toBe('dark');
-    });
-  });
-
-  describe('setTheme', () => {
-    it('should save light theme', async () => {
-      await service.initialize();
-      await service.setTheme('light');
-
-      expect(service.getCurrentTheme()).toBe('light');
-
-      // Verify file was written
-      const prefsPath = path.join(tempDir, 'theme-preferences.json');
-      const content = await fs.readFile(prefsPath, 'utf-8');
-      const prefs = JSON.parse(content);
-      expect(prefs.theme).toBe('light');
-    });
-
-    it('should save dark theme', async () => {
-      await service.initialize();
-      await service.setTheme('dark');
-
-      expect(service.getCurrentTheme()).toBe('dark');
-    });
-
-    it('should save system theme', async () => {
-      await service.initialize();
-      await service.setTheme('dark');
-      await service.setTheme('system');
-
-      expect(service.getCurrentTheme()).toBe('system');
-    });
-
-    it('should persist theme across service instances', async () => {
-      await service.initialize();
-      await service.setTheme('dark');
-
-      // Create new service instance
-      const service2 = createThemeService(tempDir);
-      await service2.initialize();
-
-      expect(service2.getCurrentTheme()).toBe('dark');
-    });
-
-    it('should create directory if it does not exist', async () => {
-      const nestedDir = path.join(tempDir, 'nested', 'deep', 'path');
-      const nestedService = createThemeService(nestedDir);
-      await nestedService.initialize();
-      await nestedService.setTheme('dark');
-
-      const prefsPath = path.join(nestedDir, 'theme-preferences.json');
-      const content = await fs.readFile(prefsPath, 'utf-8');
-      expect(JSON.parse(content).theme).toBe('dark');
-    });
+  afterEach(() => {
+    resetThemeService();
   });
 
   describe('getSystemTheme', () => {
@@ -239,13 +91,6 @@ describe('ThemeService', () => {
       expect(callback).toHaveBeenCalledWith('dark');
     });
   });
-
-  describe('getPreferencesPath', () => {
-    it('should return the preferences file path', () => {
-      const expectedPath = path.join(tempDir, 'theme-preferences.json');
-      expect(service.getPreferencesPath()).toBe(expectedPath);
-    });
-  });
 });
 
 describe('Singleton functions', () => {
@@ -264,11 +109,6 @@ describe('Singleton functions', () => {
 
       expect(instance1).toBe(instance2);
     });
-
-    it('should create a new instance with default path', () => {
-      const instance = getThemeService();
-      expect(instance.getPreferencesPath()).toBe(path.join(MOCK_USER_DATA, 'theme-preferences.json'));
-    });
   });
 
   describe('resetThemeService', () => {
@@ -283,14 +123,10 @@ describe('Singleton functions', () => {
 
   describe('createThemeService', () => {
     it('should create independent instances', () => {
-      const path1 = path.join('path', '1');
-      const path2 = path.join('path', '2');
-      const instance1 = createThemeService(path1);
-      const instance2 = createThemeService(path2);
+      const instance1 = createThemeService();
+      const instance2 = createThemeService();
 
       expect(instance1).not.toBe(instance2);
-      expect(instance1.getPreferencesPath()).toBe(path.join(path1, 'theme-preferences.json'));
-      expect(instance2.getPreferencesPath()).toBe(path.join(path2, 'theme-preferences.json'));
     });
   });
 });

@@ -12,6 +12,7 @@ import type {
   FileDeleteEvent,
   FileOpenResult,
   FileReadResult,
+  FileWriteResult,
   FullscreenChangeEvent,
   RecentFileEntry,
   ResolvedTheme,
@@ -28,6 +29,7 @@ import type {
   GoogleDocLink,
   GoogleDocsSyncResult,
   MermaidDiagramData,
+  OpenInEditorResult,
 } from '@shared/types';
 
 /**
@@ -41,6 +43,10 @@ const electronAPI: ElectronAPI = {
 
     read: (filePath: string): Promise<FileReadResult> => {
       return ipcRenderer.invoke(IPC_CHANNELS.FILE.READ, filePath);
+    },
+
+    write: (filePath: string, content: string): Promise<FileWriteResult> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.FILE.WRITE, filePath, content);
     },
 
     watch: (filePath: string): Promise<void> => {
@@ -386,6 +392,16 @@ const electronAPI: ElectronAPI = {
       return () => {
         ipcRenderer.removeListener(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, handler);
       };
+    },
+  },
+
+  shell: {
+    revealInFileManager: (filePath: string): Promise<void> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.SHELL.REVEAL_IN_FILE_MANAGER, filePath);
+    },
+
+    openInEditor: (filePath: string): Promise<OpenInEditorResult> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.SHELL.OPEN_IN_EDITOR, filePath);
     },
   },
 

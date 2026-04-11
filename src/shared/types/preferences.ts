@@ -52,6 +52,26 @@ export interface ListStyle {
 }
 
 /**
+ * Known external editor/IDE presets
+ */
+export type ExternalEditorId =
+  | 'none'
+  | 'vscode'
+  | 'cursor'
+  | 'webstorm'
+  | 'sublime'
+  | 'zed'
+  | 'custom';
+
+/**
+ * External editor configuration
+ */
+export interface ExternalEditorPreferences {
+  editor: ExternalEditorId;
+  customCommand: string;
+}
+
+/**
  * Core application preferences
  */
 export interface CorePreferences {
@@ -61,6 +81,8 @@ export interface CorePreferences {
   };
   typography: {
     baseFontSize: string;
+    fontFamily: string;
+    monoFontFamily: string;
     h1: TypographyStyle;
     h2: TypographyStyle;
     h3: TypographyStyle;
@@ -92,6 +114,11 @@ export interface CorePreferences {
     useCustomCredentials: boolean;
     customClientId: string;
   };
+  editor: {
+    autoSave: boolean;
+    autoSaveDelay: number;
+  };
+  externalEditor: ExternalEditorPreferences;
 }
 
 /**

@@ -31,6 +31,10 @@ import {
   registerGoogleDocsHandlers,
   unregisterGoogleDocsHandlers,
 } from './GoogleDocsHandler';
+import {
+  registerShellHandlers,
+  unregisterShellHandlers,
+} from './ShellHandler';
 
 /**
  * Register all IPC handlers
@@ -45,6 +49,7 @@ export function registerAllHandlers(): void {
   registerRecentFilesHandlers();
   registerWindowHandlers();
   registerGoogleDocsHandlers();
+  registerShellHandlers();
 }
 
 /**
@@ -60,6 +65,7 @@ export function unregisterAllHandlers(): void {
   unregisterRecentFilesHandlers();
   unregisterWindowHandlers();
   unregisterGoogleDocsHandlers();
+  unregisterShellHandlers();
 }
 
 // Re-export individual handlers
@@ -93,3 +99,7 @@ export {
   registerGoogleDocsHandlers,
   unregisterGoogleDocsHandlers,
 } from './GoogleDocsHandler';
+export {
+  registerShellHandlers,
+  unregisterShellHandlers,
+} from './ShellHandler';

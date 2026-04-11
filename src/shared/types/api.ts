@@ -1,6 +1,7 @@
 import type {
   FileOpenResult,
   FileReadResult,
+  FileWriteResult,
   FileChangeEvent,
   FileDeleteEvent,
 } from './file';
@@ -23,6 +24,7 @@ export const IPC_CHANNELS = {
     READ: 'file:read',
     WATCH: 'file:watch',
     UNWATCH: 'file:unwatch',
+    WRITE: 'file:write',
     ON_CHANGE: 'file:on-change',
     ON_DELETE: 'file:on-delete',
   },
@@ -86,6 +88,10 @@ export const IPC_CHANNELS = {
     ON_AUTH_CHANGE: 'google-docs:on-auth-change',
     ON_SYNC_STATUS: 'google-docs:on-sync-status',
   },
+  SHELL: {
+    REVEAL_IN_FILE_MANAGER: 'shell:reveal-in-file-manager',
+    OPEN_IN_EDITOR: 'shell:open-in-editor',
+  },
 } as const;
 
 /**
@@ -102,7 +108,8 @@ export type IpcChannel =
   | (typeof IPC_CHANNELS.FILE_ASSOCIATION)[keyof typeof IPC_CHANNELS.FILE_ASSOCIATION]
   | (typeof IPC_CHANNELS.RECENT_FILES)[keyof typeof IPC_CHANNELS.RECENT_FILES]
   | (typeof IPC_CHANNELS.MENU)[keyof typeof IPC_CHANNELS.MENU]
-  | (typeof IPC_CHANNELS.GOOGLE_DOCS)[keyof typeof IPC_CHANNELS.GOOGLE_DOCS];
+  | (typeof IPC_CHANNELS.GOOGLE_DOCS)[keyof typeof IPC_CHANNELS.GOOGLE_DOCS]
+  | (typeof IPC_CHANNELS.SHELL)[keyof typeof IPC_CHANNELS.SHELL];
 
 /**
  * Fullscreen change event data
@@ -117,6 +124,7 @@ export interface FullscreenChangeEvent {
 export interface FileAPI {
   openDialog: () => Promise<FileOpenResult>;
   read: (filePath: string) => Promise<FileReadResult>;
+  write: (filePath: string, content: string) => Promise<FileWriteResult>;
   watch: (filePath: string) => Promise<void>;
   unwatch: (filePath: string) => Promise<void>;
   getDroppedFilePath: (file: File) => string;
@@ -263,6 +271,22 @@ export interface GoogleDocsAPI {
 }
 
 /**
+ * Result of opening a file in an external editor
+ */
+export interface OpenInEditorResult {
+  success: boolean;
+  error?: string;
+}
+
+/**
+ * Shell operations API exposed to renderer
+ */
+export interface ShellAPI {
+  revealInFileManager: (filePath: string) => Promise<void>;
+  openInEditor: (filePath: string) => Promise<OpenInEditorResult>;
+}
+
+/**
  * Complete Electron API exposed via contextBridge
  */
 export interface ElectronAPI {
@@ -277,6 +301,7 @@ export interface ElectronAPI {
   recentFiles: RecentFilesAPI;
   menu: MenuAPI;
   googleDocs: GoogleDocsAPI;
+  shell: ShellAPI;
 }
 
 /**

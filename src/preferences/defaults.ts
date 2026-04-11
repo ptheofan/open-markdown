@@ -82,6 +82,8 @@ export const DEFAULT_CORE_PREFERENCES: CorePreferences = {
   },
   typography: {
     baseFontSize: '14px',
+    fontFamily: '',
+    monoFontFamily: '',
     h1: createHeadingStyle('2em', { paddingBottom: '0.3em', hasBorder: true }),
     h2: createHeadingStyle('1.5em', { paddingBottom: '0.3em', hasBorder: true }),
     h3: createHeadingStyle('1.25em'),
@@ -127,6 +129,14 @@ export const DEFAULT_CORE_PREFERENCES: CorePreferences = {
   googleDocs: {
     useCustomCredentials: false,
     customClientId: '',
+  },
+  editor: {
+    autoSave: true,
+    autoSaveDelay: 1000,
+  },
+  externalEditor: {
+    editor: 'none',
+    customCommand: '',
   },
 };
 

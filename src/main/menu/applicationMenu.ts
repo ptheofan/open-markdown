@@ -52,12 +52,27 @@ export function setupApplicationMenu(): void {
           click: () => sendMenuAction('open-file'),
         },
         { type: 'separator' },
+        {
+          label: 'Save',
+          accelerator: 'CmdOrCtrl+S',
+          click: () => sendMenuAction('save'),
+        },
+        { type: 'separator' },
+        {
+          label: 'Toggle Edit Mode',
+          accelerator: 'CmdOrCtrl+E',
+          click: () => sendMenuAction('toggle-edit-mode'),
+        },
+        { type: 'separator' },
         { role: 'close' },
       ],
     },
     {
       label: 'Edit',
       submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
         { role: 'cut' },
         { role: 'copy' },
         { role: 'paste' },

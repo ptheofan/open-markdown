@@ -209,7 +209,7 @@ export class SyntaxHighlightPlugin implements MarkdownPlugin {
         background: transparent;
         padding: 0;
         border: none;
-        font-family: var(--font-mono);
+        font-family: var(--doc-font-mono);
       }
 
       /* Line numbers (optional) */
@@ -240,7 +240,7 @@ export class SyntaxHighlightPlugin implements MarkdownPlugin {
         font-size: 85%;
         background-color: var(--code-bg);
         border-radius: 6px;
-        font-family: var(--font-mono);
+        font-family: var(--doc-font-mono);
       }
 
       /* Highlight.js Token Colors */

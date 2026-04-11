@@ -140,3 +140,19 @@ export {
   GoogleDocsSettings,
   createGoogleDocsSettings,
 } from './GoogleDocsSettings';
+
+// EditModeController
+export {
+  EditModeController,
+  createEditModeController,
+  type EditModeCallbacks,
+  type SliceAction,
+  type BlockType,
+} from './EditModeController';
+
+// OpenExternalDropdown
+export {
+  OpenExternalDropdown,
+  createOpenExternalDropdown,
+  type OpenExternalDropdownCallbacks,
+} from './OpenExternalDropdown';

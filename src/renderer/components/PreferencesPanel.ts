@@ -9,11 +9,13 @@ import type {
   PreferenceField,
   ColorPair,
   FileAssociationStatus,
+  ExternalEditorId,
 } from '@shared/types';
 import { CollapsibleSection } from './CollapsibleSection';
-import { Select, Toggle, NumberInput, TextInput } from './FormControls';
+import { Select, Toggle, NumberInput, TextInput, FontSelect } from './FormControls';
 import { ColorPicker } from './ColorPicker';
 import { ColorPairPicker } from './ColorPairPicker';
+import { DEFAULT_CORE_PREFERENCES } from '../../preferences/defaults';
 
 /**
  * PreferencesPanel callbacks
@@ -37,6 +39,20 @@ export class PreferencesPanel {
   private currentPreferences: AppPreferences | null = null;
   private pluginSchemas: Map<string, PluginPreferencesSchema> = new Map();
   private _isOpen = false;
+  private renderGeneration = 0;
+  private sectionsBuilt = false;
+
+  // Stored control references for in-place updates
+  private themeSelect: Select | null = null;
+  private bgPicker: ColorPairPicker | null = null;
+  private fontFamilyInput: FontSelect | null = null;
+  private monoFontFamilyInput: FontSelect | null = null;
+  private fontSizeInput: TextInput | null = null;
+  private linkColorPicker: ColorPairPicker | null = null;
+  private headingControls: Map<string, { color: ColorPairPicker; size: TextInput; weight: NumberInput }> = new Map();
+  private externalEditorSelect: Select | null = null;
+  private customCommandInput: TextInput | null = null;
+  private customCommandField: HTMLElement | null = null;
 
   constructor() {
     this.element = this.createElement();
@@ -146,11 +162,34 @@ export class PreferencesPanel {
   }
 
   /**
-   * Update displayed values
+   * Update displayed values — updates controls in-place when possible
    */
   updateValues(preferences: AppPreferences): void {
     this.currentPreferences = preferences;
-    this.renderSections();
+
+    if (!this.sectionsBuilt) {
+      this.renderSections();
+      return;
+    }
+
+    // Update existing controls in-place (no DOM teardown)
+    this.themeSelect?.setValue(preferences.core.theme.mode);
+    this.bgPicker?.setValue(preferences.core.theme.background);
+    this.fontFamilyInput?.setValue(preferences.core.typography.fontFamily);
+    this.monoFontFamilyInput?.setValue(preferences.core.typography.monoFontFamily);
+    this.fontSizeInput?.setValue(preferences.core.typography.baseFontSize);
+    this.linkColorPicker?.setValue(preferences.core.typography.link.color);
+
+    this.externalEditorSelect?.setValue(preferences.core.externalEditor.editor);
+    this.customCommandInput?.setValue(preferences.core.externalEditor.customCommand);
+    this.updateCustomCommandVisibility(preferences.core.externalEditor.editor);
+
+    for (const [level, controls] of this.headingControls) {
+      const style = preferences.core.typography[level as keyof typeof preferences.core.typography] as { color: ColorPair; fontSize: string; fontWeight: number };
+      controls.color.setValue(style.color);
+      controls.size.setValue(style.fontSize);
+      controls.weight.setValue(style.fontWeight);
+    }
   }
 
   /**
@@ -174,20 +213,24 @@ export class PreferencesPanel {
    * Render all preference sections
    */
   private renderSections(): void {
-    this.sectionsContainer.innerHTML = '';
+    this.renderGeneration++;
+    this.sectionsBuilt = false;
+    this.sectionsContainer.replaceChildren();
 
     if (!this.currentPreferences) return;
 
-    void this.renderSystemSection();
+    void this.renderSystemSection(this.renderGeneration);
+    this.renderExternalEditorSection();
     this.renderAppearanceSection();
     this.renderTypographySection();
     this.renderPluginSections();
+    this.sectionsBuilt = true;
   }
 
   /**
    * Render the System section with file association settings
    */
-  private async renderSystemSection(): Promise<void> {
+  private async renderSystemSection(generation: number): Promise<void> {
     const section = new CollapsibleSection({
       title: 'System',
       initiallyOpen: true,
@@ -206,6 +249,9 @@ export class PreferencesPanel {
     } catch {
       status = { canSetDefault: false, isDefault: false };
     }
+
+    // A newer renderSections() call already cleared and rebuilt the container
+    if (generation !== this.renderGeneration) return;
 
     const canSet = status.canSetDefault;
     const isDefault = status.isDefault;
@@ -274,6 +320,80 @@ export class PreferencesPanel {
   }
 
   /**
+   * Render the External Editor section
+   */
+  private renderExternalEditorSection(): void {
+    if (!this.currentPreferences) return;
+
+    const section = new CollapsibleSection({
+      title: 'External Editor',
+      initiallyOpen: true,
+    });
+
+    const fields: HTMLElement[] = [];
+
+    // Editor preset selector
+    this.externalEditorSelect = new Select({
+      label: 'Editor',
+      description: 'Choose an IDE or editor to open files in.',
+      options: [
+        { value: 'none', label: 'None' },
+        { value: 'vscode', label: 'VS Code' },
+        { value: 'cursor', label: 'Cursor' },
+        { value: 'webstorm', label: 'WebStorm' },
+        { value: 'sublime', label: 'Sublime Text' },
+        { value: 'zed', label: 'Zed' },
+        { value: 'custom', label: 'Custom...' },
+      ],
+      value: this.currentPreferences.core.externalEditor.editor,
+    });
+    this.externalEditorSelect.setOnChange((value) => {
+      this.emitChange({
+        core: { externalEditor: { editor: value as ExternalEditorId } },
+      });
+      // Toggle custom command field visibility
+      this.updateCustomCommandVisibility(value);
+    });
+    fields.push(this.externalEditorSelect.getElement());
+
+    // Custom command input (conditionally visible)
+    this.customCommandField = document.createElement('div');
+    this.customCommandField.className = 'form-field';
+    if (this.currentPreferences.core.externalEditor.editor !== 'custom') {
+      this.customCommandField.classList.add('hidden');
+    }
+
+    this.customCommandInput = new TextInput({
+      label: 'Custom Command',
+      description: 'The command to launch your editor (e.g., code, subl, vim).',
+      value: this.currentPreferences.core.externalEditor.customCommand,
+      placeholder: 'e.g., code',
+    });
+    this.customCommandInput.setOnChange((value) => {
+      this.emitChange({
+        core: { externalEditor: { customCommand: value } },
+      });
+    });
+    this.customCommandField.appendChild(this.customCommandInput.getElement());
+    fields.push(this.customCommandField);
+
+    section.setContent(fields);
+    this.sectionsContainer.appendChild(section.getElement());
+  }
+
+  /**
+   * Toggle visibility of the custom command input based on editor selection
+   */
+  private updateCustomCommandVisibility(editor: string): void {
+    if (!this.customCommandField) return;
+    if (editor === 'custom') {
+      this.customCommandField.classList.remove('hidden');
+    } else {
+      this.customCommandField.classList.add('hidden');
+    }
+  }
+
+  /**
    * Render the Appearance section
    */
   private renderAppearanceSection(): void {
@@ -287,7 +407,7 @@ export class PreferencesPanel {
     const fields: HTMLElement[] = [];
 
     // Theme mode selector
-    const themeSelect = new Select({
+    this.themeSelect = new Select({
       label: 'Theme Mode',
       options: [
         { value: 'system', label: 'System' },
@@ -296,22 +416,23 @@ export class PreferencesPanel {
       ],
       value: this.currentPreferences.core.theme.mode,
     });
-    themeSelect.setOnChange((value) => {
+    this.themeSelect.setOnChange((value) => {
       this.emitChange({
         core: { theme: { mode: value as 'light' | 'dark' | 'system' } },
       });
     });
-    fields.push(themeSelect.getElement());
+    fields.push(this.themeSelect.getElement());
 
     // Background colors
-    const bgPicker = new ColorPairPicker({
+    this.bgPicker = new ColorPairPicker({
       label: 'Background Color',
       value: this.currentPreferences.core.theme.background,
+      defaultValue: DEFAULT_CORE_PREFERENCES.theme.background,
     });
-    bgPicker.setOnChange((pair) => {
+    this.bgPicker.setOnChange((pair) => {
       this.emitChange({ core: { theme: { background: pair } } });
     });
-    fields.push(bgPicker.getElement());
+    fields.push(this.bgPicker.getElement());
 
     section.setContent(fields);
     this.sectionsContainer.appendChild(section.getElement());
@@ -330,50 +451,78 @@ export class PreferencesPanel {
 
     const fields: HTMLElement[] = [];
 
+    // Font family
+    this.fontFamilyInput = new FontSelect({
+      label: 'Font Family',
+      value: this.currentPreferences.core.typography.fontFamily,
+    });
+    this.fontFamilyInput.setOnChange((value) => {
+      this.emitChange({ core: { typography: { fontFamily: value } } });
+    });
+    fields.push(this.fontFamilyInput.getElement());
+
+    // Monospace font family
+    this.monoFontFamilyInput = new FontSelect({
+      label: 'Monospace Font Family',
+      value: this.currentPreferences.core.typography.monoFontFamily,
+    });
+    this.monoFontFamilyInput.setOnChange((value) => {
+      this.emitChange({ core: { typography: { monoFontFamily: value } } });
+    });
+    fields.push(this.monoFontFamilyInput.getElement());
+
     // Base font size
-    const fontSizeInput = new TextInput({
+    this.fontSizeInput = new TextInput({
       label: 'Base Font Size',
       value: this.currentPreferences.core.typography.baseFontSize,
       placeholder: '14px',
     });
-    fontSizeInput.setOnChange((value) => {
+    this.fontSizeInput.setOnChange((value) => {
       this.emitChange({ core: { typography: { baseFontSize: value } } });
     });
-    fields.push(fontSizeInput.getElement());
+    fields.push(this.fontSizeInput.getElement());
+
+    // Separator before link color
+    fields.push(this.createSeparator());
 
     // Link color
-    const linkColorPicker = new ColorPairPicker({
+    this.linkColorPicker = new ColorPairPicker({
       label: 'Link Color',
       value: this.currentPreferences.core.typography.link.color,
+      defaultValue: DEFAULT_CORE_PREFERENCES.typography.link.color,
     });
-    linkColorPicker.setOnChange((pair) => {
+    this.linkColorPicker.setOnChange((pair) => {
       this.emitChange({ core: { typography: { link: { color: pair } } } });
     });
-    fields.push(linkColorPicker.getElement());
+    fields.push(this.linkColorPicker.getElement());
 
-    // Heading subsections
+    // Heading fields inline
+    this.headingControls.clear();
     const headingLevels = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'] as const;
     for (const level of headingLevels) {
-      const headingSection = new CollapsibleSection({
-        title: `Heading ${level.charAt(1)}`,
-        initiallyOpen: false,
-      });
+      fields.push(this.createSeparator());
 
-      const headingFields: HTMLElement[] = [];
+      const headingLabel = document.createElement('label');
+      headingLabel.className = 'form-label form-group-label';
+      headingLabel.textContent = `Heading ${level.charAt(1)}`;
+      fields.push(headingLabel);
+
       const headingStyle =
         this.currentPreferences.core.typography[level];
 
       // Color
+      const defaultHeadingStyle = DEFAULT_CORE_PREFERENCES.typography[level];
       const colorPicker = new ColorPairPicker({
         label: 'Color',
         value: headingStyle.color,
+        defaultValue: defaultHeadingStyle.color,
       });
       colorPicker.setOnChange((pair) => {
         this.emitChange({
           core: { typography: { [level]: { color: pair } } },
         });
       });
-      headingFields.push(colorPicker.getElement());
+      fields.push(colorPicker.getElement());
 
       // Font size
       const sizeInput = new TextInput({
@@ -386,7 +535,7 @@ export class PreferencesPanel {
           core: { typography: { [level]: { fontSize: value } } },
         });
       });
-      headingFields.push(sizeInput.getElement());
+      fields.push(sizeInput.getElement());
 
       // Font weight
       const weightInput = new NumberInput({
@@ -401,10 +550,9 @@ export class PreferencesPanel {
           core: { typography: { [level]: { fontWeight: value } } },
         });
       });
-      headingFields.push(weightInput.getElement());
+      fields.push(weightInput.getElement());
 
-      headingSection.setContent(headingFields);
-      fields.push(headingSection.getElement());
+      this.headingControls.set(level, { color: colorPicker, size: sizeInput, weight: weightInput });
     }
 
     section.setContent(fields);
@@ -499,6 +647,7 @@ export class PreferencesPanel {
           label: field.label,
           description: field.description,
           value: currentValue as string,
+          defaultValue: field.defaultValue,
         });
         colorPicker.setOnChange((value) => {
           this.emitPluginChange(pluginId, field.key, value);
@@ -511,6 +660,7 @@ export class PreferencesPanel {
           label: field.label,
           description: field.description,
           value: currentValue as ColorPair,
+          defaultValue: field.defaultValue,
         });
         colorPairPicker.setOnChange((value) => {
           this.emitPluginChange(pluginId, field.key, value);
@@ -534,6 +684,15 @@ export class PreferencesPanel {
       default:
         return null;
     }
+  }
+
+  /**
+   * Create a visual separator line between form field groups
+   */
+  private createSeparator(): HTMLElement {
+    const hr = document.createElement('hr');
+    hr.className = 'form-separator';
+    return hr;
   }
 
   /**

@@ -313,6 +313,7 @@ describe('ShellHandler', () => {
         createMockPreferences('vscode')
       );
       vi.mocked(spawn).mockImplementationOnce(() => {
+        // eslint-disable-next-line @typescript-eslint/only-throw-error
         throw 'something unexpected';
       });
 

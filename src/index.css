@@ -957,6 +957,67 @@ button:focus:not(:focus-visible) {
   color: var(--text-muted);
 }
 
+/* Font Select */
+.font-select-container {
+  position: relative;
+}
+
+.font-select-input {
+  cursor: pointer;
+}
+
+.font-select-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  background-color: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  margin-top: 4px;
+  z-index: 1000;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.font-select-dropdown.is-open {
+  display: block;
+}
+
+.font-select-option {
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--text-color);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.font-select-option:hover,
+.font-select-option.is-highlighted {
+  background-color: var(--hover-bg);
+}
+
+.font-select-option-default {
+  font-style: italic;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.font-select-more {
+  font-style: italic;
+  color: var(--text-muted);
+  cursor: default;
+  border-top: 1px solid var(--border-color);
+}
+
+.font-select-more:hover {
+  background-color: transparent;
+}
+
 /* ===========================================
    Color Picker
    =========================================== */

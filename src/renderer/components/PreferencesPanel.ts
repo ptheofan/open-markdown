@@ -11,7 +11,7 @@ import type {
   FileAssociationStatus,
 } from '@shared/types';
 import { CollapsibleSection } from './CollapsibleSection';
-import { Select, Toggle, NumberInput, TextInput } from './FormControls';
+import { Select, Toggle, NumberInput, TextInput, FontSelect } from './FormControls';
 import { ColorPicker } from './ColorPicker';
 import { ColorPairPicker } from './ColorPairPicker';
 
@@ -331,10 +331,9 @@ export class PreferencesPanel {
     const fields: HTMLElement[] = [];
 
     // Font family
-    const fontFamilyInput = new TextInput({
+    const fontFamilyInput = new FontSelect({
       label: 'Font Family',
       value: this.currentPreferences.core.typography.fontFamily,
-      placeholder: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
     });
     fontFamilyInput.setOnChange((value) => {
       this.emitChange({ core: { typography: { fontFamily: value } } });
@@ -342,10 +341,9 @@ export class PreferencesPanel {
     fields.push(fontFamilyInput.getElement());
 
     // Monospace font family
-    const monoFontFamilyInput = new TextInput({
+    const monoFontFamilyInput = new FontSelect({
       label: 'Monospace Font Family',
       value: this.currentPreferences.core.typography.monoFontFamily,
-      placeholder: "ui-monospace, SFMono-Regular, 'SF Mono', monospace",
     });
     monoFontFamilyInput.setOnChange((value) => {
       this.emitChange({ core: { typography: { monoFontFamily: value } } });

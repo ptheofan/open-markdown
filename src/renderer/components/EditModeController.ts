@@ -199,21 +199,18 @@ export class EditModeController {
   /**
    * Commit the active edit and re-render the slice
    */
-  private async commitActiveEdit(): Promise<void> {
+  private commitActiveEdit(): void {
     if (this.activeEditIndex === null) return;
 
     const sliceIndex = this.activeEditIndex;
+    // Clear immediately to prevent race conditions with async postRender
+    this.activeEditIndex = null;
+
     const el = this.sliceElements.get(sliceIndex);
-    if (!el) {
-      this.activeEditIndex = null;
-      return;
-    }
+    if (!el) return;
 
     const textarea = el.querySelector<HTMLTextAreaElement>('.slice-editor');
-    if (!textarea) {
-      this.activeEditIndex = null;
-      return;
-    }
+    if (!textarea) return;
 
     const newRaw = textarea.value;
     const slice = this.slices.find(s => s.index === sliceIndex);
@@ -243,11 +240,9 @@ export class EditModeController {
         this.startEdit(sliceIndex);
       });
 
-      // Run post-render for this content
-      await this.pluginManager.postRender(contentEl as HTMLElement);
+      // Run post-render asynchronously (non-blocking)
+      void this.pluginManager.postRender(contentEl as HTMLElement);
     }
-
-    this.activeEditIndex = null;
   }
 
   /**
@@ -343,7 +338,7 @@ export class EditModeController {
     if (this.activeEditIndex !== null) {
       const activeEl = this.sliceElements.get(this.activeEditIndex);
       if (activeEl && !activeEl.contains(target)) {
-        void this.commitActiveEdit();
+        this.commitActiveEdit();
       }
     }
   }

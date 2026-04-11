@@ -202,7 +202,18 @@ export class GoogleAuthService {
 
     // Check if token needs refreshing
     if (Date.now() >= this.tokens.expires_at - REFRESH_BUFFER_MS) {
-      await this.refreshAccessToken();
+      try {
+        await this.refreshAccessToken();
+      } catch (error) {
+        // If refresh token is revoked/expired, clear stale tokens
+        // so the UI can detect the unauthenticated state and prompt re-auth
+        const message = error instanceof Error ? error.message : '';
+        if (message.includes('invalid_grant')) {
+          await this.signOut();
+          throw new Error('Session expired. Please sign in again.');
+        }
+        throw error;
+      }
     }
 
     return this.tokens.access_token;

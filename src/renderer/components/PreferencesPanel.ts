@@ -524,7 +524,7 @@ export class PreferencesPanel {
           label: field.label,
           description: field.description,
           value: currentValue as string,
-          defaultValue: field.defaultValue as string,
+          defaultValue: field.defaultValue,
         });
         colorPicker.setOnChange((value) => {
           this.emitPluginChange(pluginId, field.key, value);
@@ -537,7 +537,7 @@ export class PreferencesPanel {
           label: field.label,
           description: field.description,
           value: currentValue as ColorPair,
-          defaultValue: field.defaultValue as ColorPair,
+          defaultValue: field.defaultValue,
         });
         colorPairPicker.setOnChange((value) => {
           this.emitPluginChange(pluginId, field.key, value);

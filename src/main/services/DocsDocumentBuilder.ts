@@ -403,7 +403,7 @@ export function headingLevelToNamedStyle(level: number): string {
 // and generates updateParagraphStyle / updateTextStyle / bullet
 // requests using the *actual* paragraph indices from the API.
 
-interface ApiParagraph {
+export interface ApiParagraph {
   text: string;
   startIndex: number;
   endIndex: number;
@@ -411,7 +411,7 @@ interface ApiParagraph {
 }
 
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
-function extractApiParagraphs(apiDoc: any): ApiParagraph[] {
+export function extractApiParagraphs(apiDoc: any): ApiParagraph[] {
   const result: ApiParagraph[] = [];
   const content = apiDoc?.body?.content;
   if (!Array.isArray(content)) return result;
@@ -450,7 +450,7 @@ function extractApiParagraphs(apiDoc: any): ApiParagraph[] {
  * Blockquotes are expanded recursively; tables and images are skipped
  * because they are structural and handled separately.
  */
-function flattenElements(elements: DocsElement[]): DocsElement[] {
+export function flattenElements(elements: DocsElement[]): DocsElement[] {
   const flat: DocsElement[] = [];
   for (const el of elements) {
     if (el.type === 'blockquote') {
@@ -467,7 +467,7 @@ function flattenElements(elements: DocsElement[]): DocsElement[] {
 /**
  * Get the plain text of a leaf element (without trailing newline).
  */
-function getLeafText(element: DocsElement): string {
+export function getLeafText(element: DocsElement): string {
   switch (element.type) {
     case 'paragraph':
     case 'heading':
@@ -483,190 +483,215 @@ function getLeafText(element: DocsElement): string {
 }
 
 /**
+ * Apply formatting for a single model element to an API paragraph.
+ * Generates updateParagraphStyle, updateTextStyle, and bullet requests
+ * using the actual API paragraph indices.
+ */
+function applyElementFormatting(
+  requests: any[],
+  elem: DocsElement,
+  apiPara: ApiParagraph,
+): void {
+  // ── Paragraph style ──────────────────────────────────────────
+  if (elem.type === 'heading') {
+    const level = elem.headingLevel ?? 1;
+    requests.push({
+      updateParagraphStyle: {
+        range: { startIndex: apiPara.startIndex, endIndex: apiPara.endIndex },
+        paragraphStyle: { namedStyleType: headingLevelToNamedStyle(level) },
+        fields: 'namedStyleType',
+      },
+    });
+  } else if (elem.type === 'code_block') {
+    requests.push({
+      updateParagraphStyle: {
+        range: { startIndex: apiPara.startIndex, endIndex: apiPara.endIndex },
+        paragraphStyle: { namedStyleType: 'NORMAL_TEXT' },
+        fields: 'namedStyleType',
+      },
+    });
+  } else if (elem.type === 'list_item') {
+    const bulletPreset = elem.listOrdered
+      ? 'NUMBERED_DECIMAL_ALPHA_ROMAN'
+      : 'BULLET_DISC_CIRCLE_SQUARE';
+    requests.push({
+      createParagraphBullets: {
+        range: { startIndex: apiPara.startIndex, endIndex: apiPara.endIndex },
+        bulletPreset,
+      },
+    });
+    const depth = elem.listDepth ?? 0;
+    if (depth > 0) {
+      requests.push({
+        updateParagraphStyle: {
+          range: { startIndex: apiPara.startIndex, endIndex: apiPara.endIndex },
+          paragraphStyle: {
+            indentStart: { magnitude: 36 * depth, unit: 'PT' },
+            indentFirstLine: { magnitude: 36 * depth, unit: 'PT' },
+          },
+          fields: 'indentStart,indentFirstLine',
+        },
+      });
+    }
+  } else if (elem.type === 'horizontal_rule') {
+    requests.push({
+      updateParagraphStyle: {
+        range: { startIndex: apiPara.startIndex, endIndex: apiPara.endIndex },
+        paragraphStyle: {
+          borderBottom: {
+            color: { color: { rgbColor: { red: 0.855, green: 0.82, blue: 0.878 } } },
+            width: { magnitude: 1, unit: 'PT' },
+            dashStyle: 'SOLID',
+            padding: { magnitude: 8, unit: 'PT' },
+          },
+        },
+        fields: 'borderBottom',
+      },
+    });
+  } else {
+    // Regular paragraph — ensure NORMAL_TEXT
+    requests.push({
+      updateParagraphStyle: {
+        range: { startIndex: apiPara.startIndex, endIndex: apiPara.endIndex },
+        paragraphStyle: { namedStyleType: 'NORMAL_TEXT' },
+        fields: 'namedStyleType',
+      },
+    });
+  }
+
+  // ── Inline text styles ───────────────────────────────────────
+  if (elem.runs && elem.runs.length > 0) {
+    let runOffset = 0;
+    for (const run of elem.runs) {
+      const textStyle = buildTextStyleForRun(run);
+      if (textStyle) {
+        const start = apiPara.textStartIndex + runOffset;
+        const end = start + run.text.length;
+        requests.push({
+          updateTextStyle: {
+            range: { startIndex: start, endIndex: end },
+            textStyle,
+            fields: collectFields(textStyle),
+          },
+        });
+      }
+      runOffset += run.text.length;
+    }
+  }
+
+  // Code block: apply monospace to entire text
+  if (elem.type === 'code_block') {
+    const codeText = elem.code ?? '';
+    const styledEnd = apiPara.textStartIndex + codeText.length;
+    if (styledEnd > apiPara.textStartIndex) {
+      requests.push({
+        updateTextStyle: {
+          range: { startIndex: apiPara.textStartIndex, endIndex: styledEnd },
+          textStyle: {
+            weightedFontFamily: { fontFamily: 'Courier New' },
+            fontSize: { magnitude: 9, unit: 'PT' },
+          },
+          fields: 'weightedFontFamily,fontSize',
+        },
+      });
+    }
+  }
+
+  // Reset foreground color to prevent bleeding
+  requests.push({
+    updateTextStyle: {
+      range: { startIndex: apiPara.startIndex, endIndex: apiPara.endIndex },
+      textStyle: { foregroundColor: {} },
+      fields: 'foregroundColor',
+    },
+  });
+}
+
+// Maximum number of API paragraphs to scan ahead when looking for
+// a match.  Structural gaps (table cells, image-adjacent paragraphs)
+// are typically 1-5 paragraphs wide.
+const LOOKAHEAD_WINDOW = 10;
+
+/**
  * Build formatting-only requests by matching API paragraphs to model
- * elements.  Uses actual API indices so the requests target the correct
- * ranges even when structural elements (tables/images) shift positions.
+ * elements with **lookahead recovery**.
+ *
+ * After a paragraph-level diff is applied, the document's text paragraphs
+ * appear in the same order as the model elements — but the API paragraph
+ * list also contains structural gaps (table cell paragraphs, image-adjacent
+ * text).  When a mismatch occurs the algorithm scans ahead in the API list
+ * (up to LOOKAHEAD_WINDOW) to find the next matching paragraph.
  */
 export function buildFormattingFromApiDoc(apiDoc: any, docsDoc: DocsDocument): any[] {
   const requests: any[] = [];
   const apiParas = extractApiParagraphs(apiDoc);
   const modelElements = flattenElements(docsDoc.elements);
 
-  // Track blockquote ranges for indentation
-  const blockquoteRanges = collectBlockquoteRanges(docsDoc.elements, modelElements);
+  // Collect blockquote child indices for indentation
+  const blockquoteChildIndices = new Set<number>();
+  collectBlockquoteChildIndices(docsDoc.elements, modelElements, blockquoteChildIndices);
 
-  let modelIdx = 0;
+  let apiIdx = 0;
 
-  for (const apiPara of apiParas) {
-    if (modelIdx >= modelElements.length) break;
+  for (let modelIdx = 0; modelIdx < modelElements.length; modelIdx++) {
+    if (apiIdx >= apiParas.length) break;
 
     const elem = modelElements[modelIdx]!;
-    const apiText = apiPara.text.replace(/\n$/, '');
     const elemText = getLeafText(elem);
 
-    if (apiText !== elemText) {
-      // Mismatch — could be a structural gap (table/image in the doc).
-      // Skip this API paragraph and try the next one.
+    // Try to find a matching API paragraph starting at apiIdx
+    let matchOffset = -1;
+    const searchEnd = Math.min(apiIdx + LOOKAHEAD_WINDOW, apiParas.length);
+    for (let j = apiIdx; j < searchEnd; j++) {
+      if (apiParas[j]!.text.replace(/\n$/, '') === elemText) {
+        matchOffset = j - apiIdx;
+        break;
+      }
+    }
+
+    if (matchOffset < 0) {
+      // No match found in lookahead window — skip this model element
       continue;
     }
 
-    // ── Paragraph style ──────────────────────────────────────────
-    if (elem.type === 'heading') {
-      const level = elem.headingLevel ?? 1;
+    // Skip the structural-gap paragraphs and land on the match
+    apiIdx += matchOffset;
+    const apiPara = apiParas[apiIdx]!;
+
+    applyElementFormatting(requests, elem, apiPara);
+
+    // Apply blockquote indentation if this element is inside a blockquote
+    if (blockquoteChildIndices.has(modelIdx)) {
       requests.push({
         updateParagraphStyle: {
           range: { startIndex: apiPara.startIndex, endIndex: apiPara.endIndex },
-          paragraphStyle: { namedStyleType: headingLevelToNamedStyle(level) },
-          fields: 'namedStyleType',
-        },
-      });
-    } else if (elem.type === 'code_block') {
-      requests.push({
-        updateParagraphStyle: {
-          range: { startIndex: apiPara.startIndex, endIndex: apiPara.endIndex },
-          paragraphStyle: { namedStyleType: 'NORMAL_TEXT' },
-          fields: 'namedStyleType',
-        },
-      });
-    } else if (elem.type === 'list_item') {
-      // Normal text style + bullets
-      const bulletPreset = elem.listOrdered
-        ? 'NUMBERED_DECIMAL_ALPHA_ROMAN'
-        : 'BULLET_DISC_CIRCLE_SQUARE';
-      requests.push({
-        createParagraphBullets: {
-          range: { startIndex: apiPara.startIndex, endIndex: apiPara.endIndex },
-          bulletPreset,
-        },
-      });
-      const depth = elem.listDepth ?? 0;
-      if (depth > 0) {
-        requests.push({
-          updateParagraphStyle: {
-            range: { startIndex: apiPara.startIndex, endIndex: apiPara.endIndex },
-            paragraphStyle: {
-              indentStart: { magnitude: 36 * depth, unit: 'PT' },
-              indentFirstLine: { magnitude: 36 * depth, unit: 'PT' },
-            },
-            fields: 'indentStart,indentFirstLine',
-          },
-        });
-      }
-    } else if (elem.type === 'horizontal_rule') {
-      requests.push({
-        updateParagraphStyle: {
-          range: { startIndex: apiPara.startIndex, endIndex: apiPara.endIndex },
-          paragraphStyle: {
-            borderBottom: {
-              color: { color: { rgbColor: { red: 0.855, green: 0.82, blue: 0.878 } } },
-              width: { magnitude: 1, unit: 'PT' },
-              dashStyle: 'SOLID',
-              padding: { magnitude: 8, unit: 'PT' },
-            },
-          },
-          fields: 'borderBottom',
-        },
-      });
-    } else {
-      // Regular paragraph — ensure NORMAL_TEXT
-      requests.push({
-        updateParagraphStyle: {
-          range: { startIndex: apiPara.startIndex, endIndex: apiPara.endIndex },
-          paragraphStyle: { namedStyleType: 'NORMAL_TEXT' },
-          fields: 'namedStyleType',
+          paragraphStyle: { indentStart: { magnitude: 36, unit: 'PT' } },
+          fields: 'indentStart',
         },
       });
     }
 
-    // ── Inline text styles ───────────────────────────────────────
-    if (elem.runs && elem.runs.length > 0) {
-      let runOffset = 0;
-      for (const run of elem.runs) {
-        const textStyle = buildTextStyleForRun(run);
-        if (textStyle) {
-          const start = apiPara.textStartIndex + runOffset;
-          const end = start + run.text.length;
-          requests.push({
-            updateTextStyle: {
-              range: { startIndex: start, endIndex: end },
-              textStyle,
-              fields: collectFields(textStyle),
-            },
-          });
-        }
-        runOffset += run.text.length;
-      }
-    }
-
-    // Code block: apply monospace to entire text
-    if (elem.type === 'code_block') {
-      const codeText = elem.code ?? '';
-      const styledEnd = apiPara.textStartIndex + codeText.length;
-      if (styledEnd > apiPara.textStartIndex) {
-        requests.push({
-          updateTextStyle: {
-            range: { startIndex: apiPara.textStartIndex, endIndex: styledEnd },
-            textStyle: {
-              weightedFontFamily: { fontFamily: 'Courier New' },
-              fontSize: { magnitude: 9, unit: 'PT' },
-            },
-            fields: 'weightedFontFamily,fontSize',
-          },
-        });
-      }
-    }
-
-    // Reset foreground color to prevent bleeding
-    if (elem.type !== 'table' && elem.type !== 'image') {
-      requests.push({
-        updateTextStyle: {
-          range: { startIndex: apiPara.startIndex, endIndex: apiPara.endIndex },
-          textStyle: { foregroundColor: {} },
-          fields: 'foregroundColor',
-        },
-      });
-    }
-
-    modelIdx++;
-  }
-
-  // ── Blockquote indentation ─────────────────────────────────────
-  // Apply indentation to all paragraphs that fall within a blockquote
-  for (const bqRange of blockquoteRanges) {
-    // Find API paragraphs that correspond to blockquote children
-    for (const apiPara of apiParas) {
-      const apiText = apiPara.text.replace(/\n$/, '');
-      if (bqRange.childTexts.includes(apiText)) {
-        requests.push({
-          updateParagraphStyle: {
-            range: { startIndex: apiPara.startIndex, endIndex: apiPara.endIndex },
-            paragraphStyle: {
-              indentStart: { magnitude: 36, unit: 'PT' },
-            },
-            fields: 'indentStart',
-          },
-        });
-      }
-    }
+    apiIdx++;
   }
 
   return requests;
 }
 
 /**
- * Collect the plain text of each child paragraph inside blockquotes,
- * so we can apply indentation to matching API paragraphs.
+ * Collect model-element indices that are children of blockquotes.
  */
-function collectBlockquoteRanges(
+function collectBlockquoteChildIndices(
   elements: DocsElement[],
-  _flatElements: DocsElement[],
-): Array<{ childTexts: string[] }> {
-  const ranges: Array<{ childTexts: string[] }> = [];
+  flatElements: DocsElement[],
+  result: Set<number>,
+): void {
   for (const el of elements) {
     if (el.type === 'blockquote' && el.children) {
-      const childTexts = flattenElements(el.children).map(c => getLeafText(c));
-      ranges.push({ childTexts });
+      const children = flattenElements(el.children);
+      for (const child of children) {
+        const idx = flatElements.indexOf(child);
+        if (idx >= 0) result.add(idx);
+      }
     }
   }
-  return ranges;
 }

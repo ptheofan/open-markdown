@@ -5,133 +5,162 @@
  * Ties together the converter, builder, API wrapper, and link store to
  * detect external edits and apply minimal changes that preserve comments.
  */
-import { diffChars } from 'diff';
+import { diffChars, diffArrays } from 'diff';
 import { convertMarkdownToDocs } from '@main/services/MarkdownToDocsConverter';
-import { buildInsertRequests, buildFormattingFromApiDoc } from '@main/services/DocsDocumentBuilder';
+import {
+  buildInsertRequests,
+  buildFormattingFromApiDoc,
+  extractApiParagraphs,
+  flattenElements,
+  getLeafText,
+} from '@main/services/DocsDocumentBuilder';
+import type { ApiParagraph } from '@main/services/DocsDocumentBuilder';
 import type { GoogleDocsService } from '@main/services/GoogleDocsService';
 import type { GoogleDocsLinkStore } from '@main/services/GoogleDocsLinkStore';
 import type { DocsDocument, DocsElement, GoogleDocsSyncResult, MermaidDiagramData } from '@shared/types/google-docs';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-// ── Plain-text extraction from our DocsDocument structure ────────────
+// ── Paragraph-level diff with actual API indices ────────────────────
+//
+// Instead of diffing flat text (which breaks when structural elements
+// like tables/images shift the index space), we diff at the paragraph
+// level using diffArrays, then do character-level diffChars within
+// modified paragraphs.  All operations use ACTUAL API indices from
+// extractApiParagraphs, so they target the correct content regardless
+// of tables/images in the document.
 
-function extractPlainTextFromDocsDoc(doc: DocsDocument): string {
-  let text = '';
-  for (const element of doc.elements) {
-    text += extractElementText(element);
-  }
-  return text;
+interface DiffOp {
+  type: 'delete' | 'insert';
+  index: number;
+  endIndex?: number;
+  text?: string;
 }
 
-function extractElementText(element: DocsElement): string {
-  let text = '';
-  switch (element.type) {
-    case 'paragraph':
-    case 'heading':
-    case 'list_item':
-      if (element.runs) {
-        for (const run of element.runs) {
-          text += run.text;
-        }
-      }
-      text += '\n';
-      break;
-    case 'code_block':
-      text += (element.code ?? '') + '\n';
-      break;
-    case 'horizontal_rule':
-      // Builder inserts '\n' (empty paragraph with border) — API returns '\n'
-      text += '\n';
-      break;
-    case 'table':
-      // Match API format: each cell is a paragraph ending with '\n'
-      if (element.rows) {
-        for (const row of element.rows) {
-          for (const cell of row) {
-            for (const run of cell) {
-              text += run.text;
-            }
-            text += '\n';
-          }
-        }
-      }
-      break;
-    case 'blockquote':
-      if (element.children) {
-        text += extractPlainTextFromDocsDoc({ elements: element.children });
-      }
-      break;
-    case 'image':
-      // Match API format: inline image objects produce no text in extractPlainText.
-      // Only the accompanying text runs (mermaid link) appear.
-      if (element.imageLink) {
-        if (element.mermaidLiveUrl) {
-          text += '\nEdit in Mermaid Live\n';
-        } else {
-          text += '\n';
-        }
-      }
-      // If no imageLink (upload failed), builder skips entirely — no text output
-      break;
-  }
-  return text;
-}
-
-// ── Diff-based update generation ─────────────────────────────────────
-
-function generateDiffOperations(currentText: string, newText: string, startIndex: number): any[] {
-  const changes = diffChars(currentText, newText);
-  const operations: any[] = [];
-  let index = startIndex;
-
-  // First pass: collect operations with their positions
-  const ops: Array<{ type: 'delete' | 'insert'; index: number; endIndex?: number; text?: string }> = [];
+/**
+ * Character-level diff within a single paragraph, using actual API indices.
+ */
+function charDiffWithinParagraph(
+  apiPara: ApiParagraph,
+  newText: string,
+): DiffOp[] {
+  const oldText = apiPara.text.replace(/\n$/, '');
+  const changes = diffChars(oldText, newText);
+  const ops: DiffOp[] = [];
+  let index = apiPara.textStartIndex;
 
   for (const change of changes) {
     if (change.removed) {
-      ops.push({
-        type: 'delete',
-        index,
-        endIndex: index + change.value.length,
-      });
+      ops.push({ type: 'delete', index, endIndex: index + change.value.length });
       index += change.value.length;
     } else if (change.added) {
-      ops.push({
-        type: 'insert',
-        index,
-        text: change.value,
-      });
-      // Don't advance index — inserted text goes at current position
+      ops.push({ type: 'insert', index, text: change.value });
     } else {
-      // Unchanged — advance index
       index += change.value.length;
     }
   }
+  return ops;
+}
 
-  // Reverse order so earlier indices aren't invalidated
-  for (let i = ops.length - 1; i >= 0; i--) {
-    const op = ops[i]!;
-    if (op.type === 'delete') {
-      operations.push({
-        deleteContentRange: {
-          range: {
-            startIndex: op.index,
-            endIndex: op.endIndex,
-          },
-        },
-      });
-    } else if (op.type === 'insert') {
-      operations.push({
-        insertText: {
-          text: op.text,
-          location: { index: op.index },
-        },
-      });
+/**
+ * Generate diff operations using paragraph-level matching with actual
+ * API indices.  For 1:1 paragraph modifications, uses character-level
+ * diff to preserve comments on unchanged words.
+ */
+function generateParagraphDiffOperations(
+  apiParas: ApiParagraph[],
+  modelElements: DocsElement[],
+): any[] {
+  const oldTexts = apiParas.map(p => p.text.replace(/\n$/, ''));
+  const newTexts = modelElements.map(e => getLeafText(e));
+
+  const changes = diffArrays(oldTexts, newTexts);
+
+  // Collect all primitive ops with their absolute positions
+  const allOps: DiffOp[] = [];
+  let apiIdx = 0;
+  let modelIdx = 0;
+  let lastKeptEndIndex = 1; // track insertion point for adds at start
+
+  for (let ci = 0; ci < changes.length; ci++) {
+    const change = changes[ci]!;
+    const count = change.count ?? 0;
+
+    if (!change.added && !change.removed) {
+      // ── KEPT — skip these paragraphs, comments fully preserved ──
+      for (let i = 0; i < count; i++) {
+        lastKeptEndIndex = apiParas[apiIdx]!.endIndex;
+        apiIdx++;
+        modelIdx++;
+      }
+    } else if (change.removed) {
+      // Check if the next change is an add at the same position (modification)
+      const nextChange = changes[ci + 1];
+      if (nextChange?.added) {
+        const removedCount = count;
+        const addedCount = nextChange.count ?? 0;
+
+        if (removedCount === 1 && addedCount === 1) {
+          // ── 1:1 MODIFICATION — character-level diff within paragraph ──
+          const newText = getLeafText(modelElements[modelIdx]!);
+          const ops = charDiffWithinParagraph(apiParas[apiIdx]!, newText);
+          allOps.push(...ops);
+          lastKeptEndIndex = apiParas[apiIdx]!.endIndex;
+          apiIdx++;
+          modelIdx++;
+        } else {
+          // ── N:M REPLACEMENT — delete old paragraphs, insert new text ──
+          const insertAt = apiParas[apiIdx]!.startIndex;
+          // Delete old paragraphs (collect range from first to last)
+          const deleteStart = apiParas[apiIdx]!.startIndex;
+          const deleteEnd = apiParas[apiIdx + removedCount - 1]!.endIndex;
+          allOps.push({ type: 'delete', index: deleteStart, endIndex: deleteEnd });
+          // Insert new paragraphs as text
+          let newText = '';
+          for (let i = 0; i < addedCount; i++) {
+            newText += getLeafText(modelElements[modelIdx + i]!) + '\n';
+          }
+          allOps.push({ type: 'insert', index: insertAt, text: newText });
+          lastKeptEndIndex = deleteEnd;
+          apiIdx += removedCount;
+          modelIdx += addedCount;
+        }
+        ci++; // skip the next (added) change, we handled it
+      } else {
+        // ── REMOVED ONLY — delete paragraphs ──
+        for (let i = 0; i < count; i++) {
+          const para = apiParas[apiIdx]!;
+          allOps.push({ type: 'delete', index: para.startIndex, endIndex: para.endIndex });
+          apiIdx++;
+        }
+      }
+    } else if (change.added) {
+      // ── ADDED ONLY — insert new paragraphs ──
+      const insertAt = lastKeptEndIndex;
+      let newText = '';
+      for (let i = 0; i < count; i++) {
+        newText += getLeafText(modelElements[modelIdx + i]!) + '\n';
+      }
+      allOps.push({ type: 'insert', index: insertAt, text: newText });
+      modelIdx += count;
     }
   }
 
-  return operations;
+  // Build API requests in reverse order for index stability
+  const requests: any[] = [];
+  for (let i = allOps.length - 1; i >= 0; i--) {
+    const op = allOps[i]!;
+    if (op.type === 'delete') {
+      requests.push({
+        deleteContentRange: { range: { startIndex: op.index, endIndex: op.endIndex } },
+      });
+    } else {
+      requests.push({
+        insertText: { text: op.text, location: { index: op.index } },
+      });
+    }
+  }
+  return requests;
 }
 
 // ── Sync service class ───────────────────────────────────────────────
@@ -155,14 +184,12 @@ export class GoogleDocsSyncService {
       const baseline = await this.linkStore.loadBaseline(docId);
       console.log('[SyncService] Step 2: Reading current doc from API...');
       const currentDoc = await this.docsService.getDocument(docId);
-      console.log('[SyncService] Step 3: Extracting plain text...');
+      console.log('[SyncService] Step 3: Extracting plain text for external-edit check...');
       const theirs = this.docsService.extractPlainText(currentDoc);
       console.log('[SyncService] Step 4: Converting markdown...');
       const docsDoc = convertMarkdownToDocs(markdown);
       console.log('[SyncService] Step 5: Processing mermaid diagrams...');
       await this.processMermaidDiagrams(docsDoc, mermaidDiagrams);
-      console.log('[SyncService] Step 6: Extracting our plain text...');
-      const ours = extractPlainTextFromDocsDoc(docsDoc);
 
       if (baseline === null) {
         console.log('[SyncService] First sync → fullPopulate');
@@ -174,8 +201,8 @@ export class GoogleDocsSyncService {
         return { success: false, externalEditsDetected: true };
       }
 
-      console.log('[SyncService] Applying diff...');
-      return await this.applyDiff(docId, filePath, theirs, docsDoc, ours);
+      console.log('[SyncService] Applying paragraph-level diff...');
+      return await this.applyDiff(docId, filePath, currentDoc, docsDoc);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       const stack = err instanceof Error ? err.stack : '';
@@ -386,56 +413,45 @@ export class GoogleDocsSyncService {
   }
 
   /**
-   * Apply diff — computes minimal text changes between current and new
-   * content, then reapplies all formatting (paragraph styles, text styles,
-   * bullets) so that headings, bold, lists, etc. are correct after the diff.
+   * Apply diff — uses paragraph-level diffing with actual API indices to
+   * compute minimal changes, then reapplies formatting.
    *
-   * Text diff operations use deleteContentRange / insertText which
-   * preserve Google Docs comment anchors on text that was not deleted.
-   * Formatting operations (updateParagraphStyle, updateTextStyle) never
-   * affect comment anchors.
+   * Comment preservation:
+   * - Unchanged paragraphs are skipped entirely → all comments preserved
+   * - 1:1 modified paragraphs use character-level diff → comments on
+   *   unchanged words within the paragraph are preserved
+   * - Deleted paragraphs lose their comments (unavoidable)
+   * - Formatting operations never affect comment anchors
    */
   private async applyDiff(
     docId: string,
     filePath: string,
-    currentText: string,
+    currentApiDoc: any,
     newDocsDoc: DocsDocument,
-    newText: string,
   ): Promise<GoogleDocsSyncResult> {
-    // If content is identical, no update needed
-    if (currentText === newText) {
-      // Even if text matches, styles might have changed (e.g. paragraph
-      // was changed to a heading).  Re-read doc and apply formatting.
-      const apiDoc = await this.docsService.getDocument(docId);
-      const formattingOps = buildFormattingFromApiDoc(apiDoc, newDocsDoc);
-      if (formattingOps.length > 0) {
-        console.log(`[SyncService] applyDiff: text identical, reapplying ${formattingOps.length} formatting requests`);
-        await this.docsService.batchUpdate(docId, formattingOps);
-      }
-      const baselineText = this.docsService.extractPlainText(apiDoc);
-      await this.linkStore.saveBaseline(docId, baselineText);
-      await this.linkStore.updateLastSynced(filePath, new Date().toISOString());
-      return { success: true };
-    }
+    // Step 1: Extract paragraphs from API doc (with actual indices)
+    const apiParas = extractApiParagraphs(currentApiDoc);
+    const modelElements = flattenElements(newDocsDoc.elements);
 
-    // Step 1: Apply text diff (minimal deletions preserve comment anchors)
-    const operations = generateDiffOperations(currentText, newText, 1);
+    // Step 2: Compute paragraph-level diff operations
+    const operations = generateParagraphDiffOperations(apiParas, modelElements);
+
     if (operations.length > 0) {
-      console.log(`[SyncService] applyDiff: ${operations.length} text diff operations`);
+      console.log(`[SyncService] applyDiff: ${operations.length} paragraph-diff operations`);
       await this.docsService.batchUpdate(docId, operations);
     }
 
-    // Step 2: Read doc back to get actual paragraph indices after text changes
+    // Step 3: Read doc back to get actual paragraph indices after changes
     const updatedDoc = await this.docsService.getDocument(docId);
 
-    // Step 3: Apply formatting using actual API indices
+    // Step 4: Apply formatting using actual API indices
     const formattingOps = buildFormattingFromApiDoc(updatedDoc, newDocsDoc);
     if (formattingOps.length > 0) {
       console.log(`[SyncService] applyDiff: ${formattingOps.length} formatting requests`);
       await this.docsService.batchUpdate(docId, formattingOps);
     }
 
-    // Step 4: Save baseline from API text (consistent with future reads)
+    // Step 5: Save baseline from API text (consistent with future reads)
     const baselineText = this.docsService.extractPlainText(updatedDoc);
     await this.linkStore.saveBaseline(docId, baselineText);
     await this.linkStore.updateLastSynced(filePath, new Date().toISOString());
@@ -453,4 +469,4 @@ export function createGoogleDocsSyncService(
 }
 
 // Exported for testing
-export { extractPlainTextFromDocsDoc, generateDiffOperations };
+export { generateParagraphDiffOperations };

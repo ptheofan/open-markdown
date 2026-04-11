@@ -25,6 +25,7 @@ import type {
   FileAssociationStatus,
   FileAssociationResult,
   ExternalFileOpenEvent,
+  OpenInEditorResult,
 } from '@shared/types';
 
 /**
@@ -316,6 +317,16 @@ const electronAPI: ElectronAPI = {
       return () => {
         ipcRenderer.removeListener(IPC_CHANNELS.MENU.ACTION, handler);
       };
+    },
+  },
+
+  shell: {
+    revealInFileManager: (filePath: string): Promise<void> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.SHELL.REVEAL_IN_FILE_MANAGER, filePath);
+    },
+
+    openInEditor: (filePath: string): Promise<OpenInEditorResult> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.SHELL.OPEN_IN_EDITOR, filePath);
     },
   },
 

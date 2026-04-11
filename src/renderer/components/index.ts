@@ -121,3 +121,10 @@ export {
   type SliceAction,
   type BlockType,
 } from './EditModeController';
+
+// OpenExternalDropdown
+export {
+  OpenExternalDropdown,
+  createOpenExternalDropdown,
+  type OpenExternalDropdownCallbacks,
+} from './OpenExternalDropdown';

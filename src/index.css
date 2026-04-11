@@ -496,6 +496,59 @@ body {
   font-weight: 500;
 }
 
+/* Status Bar Dropdown (Open Externally) */
+.status-dropdown {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.status-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.status-btn:hover {
+  background-color: var(--hover-bg);
+  border-color: var(--border-color);
+  color: var(--text-color);
+}
+
+.status-btn .dropdown-chevron {
+  opacity: 0.5;
+  transition: transform 0.15s ease;
+}
+
+.status-dropdown.is-open .status-btn .dropdown-chevron {
+  transform: rotate(180deg);
+}
+
+/* Upward-opening dropdown menu (for status bar at bottom) */
+.dropdown-menu-up {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  top: auto;
+  right: auto;
+  margin-bottom: 4px;
+  min-width: 220px;
+  background-color: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  overflow: hidden;
+}
+
 /* Utility classes */
 .hidden {
   display: none !important;

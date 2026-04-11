@@ -15,6 +15,7 @@ import {
   createChangeGutter,
   createFindBar,
   createRecentFilesDropdown,
+  createOpenExternalDropdown,
   Toast,
   type MarkdownViewer,
   type DropZone,
@@ -26,6 +27,7 @@ import {
   type ChangeGutter,
   type FindBar,
   type RecentFilesDropdown,
+  type OpenExternalDropdown,
 } from './renderer/components';
 import type { EditModeCallbacks } from './renderer/components/EditModeController';
 import {
@@ -46,6 +48,7 @@ import type {
   AppPreferences,
   DeepPartial,
   CorePreferences,
+  ExternalEditorId,
   ExternalFileOpenEvent,
   RecentFileEntry,
 } from '@shared/types';
@@ -82,6 +85,7 @@ class App {
   private findBar: FindBar | null = null;
   private findService: FindService | null = null;
   private recentFilesDropdown: RecentFilesDropdown | null = null;
+  private openExternalDropdown: OpenExternalDropdown | null = null;
 
   private state: AppState = {
     currentFilePath: null,
@@ -213,6 +217,28 @@ class App {
       });
     }
 
+    // Create open external dropdown
+    const openExternalElement = document.getElementById('open-external-dropdown');
+    if (openExternalElement) {
+      this.openExternalDropdown = createOpenExternalDropdown(openExternalElement);
+      this.openExternalDropdown.setCallbacks({
+        onRevealInFileManager: () => {
+          if (this.state.currentFilePath) {
+            void window.electronAPI.shell.revealInFileManager(this.state.currentFilePath);
+          }
+        },
+        onOpenInEditor: () => {
+          if (this.state.currentFilePath) {
+            void window.electronAPI.shell.openInEditor(this.state.currentFilePath).then((result) => {
+              if (!result.success) {
+                this.toast?.error(result.error ?? 'Failed to open editor');
+              }
+            });
+          }
+        },
+      });
+    }
+
     // Create zoom controller for the markdown content
     // Target: markdown-content (the element to scale)
     // Scroll container: markdown-viewer (the scrollable wrapper)
@@ -295,6 +321,7 @@ class App {
       this.state.currentPreferences = preferences.core;
       this.state.currentTheme = preferences.core.theme.mode;
       this.preferencesPanel.updateValues(preferences);
+      this.updateExternalEditorLabel(preferences.core.externalEditor.editor);
       await this.applyTheme(this.state.currentTheme);
 
       // Load plugin preference schemas
@@ -313,6 +340,9 @@ class App {
         (prefs: AppPreferences) => {
           this.state.currentPreferences = prefs.core;
           this.preferencesPanel?.updateValues(prefs);
+
+          // Update external editor label
+          this.updateExternalEditorLabel(prefs.core.externalEditor.editor);
 
           // Notify plugins of preference changes
           this.markdownViewer?.notifyAllPluginsPreferencesChange(prefs.plugins);
@@ -489,6 +519,9 @@ class App {
     // Disable copy dropdown when no document
     this.copyDropdown?.setEnabled(false);
 
+    // Hide open external dropdown
+    this.openExternalDropdown?.setVisible(false);
+
     // Disable edit mode button
     const editModeBtn = document.getElementById('edit-mode-btn') as HTMLButtonElement | null;
     if (editModeBtn) editModeBtn.disabled = true;
@@ -506,6 +539,9 @@ class App {
 
     // Enable copy dropdown when document is loaded
     this.copyDropdown?.setEnabled(true);
+
+    // Show open external dropdown
+    this.openExternalDropdown?.setVisible(true);
 
     // Enable edit mode button
     const editModeBtn = document.getElementById('edit-mode-btn') as HTMLButtonElement | null;
@@ -887,6 +923,9 @@ class App {
       this.state.currentPreferences = updatedPrefs.core;
       this.state.currentTheme = updatedPrefs.core.theme.mode;
 
+      // Update external editor label
+      this.updateExternalEditorLabel(updatedPrefs.core.externalEditor.editor);
+
       // Notify plugins of preference changes
       if (updates.plugins) {
         for (const pluginId of Object.keys(updates.plugins)) {
@@ -950,6 +989,29 @@ class App {
   }
 
   /**
+   * Map editor ID to display name for the dropdown label
+   */
+  private static readonly EDITOR_LABELS: Record<Exclude<ExternalEditorId, 'none'>, string> = {
+    vscode: 'VS Code',
+    cursor: 'Cursor',
+    webstorm: 'WebStorm',
+    sublime: 'Sublime Text',
+    zed: 'Zed',
+    custom: 'External Editor',
+  };
+
+  /**
+   * Update the open external dropdown's editor label based on preference
+   */
+  private updateExternalEditorLabel(editor: ExternalEditorId): void {
+    if (editor === 'none') {
+      this.openExternalDropdown?.setEditorLabel(null);
+    } else {
+      this.openExternalDropdown?.setEditorLabel(App.EDITOR_LABELS[editor]);
+    }
+  }
+
+  /**
    * Cleanup resources
    */
   destroy(): void {
@@ -964,6 +1026,7 @@ class App {
     this.changeGutter?.destroy();
     this.findBar?.destroy();
     this.recentFilesDropdown?.destroy();
+    this.openExternalDropdown?.destroy();
   }
 }
 

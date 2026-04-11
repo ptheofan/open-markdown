@@ -9,6 +9,7 @@ import type {
   PreferenceField,
   ColorPair,
   FileAssociationStatus,
+  ExternalEditorId,
 } from '@shared/types';
 import { CollapsibleSection } from './CollapsibleSection';
 import { Select, Toggle, NumberInput, TextInput, FontSelect } from './FormControls';
@@ -49,6 +50,9 @@ export class PreferencesPanel {
   private fontSizeInput: TextInput | null = null;
   private linkColorPicker: ColorPairPicker | null = null;
   private headingControls: Map<string, { color: ColorPairPicker; size: TextInput; weight: NumberInput }> = new Map();
+  private externalEditorSelect: Select | null = null;
+  private customCommandInput: TextInput | null = null;
+  private customCommandField: HTMLElement | null = null;
 
   constructor() {
     this.element = this.createElement();
@@ -176,6 +180,10 @@ export class PreferencesPanel {
     this.fontSizeInput?.setValue(preferences.core.typography.baseFontSize);
     this.linkColorPicker?.setValue(preferences.core.typography.link.color);
 
+    this.externalEditorSelect?.setValue(preferences.core.externalEditor.editor);
+    this.customCommandInput?.setValue(preferences.core.externalEditor.customCommand);
+    this.updateCustomCommandVisibility(preferences.core.externalEditor.editor);
+
     for (const [level, controls] of this.headingControls) {
       const style = preferences.core.typography[level as keyof typeof preferences.core.typography] as { color: ColorPair; fontSize: string; fontWeight: number };
       controls.color.setValue(style.color);
@@ -212,6 +220,7 @@ export class PreferencesPanel {
     if (!this.currentPreferences) return;
 
     void this.renderSystemSection(this.renderGeneration);
+    this.renderExternalEditorSection();
     this.renderAppearanceSection();
     this.renderTypographySection();
     this.renderPluginSections();
@@ -308,6 +317,80 @@ export class PreferencesPanel {
       section.getElement(),
       this.sectionsContainer.firstChild
     );
+  }
+
+  /**
+   * Render the External Editor section
+   */
+  private renderExternalEditorSection(): void {
+    if (!this.currentPreferences) return;
+
+    const section = new CollapsibleSection({
+      title: 'External Editor',
+      initiallyOpen: true,
+    });
+
+    const fields: HTMLElement[] = [];
+
+    // Editor preset selector
+    this.externalEditorSelect = new Select({
+      label: 'Editor',
+      description: 'Choose an IDE or editor to open files in.',
+      options: [
+        { value: 'none', label: 'None' },
+        { value: 'vscode', label: 'VS Code' },
+        { value: 'cursor', label: 'Cursor' },
+        { value: 'webstorm', label: 'WebStorm' },
+        { value: 'sublime', label: 'Sublime Text' },
+        { value: 'zed', label: 'Zed' },
+        { value: 'custom', label: 'Custom...' },
+      ],
+      value: this.currentPreferences.core.externalEditor.editor,
+    });
+    this.externalEditorSelect.setOnChange((value) => {
+      this.emitChange({
+        core: { externalEditor: { editor: value as ExternalEditorId } },
+      });
+      // Toggle custom command field visibility
+      this.updateCustomCommandVisibility(value);
+    });
+    fields.push(this.externalEditorSelect.getElement());
+
+    // Custom command input (conditionally visible)
+    this.customCommandField = document.createElement('div');
+    this.customCommandField.className = 'form-field';
+    if (this.currentPreferences.core.externalEditor.editor !== 'custom') {
+      this.customCommandField.classList.add('hidden');
+    }
+
+    this.customCommandInput = new TextInput({
+      label: 'Custom Command',
+      description: 'The command to launch your editor (e.g., code, subl, vim).',
+      value: this.currentPreferences.core.externalEditor.customCommand,
+      placeholder: 'e.g., code',
+    });
+    this.customCommandInput.setOnChange((value) => {
+      this.emitChange({
+        core: { externalEditor: { customCommand: value } },
+      });
+    });
+    this.customCommandField.appendChild(this.customCommandInput.getElement());
+    fields.push(this.customCommandField);
+
+    section.setContent(fields);
+    this.sectionsContainer.appendChild(section.getElement());
+  }
+
+  /**
+   * Toggle visibility of the custom command input based on editor selection
+   */
+  private updateCustomCommandVisibility(editor: string): void {
+    if (!this.customCommandField) return;
+    if (editor === 'custom') {
+      this.customCommandField.classList.remove('hidden');
+    } else {
+      this.customCommandField.classList.add('hidden');
+    }
   }
 
   /**

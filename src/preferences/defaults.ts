@@ -130,6 +130,10 @@ export const DEFAULT_CORE_PREFERENCES: CorePreferences = {
     autoSave: true,
     autoSaveDelay: 1000,
   },
+  externalEditor: {
+    editor: 'none',
+    customCommand: '',
+  },
 };
 
 /**

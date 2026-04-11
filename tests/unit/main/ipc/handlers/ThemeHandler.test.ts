@@ -79,6 +79,7 @@ function createMockPreferencesService(initialMode: ThemeMode = 'system'): MockPr
         typography: {} as AppPreferences['core']['typography'],
         lists: {} as AppPreferences['core']['lists'],
         editor: { autoSave: true, autoSaveDelay: 1000 },
+        externalEditor: { editor: 'none', customCommand: '' },
       },
       plugins: {},
     })),

@@ -75,6 +75,10 @@ export const IPC_CHANNELS = {
   MENU: {
     ACTION: 'menu:action',
   },
+  SHELL: {
+    REVEAL_IN_FILE_MANAGER: 'shell:reveal-in-file-manager',
+    OPEN_IN_EDITOR: 'shell:open-in-editor',
+  },
 } as const;
 
 /**
@@ -90,7 +94,8 @@ export type IpcChannel =
   | (typeof IPC_CHANNELS.PREFERENCES)[keyof typeof IPC_CHANNELS.PREFERENCES]
   | (typeof IPC_CHANNELS.FILE_ASSOCIATION)[keyof typeof IPC_CHANNELS.FILE_ASSOCIATION]
   | (typeof IPC_CHANNELS.RECENT_FILES)[keyof typeof IPC_CHANNELS.RECENT_FILES]
-  | (typeof IPC_CHANNELS.MENU)[keyof typeof IPC_CHANNELS.MENU];
+  | (typeof IPC_CHANNELS.MENU)[keyof typeof IPC_CHANNELS.MENU]
+  | (typeof IPC_CHANNELS.SHELL)[keyof typeof IPC_CHANNELS.SHELL];
 
 /**
  * Fullscreen change event data
@@ -236,6 +241,22 @@ export interface MenuAPI {
 }
 
 /**
+ * Result of opening a file in an external editor
+ */
+export interface OpenInEditorResult {
+  success: boolean;
+  error?: string;
+}
+
+/**
+ * Shell operations API exposed to renderer
+ */
+export interface ShellAPI {
+  revealInFileManager: (filePath: string) => Promise<void>;
+  openInEditor: (filePath: string) => Promise<OpenInEditorResult>;
+}
+
+/**
  * Complete Electron API exposed via contextBridge
  */
 export interface ElectronAPI {
@@ -249,6 +270,7 @@ export interface ElectronAPI {
   fileAssociation: FileAssociationAPI;
   recentFiles: RecentFilesAPI;
   menu: MenuAPI;
+  shell: ShellAPI;
 }
 
 /**

@@ -77,6 +77,7 @@ function charDiffWithinParagraph(
 function generateParagraphDiffOperations(
   apiParas: ApiParagraph[],
   modelElements: DocsElement[],
+  docBodyEndIndex?: number,
 ): DocsBatchUpdateRequest[] {
   const oldTexts = apiParas.map(p => p.text.replace(/\n$/, ''));
   const newTexts = modelElements.map(e => getLeafText(e));
@@ -153,13 +154,34 @@ function generateParagraphDiffOperations(
     }
   }
 
-  // Build API requests in reverse order for index stability
+  // Build API requests in reverse order for index stability.
+  //
+  // Google Docs rule: deleteContentRange cannot include the trailing
+  // newline of any segment (body, table cell, section).  We handle this
+  // by subtracting 1 from endIndex on every delete — paragraph endIndex
+  // always includes the trailing `\n`, and the next paragraph's
+  // startIndex will be right after it, so the `\n` gets deleted when
+  // the adjacent paragraph is processed or stays as a harmless boundary.
+  //
+  // Additionally, clamp against the document body end to protect the
+  // mandatory document-ending newline.
+  const maxDeleteEnd = docBodyEndIndex != null ? docBodyEndIndex - 1 : undefined;
+
   const requests: DocsBatchUpdateRequest[] = [];
   for (let i = allOps.length - 1; i >= 0; i--) {
     const op = allOps[i]!;
     if (op.type === 'delete') {
+      let endIdx = op.endIndex ?? op.index;
+      // Exclude trailing newline from each paragraph delete
+      endIdx = endIdx - 1;
+      // Also clamp to doc body end
+      if (maxDeleteEnd != null && endIdx > maxDeleteEnd) {
+        endIdx = maxDeleteEnd;
+      }
+      // Skip no-op deletes (e.g. empty paragraphs with only a newline)
+      if (endIdx <= op.index) continue;
       requests.push({
-        deleteContentRange: { range: { startIndex: op.index, endIndex: op.endIndex ?? op.index } },
+        deleteContentRange: { range: { startIndex: op.index, endIndex: endIdx } },
       });
     } else {
       requests.push({
@@ -575,7 +597,8 @@ export class GoogleDocsSyncService {
     const apiParas = extractApiParagraphs(currentApiDoc);
     const modelElements = flattenElements(newDocsDoc.elements);
 
-    const operations = generateParagraphDiffOperations(apiParas, modelElements);
+    const docBodyEndIndex = currentApiDoc?.body?.content?.at(-1)?.endIndex;
+    const operations = generateParagraphDiffOperations(apiParas, modelElements, docBodyEndIndex);
     if (operations.length > 0) {
       console.warn('[SyncService] applyDiff: %d paragraph-diff operations', operations.length);
       await this.docsService.batchUpdate(docId, operations);

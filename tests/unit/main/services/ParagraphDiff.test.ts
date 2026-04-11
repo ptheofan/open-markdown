@@ -161,7 +161,8 @@ describe('generateParagraphDiffOperations', () => {
     const deletes = ops.filter((r) => r.deleteContentRange);
     expect(deletes.length).toBe(1);
     expect(deletes[0]!.deleteContentRange!.range.startIndex).toBe(6);
-    expect(deletes[0]!.deleteContentRange!.range.endIndex).toBe(16);
+    // endIndex excludes trailing newline (segment boundary protection)
+    expect(deletes[0]!.deleteContentRange!.range.endIndex).toBe(15);
   });
 
   it('should handle paragraph addition', () => {

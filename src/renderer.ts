@@ -237,7 +237,7 @@ class App {
       this.googleDocsButton.setCallbacks({
         onLinkRequest: () => this.googleDocsLinkDialog?.show(),
         onSignInRequest: () => { void this.handleGoogleDocsSignIn(); },
-        onSyncRequest: () => { void this.handleGoogleDocsSync(); },
+        onSyncRequest: () => { void this.showSyncVerificationDialog(); },
       });
     }
 
@@ -246,7 +246,7 @@ class App {
     if (gdocsDialogEl) {
       this.googleDocsLinkDialog = createGoogleDocsLinkDialog(gdocsDialogEl);
       this.googleDocsLinkDialog.setCallbacks({
-        onLink: (url: string) => { void this.handleGoogleDocsLink(url); },
+        onLink: (url: string) => { void this.handleGoogleDocsLinkAndSync(url); },
       });
     }
 
@@ -1067,16 +1067,36 @@ class App {
   }
 
   /**
-   * Handle Google Docs link request
+   * Show the link dialog pre-filled with the current linked doc URL
+   * so the user can verify or change it before syncing.
    */
-  private async handleGoogleDocsLink(url: string): Promise<void> {
+  private async showSyncVerificationDialog(): Promise<void> {
+    if (!this.state.currentFilePath) return;
+
+    let existingUrl = '';
+    try {
+      const link = await window.electronAPI.googleDocs.getLink(this.state.currentFilePath);
+      if (link?.docId) {
+        existingUrl = `https://docs.google.com/document/d/${link.docId}/edit`;
+      }
+    } catch {
+      // No link yet — dialog will show empty
+    }
+
+    this.googleDocsLinkDialog?.show(existingUrl);
+  }
+
+  /**
+   * Handle Google Docs link + sync: link the doc then immediately sync.
+   */
+  private async handleGoogleDocsLinkAndSync(url: string): Promise<void> {
     if (!this.state.currentFilePath) return;
 
     try {
       await window.electronAPI.googleDocs.link(this.state.currentFilePath, url);
       this.googleDocsLinkDialog?.hide();
-      this.toast?.success('Linked to Google Docs');
       await this.updateGoogleDocsButtonState();
+      await this.handleGoogleDocsSync();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to link';
       this.googleDocsLinkDialog?.showError(message);
@@ -1168,18 +1188,27 @@ class App {
         this.toast?.error(result.error ?? 'Sync failed');
       }
     } catch (error) {
-      console.error('Google Docs sync exception:', error);
       const message = error instanceof Error ? error.message : 'Sync failed';
-      this.toast?.error(message);
 
-      // If session expired, refresh button to show sign-in prompt
+      // Session expired — re-authenticate then retry the sync
       if (message.includes('Session expired')) {
-        await this.updateGoogleDocsButtonState();
+        console.warn('Google Docs session expired, triggering re-authentication');
+        try {
+          await this.handleGoogleDocsSignIn();
+          // Retry sync after successful re-auth
+          await this.handleGoogleDocsSync();
+        } catch {
+          this.googleDocsButton?.setState('ready');
+        }
         return;
       }
-    } finally {
+
+      console.error('Google Docs sync exception:', error);
+      this.toast?.error(message);
       this.googleDocsButton?.setState('ready');
+      return;
     }
+    this.googleDocsButton?.setState('ready');
   }
 
   /**

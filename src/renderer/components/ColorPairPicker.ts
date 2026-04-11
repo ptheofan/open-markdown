@@ -10,6 +10,7 @@ import { ColorPicker } from './ColorPicker';
  */
 export interface ColorPairPickerOptions {
   value: ColorPair;
+  defaultValue?: ColorPair;
   label?: string;
   description?: string;
 }
@@ -31,10 +32,12 @@ export class ColorPairPicker {
     // Create child color pickers
     this.lightPicker = new ColorPicker({
       value: options.value.light,
+      defaultValue: options.defaultValue?.light,
       label: 'Light',
     });
     this.darkPicker = new ColorPicker({
       value: options.value.dark,
+      defaultValue: options.defaultValue?.dark,
       label: 'Dark',
     });
 

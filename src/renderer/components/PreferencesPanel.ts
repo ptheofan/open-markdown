@@ -14,6 +14,7 @@ import { CollapsibleSection } from './CollapsibleSection';
 import { Select, Toggle, NumberInput, TextInput, FontSelect } from './FormControls';
 import { ColorPicker } from './ColorPicker';
 import { ColorPairPicker } from './ColorPairPicker';
+import { DEFAULT_CORE_PREFERENCES } from '../../preferences/defaults';
 
 /**
  * PreferencesPanel callbacks
@@ -307,6 +308,7 @@ export class PreferencesPanel {
     const bgPicker = new ColorPairPicker({
       label: 'Background Color',
       value: this.currentPreferences.core.theme.background,
+      defaultValue: DEFAULT_CORE_PREFERENCES.theme.background,
     });
     bgPicker.setOnChange((pair) => {
       this.emitChange({ core: { theme: { background: pair } } });
@@ -365,6 +367,7 @@ export class PreferencesPanel {
     const linkColorPicker = new ColorPairPicker({
       label: 'Link Color',
       value: this.currentPreferences.core.typography.link.color,
+      defaultValue: DEFAULT_CORE_PREFERENCES.typography.link.color,
     });
     linkColorPicker.setOnChange((pair) => {
       this.emitChange({ core: { typography: { link: { color: pair } } } });
@@ -384,9 +387,11 @@ export class PreferencesPanel {
         this.currentPreferences.core.typography[level];
 
       // Color
+      const defaultHeadingStyle = DEFAULT_CORE_PREFERENCES.typography[level];
       const colorPicker = new ColorPairPicker({
         label: 'Color',
         value: headingStyle.color,
+        defaultValue: defaultHeadingStyle.color,
       });
       colorPicker.setOnChange((pair) => {
         this.emitChange({
@@ -519,6 +524,7 @@ export class PreferencesPanel {
           label: field.label,
           description: field.description,
           value: currentValue as string,
+          defaultValue: field.defaultValue as string,
         });
         colorPicker.setOnChange((value) => {
           this.emitPluginChange(pluginId, field.key, value);
@@ -531,6 +537,7 @@ export class PreferencesPanel {
           label: field.label,
           description: field.description,
           value: currentValue as ColorPair,
+          defaultValue: field.defaultValue as ColorPair,
         });
         colorPairPicker.setOnChange((value) => {
           this.emitPluginChange(pluginId, field.key, value);

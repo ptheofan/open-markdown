@@ -61,7 +61,7 @@ export class MarkdownSlicer {
 
     let i = 0;
     while (i < tokens.length) {
-      const token = tokens[i];
+      const token = tokens[i]!;
 
       // Handle list blocks: split into individual list items
       if (token.type === 'bullet_list_open' || token.type === 'ordered_list_open') {
@@ -73,7 +73,7 @@ export class MarkdownSlicer {
         let depth = 0;
 
         while (i < tokens.length) {
-          const t = tokens[i];
+          const t = tokens[i]!;
 
           if (t.type === closeType && depth === 0) {
             i++; // skip list_close
@@ -95,12 +95,13 @@ export class MarkdownSlicer {
             let itemDepth = 1;
             i++;
             while (i < tokens.length && itemDepth > 0) {
-              if (tokens[i].type === 'list_item_open') itemDepth++;
-              if (tokens[i].type === 'list_item_close') itemDepth--;
+              if (tokens[i]!.type === 'list_item_open') itemDepth++;
+              if (tokens[i]!.type === 'list_item_close') itemDepth--;
               if (itemDepth > 0) i++;
             }
             // tokens[i] is now list_item_close
-            const endLine = tokens[i].map ? tokens[i].map[1] : startLine + 1;
+            const closeToken = tokens[i]!;
+            const endLine = closeToken.map ? closeToken.map[1] : startLine + 1;
             const raw = this.extractLines(lines, startLine, endLine);
 
             slices.push({
@@ -132,8 +133,8 @@ export class MarkdownSlicer {
           let depth = 1;
           let j = i + 1;
           while (j < tokens.length && depth > 0) {
-            if (tokens[j].type === token.type) depth++;
-            if (tokens[j].type === closeType) depth--;
+            if (tokens[j]!.type === token.type) depth++;
+            if (tokens[j]!.type === closeType) depth--;
             j++;
           }
           // j-1 is the closing token

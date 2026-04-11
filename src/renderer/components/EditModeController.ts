@@ -444,11 +444,11 @@ export class EditModeController {
 
     // Heading
     const headingMatch = trimmed.match(/^#{1,6}\s+(.*)/s);
-    if (headingMatch) return headingMatch[1];
+    if (headingMatch?.[1] != null) return headingMatch[1];
 
     // List item
     const listMatch = trimmed.match(/^(?:[-*+]|\d+\.)\s+(.*)/s);
-    if (listMatch) return listMatch[1];
+    if (listMatch?.[1] != null) return listMatch[1];
 
     return raw;
   }
@@ -519,7 +519,7 @@ export class EditModeController {
         break;
 
       case 'duplicate': {
-        const original = this.slices[idx];
+        const original = this.slices[idx]!;
         const newSlice: MarkdownSlice = {
           ...original,
           index: Math.max(...this.slices.map(s => s.index)) + 1,
@@ -531,36 +531,38 @@ export class EditModeController {
       case 'move-up':
         if (idx > 0) {
           const [item] = this.slices.splice(idx, 1);
-          this.slices.splice(idx - 1, 0, item);
+          this.slices.splice(idx - 1, 0, item!);
         }
         break;
 
       case 'move-down':
         if (idx < this.slices.length - 1) {
           const [item] = this.slices.splice(idx, 1);
-          this.slices.splice(idx + 1, 0, item);
+          this.slices.splice(idx + 1, 0, item!);
         }
         break;
 
       case 'add-above': {
+        const ref = this.slices[idx]!;
         const newSlice: MarkdownSlice = {
           index: Math.max(...this.slices.map(s => s.index)) + 1,
           type: 'paragraph',
           raw: '',
-          startLine: this.slices[idx].startLine,
-          endLine: this.slices[idx].startLine,
+          startLine: ref.startLine,
+          endLine: ref.startLine,
         };
         this.slices.splice(idx, 0, newSlice);
         break;
       }
 
       case 'add-below': {
+        const ref = this.slices[idx]!;
         const newSlice: MarkdownSlice = {
           index: Math.max(...this.slices.map(s => s.index)) + 1,
           type: 'paragraph',
           raw: '',
-          startLine: this.slices[idx].endLine,
-          endLine: this.slices[idx].endLine,
+          startLine: ref.endLine,
+          endLine: ref.endLine,
         };
         this.slices.splice(idx + 1, 0, newSlice);
         break;
@@ -577,8 +579,9 @@ export class EditModeController {
       // Auto-focus new empty blocks
       if (action === 'add-above' || action === 'add-below') {
         const newIdx = action === 'add-above' ? idx : idx + 1;
-        if (this.slices[newIdx]) {
-          this.startEdit(this.slices[newIdx].index);
+        const newSlice = this.slices[newIdx];
+        if (newSlice) {
+          this.startEdit(newSlice.index);
         }
       }
     });

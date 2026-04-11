@@ -1,9 +1,9 @@
 /**
  * ColorPicker - OKLCH color picker component
  *
- * A color picker with clickable swatches that open a custom OKLCH
- * canvas picker (Lightness×Chroma plane + hue strip), text inputs
- * for direct hex/OKLCH editing, and an optional reset-to-default button.
+ * A color picker with a clickable swatch that opens a custom OKLCH
+ * canvas picker, plus text inputs for direct hex/OKLCH editing
+ * and an optional reset-to-default button.
  */
 
 import type { OklchColor } from '@shared/types';
@@ -26,8 +26,8 @@ export interface ColorPickerOptions {
  */
 export class ColorPicker {
   private element: HTMLElement;
-  private hexSwatch: HTMLElement;
-  private oklchSwatch: HTMLElement;
+  private preview: HTMLElement;
+  private swatch: HTMLElement;
   private textInput: HTMLInputElement;
   private hexInput: HTMLInputElement;
   private resetBtn: HTMLButtonElement | null = null;
@@ -45,13 +45,13 @@ export class ColorPicker {
     this.currentValue = options.value;
     this.defaultValue = options.defaultValue ?? null;
 
-    // Build DOM — all references stored directly, no querySelector needed
-    const { element, hexSwatch, oklchSwatch, hexInput, oklchInput, resetBtn } =
+    // Build DOM
+    const { element, preview, swatch, hexInput, oklchInput, resetBtn } =
       this.buildDom(options);
 
     this.element = element;
-    this.hexSwatch = hexSwatch;
-    this.oklchSwatch = oklchSwatch;
+    this.preview = preview;
+    this.swatch = swatch;
     this.hexInput = hexInput;
     this.textInput = oklchInput;
     this.resetBtn = resetBtn;
@@ -62,8 +62,8 @@ export class ColorPicker {
 
   private buildDom(options: ColorPickerOptions): {
     element: HTMLElement;
-    hexSwatch: HTMLElement;
-    oklchSwatch: HTMLElement;
+    preview: HTMLElement;
+    swatch: HTMLElement;
     hexInput: HTMLInputElement;
     oklchInput: HTMLInputElement;
     resetBtn: HTMLButtonElement | null;
@@ -88,55 +88,7 @@ export class ColorPicker {
     const picker = document.createElement('div');
     picker.className = 'color-picker';
 
-    // Row 1: hex swatch + hex input
-    const hexRow = document.createElement('div');
-    hexRow.className = 'color-picker-row';
-
-    const hexSwatch = this.createSwatch();
-    hexRow.appendChild(hexSwatch);
-
-    const hexInput = document.createElement('input');
-    hexInput.type = 'text';
-    hexInput.className = 'color-picker-hex';
-    hexInput.placeholder = '#ffffff';
-    hexInput.title = 'Hex color';
-    hexRow.appendChild(hexInput);
-
-    picker.appendChild(hexRow);
-
-    // Row 2: oklch swatch + oklch input
-    const oklchRow = document.createElement('div');
-    oklchRow.className = 'color-picker-row';
-
-    const oklchSwatch = this.createSwatch();
-    oklchRow.appendChild(oklchSwatch);
-
-    const oklchInput = document.createElement('input');
-    oklchInput.type = 'text';
-    oklchInput.className = 'color-picker-oklch';
-    oklchInput.placeholder = 'oklch(50% 0.1 180)';
-    oklchInput.title = 'OKLCH color';
-    oklchRow.appendChild(oklchInput);
-
-    picker.appendChild(oklchRow);
-
-    // Reset button
-    let resetBtn: HTMLButtonElement | null = null;
-    if (options.defaultValue) {
-      resetBtn = document.createElement('button');
-      resetBtn.className = 'color-picker-reset';
-      resetBtn.title = 'Reset to default';
-      resetBtn.type = 'button';
-      resetBtn.textContent = '\u21BA';
-      picker.appendChild(resetBtn);
-    }
-
-    wrapper.appendChild(picker);
-
-    return { element: wrapper, hexSwatch, oklchSwatch, hexInput, oklchInput, resetBtn };
-  }
-
-  private createSwatch(): HTMLElement {
+    // Clickable swatch preview
     const preview = document.createElement('div');
     preview.className = 'color-picker-preview';
     preview.title = 'Click to open color picker';
@@ -151,12 +103,47 @@ export class ColorPicker {
     swatch.style.pointerEvents = 'none';
     preview.appendChild(swatch);
 
-    return preview;
+    picker.appendChild(preview);
+
+    // Text inputs column
+    const inputs = document.createElement('div');
+    inputs.className = 'color-picker-inputs';
+
+    const hexInput = document.createElement('input');
+    hexInput.type = 'text';
+    hexInput.className = 'color-picker-hex';
+    hexInput.placeholder = '#ffffff';
+    hexInput.title = 'Hex color';
+    inputs.appendChild(hexInput);
+
+    const oklchInput = document.createElement('input');
+    oklchInput.type = 'text';
+    oklchInput.className = 'color-picker-oklch';
+    oklchInput.placeholder = 'oklch(50% 0.1 180)';
+    oklchInput.title = 'OKLCH color';
+    inputs.appendChild(oklchInput);
+
+    picker.appendChild(inputs);
+
+    // Reset button
+    let resetBtn: HTMLButtonElement | null = null;
+    if (options.defaultValue) {
+      resetBtn = document.createElement('button');
+      resetBtn.className = 'color-picker-reset';
+      resetBtn.title = 'Reset to default';
+      resetBtn.type = 'button';
+      resetBtn.textContent = '\u21BA';
+      picker.appendChild(resetBtn);
+    }
+
+    wrapper.appendChild(picker);
+
+    return { element: wrapper, preview, swatch, hexInput, oklchInput, resetBtn };
   }
 
   private setupEventListeners(): void {
-    // Both swatches open the OKLCH widget
-    const handleSwatchClick = (): void => {
+    // Swatch click → open OKLCH widget
+    this.preview.addEventListener('click', () => {
       try {
         if (this.widgetPopup) {
           this.closeWidget();
@@ -166,10 +153,7 @@ export class ColorPicker {
       } catch (err) {
         console.error('ColorPicker: failed to open widget:', err);
       }
-    };
-
-    this.hexSwatch.addEventListener('click', handleSwatchClick);
-    this.oklchSwatch.addEventListener('click', handleSwatchClick);
+    });
 
     // OKLCH input change
     this.textInput.addEventListener('change', () => {
@@ -232,13 +216,13 @@ export class ColorPicker {
       this.onChange?.(this.currentValue);
     });
 
-    // Create popup container
+    // Create popup
     this.widgetPopup = document.createElement('div');
     this.widgetPopup.className = 'oklch-widget-popup';
     this.widgetPopup.appendChild(this.widget.getElement());
 
-    // Position relative to the swatch that was clicked
-    const rect = this.hexSwatch.getBoundingClientRect();
+    // Position relative to the swatch
+    const rect = this.preview.getBoundingClientRect();
     this.widgetPopup.style.left = `${rect.left}px`;
     this.widgetPopup.style.top = `${rect.bottom + 6}px`;
 
@@ -256,15 +240,14 @@ export class ColorPicker {
       }
     });
 
-    // Close on click outside (delay to avoid catching the opening click)
+    // Close on click outside
     setTimeout(() => {
       this.boundClosePopup = (e: MouseEvent) => {
         const target = e.target as Node;
         if (
           this.widgetPopup &&
           !this.widgetPopup.contains(target) &&
-          !this.hexSwatch.contains(target) &&
-          !this.oklchSwatch.contains(target)
+          !this.preview.contains(target)
         ) {
           this.closeWidget();
         }
@@ -301,14 +284,8 @@ export class ColorPicker {
   }
 
   private updateDisplay(): void {
-    // Update both swatches
-    const swatches = [
-      this.hexSwatch.querySelector('.color-picker-swatch') as HTMLElement,
-      this.oklchSwatch.querySelector('.color-picker-swatch') as HTMLElement,
-    ];
-    for (const s of swatches) {
-      if (s) s.style.backgroundColor = this.currentValue;
-    }
+    // Update swatch
+    this.swatch.style.backgroundColor = this.currentValue;
 
     // Update text inputs
     this.textInput.value = this.currentValue;

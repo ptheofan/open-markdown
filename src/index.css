@@ -1059,21 +1059,23 @@ button:focus:not(:focus-visible) {
 
 .color-picker {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 8px;
 }
 
-.color-picker-row {
+.color-picker-inputs {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
 }
 
 .color-picker-preview {
   position: relative;
-  width: 24px;
-  height: 24px;
-  border-radius: 4px;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
   overflow: hidden;
   flex-shrink: 0;
   border: 1px solid var(--border-color);
@@ -1126,8 +1128,7 @@ button:focus:not(:focus-visible) {
 
 .color-picker-hex,
 .color-picker-oklch {
-  flex: 1;
-  min-width: 0;
+  width: 100%;
   padding: 4px 8px;
   background-color: var(--bg-color);
   border: 1px solid var(--border-color);

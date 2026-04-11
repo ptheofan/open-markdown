@@ -156,6 +156,9 @@ export class EditModeController {
    * Start inline editing of a slice
    */
   private startEdit(sliceIndex: number): void {
+    // Already editing this slice — don't restart
+    if (this.activeEditIndex === sliceIndex) return;
+
     // Commit any previous edit
     this.commitActiveEdit();
 

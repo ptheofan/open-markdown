@@ -1169,7 +1169,14 @@ class App {
       }
     } catch (error) {
       console.error('Google Docs sync exception:', error);
-      this.toast?.error(error instanceof Error ? error.message : 'Sync failed');
+      const message = error instanceof Error ? error.message : 'Sync failed';
+      this.toast?.error(message);
+
+      // If session expired, refresh button to show sign-in prompt
+      if (message.includes('Session expired')) {
+        await this.updateGoogleDocsButtonState();
+        return;
+      }
     } finally {
       this.googleDocsButton?.setState('ready');
     }

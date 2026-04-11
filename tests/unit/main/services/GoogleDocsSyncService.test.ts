@@ -32,8 +32,8 @@ describe('GoogleDocsSyncService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     syncService = createGoogleDocsSyncService(
-      mockDocsService as any,
-      mockLinkStore as any,
+      mockDocsService as unknown as Parameters<typeof createGoogleDocsSyncService>[0],
+      mockLinkStore as unknown as Parameters<typeof createGoogleDocsSyncService>[1],
     );
   });
 

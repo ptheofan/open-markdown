@@ -534,7 +534,7 @@ class App {
     // Google Docs auth change listener
     const cleanupGDocsAuth = window.electronAPI.googleDocs.onAuthChange(
       (_state: GoogleAuthState) => {
-        this.updateGoogleDocsButtonState();
+        void this.updateGoogleDocsButtonState();
       }
     );
     this.cleanupFunctions.push(cleanupGDocsAuth);

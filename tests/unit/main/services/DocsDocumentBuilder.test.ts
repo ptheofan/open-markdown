@@ -2,16 +2,49 @@ import { describe, it, expect } from 'vitest';
 import { buildInsertRequests } from '@main/services/DocsDocumentBuilder';
 import type { DocsDocument } from '@shared/types/google-docs';
 
+/** Typed view of the Google Docs batch update requests used in these tests */
+interface TestBuildRequest {
+  insertText?: {
+    text: string;
+    location: { index: number };
+  };
+  insertInlineImage?: {
+    uri: string;
+    location: { index: number };
+  };
+  updateTextStyle?: {
+    textStyle: Record<string, unknown>;
+    range: { startIndex: number; endIndex: number };
+  };
+  updateParagraphStyle?: {
+    paragraphStyle: Record<string, unknown>;
+    range: { startIndex: number; endIndex: number };
+  };
+  createParagraphBullets?: {
+    bulletPreset: string;
+    range: { startIndex: number; endIndex: number };
+  };
+}
+
+/** Cast buildInsertRequests result to typed test requests */
+function typedBuild(doc: DocsDocument, startIndex: number): { requests: TestBuildRequest[]; pendingTables: ReturnType<typeof buildInsertRequests>['pendingTables'] } {
+  const result = buildInsertRequests(doc, startIndex);
+  return {
+    requests: result.requests as TestBuildRequest[],
+    pendingTables: result.pendingTables,
+  };
+}
+
 describe('DocsDocumentBuilder', () => {
   it('should build insert requests for a simple paragraph', () => {
     const doc: DocsDocument = {
       elements: [{ type: 'paragraph', runs: [{ text: 'Hello world' }] }],
     };
-    const { requests } = buildInsertRequests(doc, 1);
-    const insertText = requests.find((r: any) => r.insertText);
+    const { requests } = typedBuild(doc, 1);
+    const insertText = requests.find((r) => r.insertText);
     expect(insertText).toBeDefined();
-    expect(insertText.insertText.text).toBe('Hello world\n');
-    expect(insertText.insertText.location.index).toBe(1);
+    expect(insertText!.insertText!.text).toBe('Hello world\n');
+    expect(insertText!.insertText!.location.index).toBe(1);
   });
 
   it('should build style requests for bold text', () => {
@@ -25,22 +58,22 @@ describe('DocsDocumentBuilder', () => {
         ],
       }],
     };
-    const { requests } = buildInsertRequests(doc, 1);
-    const boldStyle = requests.find((r: any) =>
+    const { requests } = typedBuild(doc, 1);
+    const boldStyle = requests.find((r) =>
       r.updateTextStyle?.textStyle?.bold === true
     );
     expect(boldStyle).toBeDefined();
     // 'normal ' is 7 chars, so bold starts at index 1+7=8
-    expect(boldStyle.updateTextStyle.range.startIndex).toBe(8);
-    expect(boldStyle.updateTextStyle.range.endIndex).toBe(12); // 'bold' is 4 chars
+    expect(boldStyle!.updateTextStyle!.range.startIndex).toBe(8);
+    expect(boldStyle!.updateTextStyle!.range.endIndex).toBe(12); // 'bold' is 4 chars
   });
 
   it('should build heading style requests (h1 → TITLE)', () => {
     const doc: DocsDocument = {
       elements: [{ type: 'heading', headingLevel: 1, runs: [{ text: 'Title' }] }],
     };
-    const { requests } = buildInsertRequests(doc, 1);
-    const paragraphStyle = requests.find((r: any) =>
+    const { requests } = typedBuild(doc, 1);
+    const paragraphStyle = requests.find((r) =>
       r.updateParagraphStyle?.paragraphStyle?.namedStyleType === 'TITLE'
     );
     expect(paragraphStyle).toBeDefined();
@@ -49,11 +82,11 @@ describe('DocsDocumentBuilder', () => {
   it('should build requests for h2-h6 → HEADING_1 through HEADING_5', () => {
     for (let level = 2; level <= 6; level++) {
       const doc: DocsDocument = {
-        elements: [{ type: 'heading', headingLevel: level as any, runs: [{ text: 'H' }] }],
+        elements: [{ type: 'heading', headingLevel: level as DocsDocument['elements'][0]['headingLevel'], runs: [{ text: 'H' }] }],
       };
-      const { requests } = buildInsertRequests(doc, 1);
+      const { requests } = typedBuild(doc, 1);
       const expectedStyle = `HEADING_${level - 1}`;
-      const style = requests.find((r: any) =>
+      const style = requests.find((r) =>
         r.updateParagraphStyle?.paragraphStyle?.namedStyleType === expectedStyle
       );
       expect(style).toBeDefined();
@@ -64,10 +97,11 @@ describe('DocsDocumentBuilder', () => {
     const doc: DocsDocument = {
       elements: [{ type: 'code_block', code: 'const x = 1;\n' }],
     };
-    const { requests } = buildInsertRequests(doc, 1);
-    const fontStyle = requests.find((r: any) =>
-      r.updateTextStyle?.textStyle?.weightedFontFamily?.fontFamily === 'Courier New'
-    );
+    const { requests } = typedBuild(doc, 1);
+    const fontStyle = requests.find((r) => {
+      const family = r.updateTextStyle?.textStyle?.weightedFontFamily;
+      return family && typeof family === 'object' && 'fontFamily' in family && family.fontFamily === 'Courier New';
+    });
     expect(fontStyle).toBeDefined();
   });
 
@@ -77,8 +111,8 @@ describe('DocsDocumentBuilder', () => {
         { type: 'list_item', listOrdered: false, listDepth: 0, runs: [{ text: 'Item 1' }] },
       ],
     };
-    const { requests } = buildInsertRequests(doc, 1);
-    const bullets = requests.find((r: any) => r.createParagraphBullets);
+    const { requests } = typedBuild(doc, 1);
+    const bullets = requests.find((r) => r.createParagraphBullets);
     expect(bullets).toBeDefined();
   });
 
@@ -88,10 +122,10 @@ describe('DocsDocumentBuilder', () => {
         { type: 'list_item', listOrdered: true, listDepth: 0, runs: [{ text: 'Item 1' }] },
       ],
     };
-    const { requests } = buildInsertRequests(doc, 1);
-    const bullets = requests.find((r: any) => r.createParagraphBullets);
+    const { requests } = typedBuild(doc, 1);
+    const bullets = requests.find((r) => r.createParagraphBullets);
     expect(bullets).toBeDefined();
-    expect(bullets.createParagraphBullets.bulletPreset).toContain('NUMBERED');
+    expect(bullets!.createParagraphBullets!.bulletPreset).toContain('NUMBERED');
   });
 
   it('should build requests for a table', () => {
@@ -104,11 +138,11 @@ describe('DocsDocumentBuilder', () => {
         ],
       }],
     };
-    const { requests, pendingTables } = buildInsertRequests(doc, 1);
+    const { requests, pendingTables } = typedBuild(doc, 1);
 
     // Tables now produce a placeholder insertText and a pendingTables entry
-    const insertTexts = requests.filter((r: any) => r.insertText);
-    const placeholderInsert = insertTexts.find((r: any) => r.insertText.text === '<<TABLE_0>>\n');
+    const insertTexts = requests.filter((r) => r.insertText);
+    const placeholderInsert = insertTexts.find((r) => r.insertText!.text === '<<TABLE_0>>\n');
     expect(placeholderInsert).toBeDefined();
 
     // Should have exactly one pending table with the correct row data
@@ -124,8 +158,8 @@ describe('DocsDocumentBuilder', () => {
     const doc: DocsDocument = {
       elements: [{ type: 'horizontal_rule' }],
     };
-    const { requests } = buildInsertRequests(doc, 1);
-    const insertText = requests.find((r: any) => r.insertText);
+    const { requests } = typedBuild(doc, 1);
+    const insertText = requests.find((r) => r.insertText);
     expect(insertText).toBeDefined();
   });
 
@@ -136,10 +170,11 @@ describe('DocsDocumentBuilder', () => {
         runs: [{ text: 'Click here', link: 'https://example.com' }],
       }],
     };
-    const { requests } = buildInsertRequests(doc, 1);
-    const linkStyle = requests.find((r: any) =>
-      r.updateTextStyle?.textStyle?.link?.url === 'https://example.com'
-    );
+    const { requests } = typedBuild(doc, 1);
+    const linkStyle = requests.find((r) => {
+      const link = r.updateTextStyle?.textStyle?.link;
+      return link && typeof link === 'object' && 'url' in link && link.url === 'https://example.com';
+    });
     expect(linkStyle).toBeDefined();
   });
 
@@ -150,11 +185,11 @@ describe('DocsDocumentBuilder', () => {
         { type: 'paragraph', runs: [{ text: 'Second' }] }, // starts at 1+6=7
       ],
     };
-    const { requests } = buildInsertRequests(doc, 1);
-    const insertTexts = requests.filter((r: any) => r.insertText);
+    const { requests } = typedBuild(doc, 1);
+    const insertTexts = requests.filter((r) => r.insertText);
     expect(insertTexts).toHaveLength(2);
-    expect(insertTexts[0].insertText.location.index).toBe(1);
-    expect(insertTexts[1].insertText.location.index).toBe(7); // 1 + 'First\n'.length
+    expect(insertTexts[0]!.insertText!.location.index).toBe(1);
+    expect(insertTexts[1]!.insertText!.location.index).toBe(7); // 1 + 'First\n'.length
   });
 
   it('should build italic style requests', () => {
@@ -164,8 +199,8 @@ describe('DocsDocumentBuilder', () => {
         runs: [{ text: 'italic', italic: true }],
       }],
     };
-    const { requests } = buildInsertRequests(doc, 1);
-    const italicStyle = requests.find((r: any) =>
+    const { requests } = typedBuild(doc, 1);
+    const italicStyle = requests.find((r) =>
       r.updateTextStyle?.textStyle?.italic === true
     );
     expect(italicStyle).toBeDefined();
@@ -178,16 +213,17 @@ describe('DocsDocumentBuilder', () => {
         runs: [{ text: 'code', code: true }],
       }],
     };
-    const { requests } = buildInsertRequests(doc, 1);
-    const codeStyle = requests.find((r: any) =>
-      r.updateTextStyle?.textStyle?.weightedFontFamily?.fontFamily === 'Courier New'
-    );
+    const { requests } = typedBuild(doc, 1);
+    const codeStyle = requests.find((r) => {
+      const family = r.updateTextStyle?.textStyle?.weightedFontFamily;
+      return family && typeof family === 'object' && 'fontFamily' in family && family.fontFamily === 'Courier New';
+    });
     expect(codeStyle).toBeDefined();
   });
 
   it('should return empty requests for empty document', () => {
     const doc: DocsDocument = { elements: [] };
-    const { requests, pendingTables } = buildInsertRequests(doc, 1);
+    const { requests, pendingTables } = typedBuild(doc, 1);
     expect(requests).toEqual([]);
     expect(pendingTables).toEqual([]);
   });
@@ -199,11 +235,11 @@ describe('DocsDocumentBuilder', () => {
         children: [{ type: 'paragraph', runs: [{ text: 'Quoted' }] }],
       }],
     };
-    const { requests } = buildInsertRequests(doc, 1);
-    const insertText = requests.find((r: any) => r.insertText);
+    const { requests } = typedBuild(doc, 1);
+    const insertText = requests.find((r) => r.insertText);
     expect(insertText).toBeDefined();
-    expect(insertText.insertText.text).toBe('Quoted\n');
-    const indentStyle = requests.find((r: any) =>
+    expect(insertText!.insertText!.text).toBe('Quoted\n');
+    const indentStyle = requests.find((r) =>
       r.updateParagraphStyle?.paragraphStyle?.indentStart
     );
     expect(indentStyle).toBeDefined();
@@ -217,18 +253,18 @@ describe('DocsDocumentBuilder', () => {
         imageAlt: 'test image',
       }],
     };
-    const { requests } = buildInsertRequests(doc, 1);
+    const { requests } = typedBuild(doc, 1);
 
     // Images with imageLink produce an insertInlineImage request
-    const inlineImage = requests.find((r: any) => r.insertInlineImage);
+    const inlineImage = requests.find((r) => r.insertInlineImage);
     expect(inlineImage).toBeDefined();
-    expect(inlineImage.insertInlineImage.uri).toBe('https://drive.google.com/uc?id=FILE_ID');
-    expect(inlineImage.insertInlineImage.location.index).toBe(1);
+    expect(inlineImage!.insertInlineImage!.uri).toBe('https://drive.google.com/uc?id=FILE_ID');
+    expect(inlineImage!.insertInlineImage!.location.index).toBe(1);
 
     // Should also have an insertText for the newline after the image
-    const insertText = requests.find((r: any) => r.insertText);
+    const insertText = requests.find((r) => r.insertText);
     expect(insertText).toBeDefined();
-    expect(insertText.insertText.text).toBe('\n');
+    expect(insertText!.insertText!.text).toBe('\n');
   });
 
   it('should skip image without imageLink', () => {
@@ -238,7 +274,7 @@ describe('DocsDocumentBuilder', () => {
         imageAlt: 'test image',
       }],
     };
-    const { requests } = buildInsertRequests(doc, 1);
+    const { requests } = typedBuild(doc, 1);
 
     // Images without imageLink are skipped entirely (buildImage returns early)
     expect(requests).toEqual([]);
@@ -251,8 +287,8 @@ describe('DocsDocumentBuilder', () => {
         runs: [{ text: 'deleted', strikethrough: true }],
       }],
     };
-    const { requests } = buildInsertRequests(doc, 1);
-    const strikethroughStyle = requests.find((r: any) =>
+    const { requests } = typedBuild(doc, 1);
+    const strikethroughStyle = requests.find((r) =>
       r.updateTextStyle?.textStyle?.strikethrough === true
     );
     expect(strikethroughStyle).toBeDefined();
@@ -264,30 +300,31 @@ describe('DocsDocumentBuilder', () => {
         { type: 'list_item', listOrdered: false, listDepth: 1, runs: [{ text: 'Nested' }] },
       ],
     };
-    const { requests } = buildInsertRequests(doc, 1);
-    const indentStyle = requests.find((r: any) =>
+    const { requests } = typedBuild(doc, 1);
+    const indentStyle = requests.find((r) =>
       r.updateParagraphStyle?.paragraphStyle?.indentStart
     );
     expect(indentStyle).toBeDefined();
-    expect(indentStyle.updateParagraphStyle.paragraphStyle.indentStart.magnitude).toBe(36);
+    const indentStart = indentStyle!.updateParagraphStyle!.paragraphStyle.indentStart;
+    expect(indentStart).toEqual(expect.objectContaining({ magnitude: 36 }));
   });
 
   it('should handle paragraph with no runs', () => {
     const doc: DocsDocument = {
       elements: [{ type: 'paragraph' }],
     };
-    const { requests } = buildInsertRequests(doc, 1);
-    const insertText = requests.find((r: any) => r.insertText);
+    const { requests } = typedBuild(doc, 1);
+    const insertText = requests.find((r) => r.insertText);
     expect(insertText).toBeDefined();
-    expect(insertText.insertText.text).toBe('\n');
+    expect(insertText!.insertText!.text).toBe('\n');
   });
 
   it('should use custom startIndex', () => {
     const doc: DocsDocument = {
       elements: [{ type: 'paragraph', runs: [{ text: 'Hello' }] }],
     };
-    const { requests } = buildInsertRequests(doc, 10);
-    const insertText = requests.find((r: any) => r.insertText);
-    expect(insertText.insertText.location.index).toBe(10);
+    const { requests } = typedBuild(doc, 10);
+    const insertText = requests.find((r) => r.insertText);
+    expect(insertText!.insertText!.location.index).toBe(10);
   });
 });

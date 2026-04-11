@@ -7,6 +7,7 @@
  */
 import crypto from 'crypto';
 import http from 'http';
+import fsSync from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
 import { app, safeStorage, shell } from 'electron';
@@ -88,8 +89,7 @@ export class GoogleAuthService {
     // If not initialized yet, check if token file exists on disk (no keychain access)
     if (!this.initialized) {
       try {
-        const fs = require('fs');
-        if (fs.existsSync(this.tokenPath)) {
+        if (fsSync.existsSync(this.tokenPath)) {
           return { isAuthenticated: true }; // tokens on disk, will load lazily on sync
         }
       } catch {
@@ -149,18 +149,18 @@ export class GoogleAuthService {
     await shell.openExternal(url);
 
     // Wait for the authorization code from the callback server
-    console.log('[GoogleAuth] Waiting for callback...');
+    console.warn('[GoogleAuth] Waiting for callback...');
     const code = await this.waitForCallback();
-    console.log('[GoogleAuth] Got auth code, exchanging for tokens...');
+    console.warn('[GoogleAuth] Got auth code, exchanging for tokens...');
 
     // Exchange the code for tokens
     const activeClientId = this.getActiveClientId();
     const tokenResponse = await this.exchangeCode(code, codeVerifier, activeClientId);
-    console.log('[GoogleAuth] Token exchange successful, fetching user email...');
+    console.warn('[GoogleAuth] Token exchange successful, fetching user email...');
 
     // Fetch user info to get email
     const email = await this.fetchUserEmail(tokenResponse.access_token);
-    console.log('[GoogleAuth] Got email:', email);
+    console.warn('[GoogleAuth] Got email:', email);
 
     // Store tokens
     this.tokens = {
@@ -171,7 +171,7 @@ export class GoogleAuthService {
     };
 
     await this.saveTokens();
-    console.log('[GoogleAuth] Tokens saved. Auth state:', this.getAuthState());
+    console.warn('[GoogleAuth] Tokens saved. Auth state:', this.getAuthState());
 
     return this.getAuthState();
   }
@@ -270,7 +270,7 @@ export class GoogleAuthService {
         reject(new Error('OAuth callback timed out (5 minutes)'));
       }, 5 * 60 * 1000);
 
-      const handler = (req: http.IncomingMessage, res: http.ServerResponse) => {
+      const handler = (req: http.IncomingMessage, res: http.ServerResponse): void => {
         if (!req.url) {
           res.writeHead(404);
           res.end();

@@ -4,15 +4,14 @@
  */
 import { describe, it, expect } from 'vitest';
 import { buildFormattingFromApiDoc } from '@main/services/DocsDocumentBuilder';
-import type { DocsDocument } from '@shared/types/google-docs';
+import type { DocsBatchUpdateRequest } from '@main/services/GoogleDocsService';
+import type { DocsDocument, GDocsApiDocument, GDocsStructuralElement } from '@shared/types/google-docs';
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
-function makeApiDoc(content: any[]): any {
+function makeApiDoc(content: GDocsStructuralElement[]): GDocsApiDocument {
   return { body: { content } };
 }
 
-function makePara(text: string, startIndex: number) {
+function makePara(text: string, startIndex: number): GDocsStructuralElement {
   const endIndex = startIndex + text.length + 1;
   return {
     paragraph: {
@@ -21,6 +20,21 @@ function makePara(text: string, startIndex: number) {
     startIndex,
     endIndex,
   };
+}
+
+/** Type guard: narrows to the updateParagraphStyle variant */
+function hasParaStyle(r: DocsBatchUpdateRequest): r is Extract<DocsBatchUpdateRequest, { updateParagraphStyle: unknown }> {
+  return 'updateParagraphStyle' in r;
+}
+
+/** Type guard: narrows to the updateTextStyle variant */
+function hasTextStyle(r: DocsBatchUpdateRequest): r is Extract<DocsBatchUpdateRequest, { updateTextStyle: unknown }> {
+  return 'updateTextStyle' in r;
+}
+
+/** Type guard: narrows to the createParagraphBullets variant */
+function hasBullets(r: DocsBatchUpdateRequest): r is Extract<DocsBatchUpdateRequest, { createParagraphBullets: unknown }> {
+  return 'createParagraphBullets' in r;
 }
 
 describe('buildFormattingFromApiDoc', () => {
@@ -44,16 +58,16 @@ describe('buildFormattingFromApiDoc', () => {
       const reqs = buildFormattingFromApiDoc(apiDoc, docsDoc);
 
       // Should format "Title" at index 1 as TITLE
-      const titleReq = reqs.find((r: any) =>
-        r.updateParagraphStyle?.paragraphStyle?.namedStyleType === 'TITLE' &&
-        r.updateParagraphStyle?.range?.startIndex === 1
+      const titleReq = reqs.filter(hasParaStyle).find(
+        r => r.updateParagraphStyle.paragraphStyle.namedStyleType === 'TITLE' &&
+             r.updateParagraphStyle.range.startIndex === 1
       );
       expect(titleReq).toBeDefined();
 
       // Should format "After table" at index 21 as NORMAL_TEXT (not at cell indices)
-      const afterReq = reqs.find((r: any) =>
-        r.updateParagraphStyle?.paragraphStyle?.namedStyleType === 'NORMAL_TEXT' &&
-        r.updateParagraphStyle?.range?.startIndex === 21
+      const afterReq = reqs.filter(hasParaStyle).find(
+        r => r.updateParagraphStyle.paragraphStyle.namedStyleType === 'NORMAL_TEXT' &&
+             r.updateParagraphStyle.range.startIndex === 21
       );
       expect(afterReq).toBeDefined();
     });
@@ -73,9 +87,8 @@ describe('buildFormattingFromApiDoc', () => {
       const reqs = buildFormattingFromApiDoc(apiDoc, docsDoc);
 
       // No match found → no formatting applied
-      // (Only foreground color resets and paragraph style would exist if matched)
-      const paraStyles = reqs.filter((r: any) =>
-        r.updateParagraphStyle?.paragraphStyle?.namedStyleType === 'NORMAL_TEXT'
+      const paraStyles = reqs.filter(hasParaStyle).filter(
+        r => r.updateParagraphStyle.paragraphStyle.namedStyleType === 'NORMAL_TEXT'
       );
       expect(paraStyles.length).toBe(0);
     });
@@ -97,11 +110,11 @@ describe('buildFormattingFromApiDoc', () => {
 
       const reqs = buildFormattingFromApiDoc(apiDoc, docsDoc);
 
-      const indentReq = reqs.find((r: any) =>
-        r.updateParagraphStyle?.paragraphStyle?.indentStart?.magnitude === 36
+      const indentReq = reqs.filter(hasParaStyle).find(
+        r => r.updateParagraphStyle.paragraphStyle.indentStart?.magnitude === 36
       );
       expect(indentReq).toBeDefined();
-      expect(indentReq.updateParagraphStyle.range.startIndex).toBe(1);
+      expect(indentReq!.updateParagraphStyle.range.startIndex).toBe(1);
     });
 
     it('should handle all heading levels with correct named styles', () => {
@@ -122,8 +135,8 @@ describe('buildFormattingFromApiDoc', () => {
       const reqs = buildFormattingFromApiDoc(apiDoc, docsDoc);
 
       const styles = reqs
-        .filter((r: any) => r.updateParagraphStyle?.paragraphStyle?.namedStyleType)
-        .map((r: any) => r.updateParagraphStyle.paragraphStyle.namedStyleType);
+        .filter(hasParaStyle)
+        .map(r => r.updateParagraphStyle.paragraphStyle.namedStyleType);
 
       expect(styles).toContain('TITLE');
       expect(styles).toContain('HEADING_1');
@@ -165,14 +178,14 @@ describe('buildFormattingFromApiDoc', () => {
 
       const reqs = buildFormattingFromApiDoc(apiDoc, docsDoc);
 
-      const bullets = reqs.filter((r: any) => r.createParagraphBullets);
+      const bullets = reqs.filter(hasBullets);
       expect(bullets.length).toBe(2);
 
-      const indent = reqs.find((r: any) =>
-        r.updateParagraphStyle?.paragraphStyle?.indentStart?.magnitude === 36
+      const indent = reqs.filter(hasParaStyle).find(
+        r => r.updateParagraphStyle.paragraphStyle.indentStart?.magnitude === 36
       );
       expect(indent).toBeDefined();
-      expect(indent.updateParagraphStyle.range.startIndex).toBe(8);
+      expect(indent!.updateParagraphStyle.range.startIndex).toBe(8);
     });
 
     it('should apply inline text formatting using correct API indices', () => {
@@ -192,13 +205,13 @@ describe('buildFormattingFromApiDoc', () => {
 
       const reqs = buildFormattingFromApiDoc(apiDoc, docsDoc);
 
-      const boldReq = reqs.find((r: any) =>
-        r.updateTextStyle?.textStyle?.bold === true
+      const boldReq = reqs.filter(hasTextStyle).find(
+        r => r.updateTextStyle.textStyle.bold === true
       );
       expect(boldReq).toBeDefined();
       // "bold" starts at index 1 + 6 = 7, ends at 7 + 4 = 11
-      expect(boldReq.updateTextStyle.range.startIndex).toBe(7);
-      expect(boldReq.updateTextStyle.range.endIndex).toBe(11);
+      expect(boldReq!.updateTextStyle.range.startIndex).toBe(7);
+      expect(boldReq!.updateTextStyle.range.endIndex).toBe(11);
     });
 
     it('should have fields mask matching style properties in every updateTextStyle', () => {
@@ -221,16 +234,15 @@ describe('buildFormattingFromApiDoc', () => {
       const reqs = buildFormattingFromApiDoc(apiDoc, docsDoc);
 
       // Every updateTextStyle must have a fields mask that covers all style keys
-      const textStyleReqs = reqs.filter((r: any) => r.updateTextStyle?.fields);
+      const textStyleReqs = reqs.filter(hasTextStyle);
       for (const req of textStyleReqs) {
-        const fields = req.updateTextStyle.fields as string;
-        const style = req.updateTextStyle.textStyle as Record<string, unknown>;
+        const { fields, textStyle } = req.updateTextStyle;
 
         // Skip the foregroundColor reset (it's intentionally just { foregroundColor: {} })
         if (fields === 'foregroundColor') continue;
 
         // Each style property must appear in the fields mask
-        for (const key of Object.keys(style)) {
+        for (const key of Object.keys(textStyle)) {
           expect(fields).toContain(key);
         }
       }
@@ -249,13 +261,13 @@ describe('buildFormattingFromApiDoc', () => {
 
       const reqs = buildFormattingFromApiDoc(apiDoc, docsDoc);
 
-      const monoReq = reqs.find((r: any) =>
-        r.updateTextStyle?.textStyle?.weightedFontFamily?.fontFamily === 'Courier New'
+      const monoReq = reqs.filter(hasTextStyle).find(
+        r => r.updateTextStyle.textStyle.weightedFontFamily?.fontFamily === 'Courier New'
       );
       expect(monoReq).toBeDefined();
       // Should style "const x = 1;" (12 chars) starting at index 1
-      expect(monoReq.updateTextStyle.range.startIndex).toBe(1);
-      expect(monoReq.updateTextStyle.range.endIndex).toBe(13); // 1 + 12
+      expect(monoReq!.updateTextStyle.range.startIndex).toBe(1);
+      expect(monoReq!.updateTextStyle.range.endIndex).toBe(13); // 1 + 12
     });
   });
 });

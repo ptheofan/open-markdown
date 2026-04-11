@@ -10,7 +10,17 @@ import { generateParagraphDiffOperations } from '@main/services/GoogleDocsSyncSe
 import type { ApiParagraph } from '@main/services/DocsDocumentBuilder';
 import type { DocsElement } from '@shared/types/google-docs';
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
+/** Typed view of the Google Docs batch update requests this function emits */
+interface TestDocsRequest {
+  deleteContentRange?: {
+    range: { startIndex: number; endIndex: number };
+  };
+  insertText?: {
+    text: string;
+    location: { index: number };
+  };
+}
+
 
 function makePara(text: string, startIndex: number): ApiParagraph {
   return {
@@ -42,7 +52,7 @@ describe('generateParagraphDiffOperations', () => {
       makeElem('paragraph', 'World'),
     ];
 
-    const ops = generateParagraphDiffOperations(apiParas, modelElements);
+    const ops = generateParagraphDiffOperations(apiParas, modelElements) as TestDocsRequest[];
     expect(ops).toEqual([]);
   });
 
@@ -60,7 +70,7 @@ describe('generateParagraphDiffOperations', () => {
       makeElem('paragraph', 'Also keep with comments'),   // identical
     ];
 
-    const ops = generateParagraphDiffOperations(apiParas, modelElements);
+    const ops = generateParagraphDiffOperations(apiParas, modelElements) as TestDocsRequest[];
 
     // Should have operations (the middle paragraph changed)
     expect(ops.length).toBeGreaterThan(0);
@@ -68,8 +78,8 @@ describe('generateParagraphDiffOperations', () => {
     // ALL operations must target indices within [25, 35) — the changed paragraph
     // NO operation may touch [1, 25) or [35, 58) — the unchanged paragraphs
     for (const op of ops) {
-      const idx = (op as any).deleteContentRange?.range?.startIndex
-        ?? (op as any).insertText?.location?.index;
+      const idx = op.deleteContentRange?.range?.startIndex
+        ?? op.insertText?.location?.index;
       expect(idx).toBeGreaterThanOrEqual(25);
       expect(idx).toBeLessThan(35);
     }
@@ -84,28 +94,28 @@ describe('generateParagraphDiffOperations', () => {
       makeElem('paragraph', 'Hello universe'),
     ];
 
-    const ops = generateParagraphDiffOperations(apiParas, modelElements);
+    const ops = generateParagraphDiffOperations(apiParas, modelElements) as TestDocsRequest[];
 
     // Should use character-level diff (NOT delete entire paragraph + re-insert)
-    const deletes = ops.filter((r: any) => r.deleteContentRange);
-    const inserts = ops.filter((r: any) => r.insertText);
+    const deletes = ops.filter((r) => r.deleteContentRange);
+    const inserts = ops.filter((r) => r.insertText);
 
     expect(deletes.length).toBeGreaterThan(0);
     expect(inserts.length).toBeGreaterThan(0);
 
     // All operations must target actual API indices within the paragraph [1, 12]
     for (const op of deletes) {
-      expect(op.deleteContentRange.range.startIndex).toBeGreaterThanOrEqual(1);
-      expect(op.deleteContentRange.range.endIndex).toBeLessThanOrEqual(12);
+      expect(op.deleteContentRange!.range.startIndex).toBeGreaterThanOrEqual(1);
+      expect(op.deleteContentRange!.range.endIndex).toBeLessThanOrEqual(12);
     }
     for (const op of inserts) {
-      expect(op.insertText.location.index).toBeGreaterThanOrEqual(1);
-      expect(op.insertText.location.index).toBeLessThanOrEqual(12);
+      expect(op.insertText!.location.index).toBeGreaterThanOrEqual(1);
+      expect(op.insertText!.location.index).toBeLessThanOrEqual(12);
     }
 
     // The "Hello " prefix should NOT be deleted (comment preservation)
-    const deletesStartingAt1 = deletes.filter((r: any) =>
-      r.deleteContentRange.range.startIndex === 1
+    const deletesStartingAt1 = deletes.filter((r) =>
+      r.deleteContentRange?.range.startIndex === 1
     );
     expect(deletesStartingAt1.length).toBe(0);
   });
@@ -122,16 +132,16 @@ describe('generateParagraphDiffOperations', () => {
       makeElem('paragraph', 'After changed'),
     ];
 
-    const ops = generateParagraphDiffOperations(apiParas, modelElements);
+    const ops = generateParagraphDiffOperations(apiParas, modelElements) as TestDocsRequest[];
 
     // Should produce character-level diff for "After" → "After changed"
     // using actual API index 50, NOT flat-text index 8
-    const inserts = ops.filter((r: any) => r.insertText);
+    const inserts = ops.filter((r) => r.insertText);
     expect(inserts.length).toBeGreaterThan(0);
 
     // All insert operations should reference indices >= 50
     for (const op of inserts) {
-      expect(op.insertText.location.index).toBeGreaterThanOrEqual(50);
+      expect(op.insertText!.location.index).toBeGreaterThanOrEqual(50);
     }
   });
 
@@ -146,12 +156,12 @@ describe('generateParagraphDiffOperations', () => {
       makeElem('paragraph', 'Also keep'),
     ];
 
-    const ops = generateParagraphDiffOperations(apiParas, modelElements);
+    const ops = generateParagraphDiffOperations(apiParas, modelElements) as TestDocsRequest[];
 
-    const deletes = ops.filter((r: any) => r.deleteContentRange);
+    const deletes = ops.filter((r) => r.deleteContentRange);
     expect(deletes.length).toBe(1);
-    expect(deletes[0].deleteContentRange.range.startIndex).toBe(6);
-    expect(deletes[0].deleteContentRange.range.endIndex).toBe(16);
+    expect(deletes[0]!.deleteContentRange!.range.startIndex).toBe(6);
+    expect(deletes[0]!.deleteContentRange!.range.endIndex).toBe(16);
   });
 
   it('should handle paragraph addition', () => {
@@ -165,13 +175,13 @@ describe('generateParagraphDiffOperations', () => {
       makeElem('paragraph', 'Third'),
     ];
 
-    const ops = generateParagraphDiffOperations(apiParas, modelElements);
+    const ops = generateParagraphDiffOperations(apiParas, modelElements) as TestDocsRequest[];
 
-    const inserts = ops.filter((r: any) => r.insertText);
+    const inserts = ops.filter((r) => r.insertText);
     expect(inserts.length).toBe(1);
     // Should insert "Second\n" at index 7 (end of "First\n")
-    expect(inserts[0].insertText.text).toBe('Second\n');
-    expect(inserts[0].insertText.location.index).toBe(7);
+    expect(inserts[0]!.insertText!.text).toBe('Second\n');
+    expect(inserts[0]!.insertText!.location.index).toBe(7);
   });
 
   it('should handle N:M replacement (multiple paragraphs changed)', () => {
@@ -189,11 +199,11 @@ describe('generateParagraphDiffOperations', () => {
       makeElem('paragraph', 'Keep end'),
     ];
 
-    const ops = generateParagraphDiffOperations(apiParas, modelElements);
+    const ops = generateParagraphDiffOperations(apiParas, modelElements) as TestDocsRequest[];
 
     // Should delete old A + old B range and insert new X + Y + Z
-    const deletes = ops.filter((r: any) => r.deleteContentRange);
-    const inserts = ops.filter((r: any) => r.insertText);
+    const deletes = ops.filter((r) => r.deleteContentRange);
+    const inserts = ops.filter((r) => r.insertText);
     expect(deletes.length).toBeGreaterThan(0);
     expect(inserts.length).toBeGreaterThan(0);
   });
@@ -204,12 +214,12 @@ describe('generateParagraphDiffOperations', () => {
       makeElem('paragraph', 'New content'),
     ];
 
-    const ops = generateParagraphDiffOperations(apiParas, modelElements);
+    const ops = generateParagraphDiffOperations(apiParas, modelElements) as TestDocsRequest[];
 
-    const inserts = ops.filter((r: any) => r.insertText);
+    const inserts = ops.filter((r) => r.insertText);
     expect(inserts.length).toBe(1);
-    expect(inserts[0].insertText.text).toBe('New content\n');
-    expect(inserts[0].insertText.location.index).toBe(1);
+    expect(inserts[0]!.insertText!.text).toBe('New content\n');
+    expect(inserts[0]!.insertText!.location.index).toBe(1);
   });
 
   it('should handle complete document replacement', () => {
@@ -220,11 +230,11 @@ describe('generateParagraphDiffOperations', () => {
       makeElem('paragraph', 'Completely new'),
     ];
 
-    const ops = generateParagraphDiffOperations(apiParas, modelElements);
+    const ops = generateParagraphDiffOperations(apiParas, modelElements) as TestDocsRequest[];
 
     // Should use character-level diff (1:1 modification)
-    const deletes = ops.filter((r: any) => r.deleteContentRange);
-    const inserts = ops.filter((r: any) => r.insertText);
+    const deletes = ops.filter((r) => r.deleteContentRange);
+    const inserts = ops.filter((r) => r.insertText);
     expect(deletes.length + inserts.length).toBeGreaterThan(0);
   });
 
@@ -236,7 +246,7 @@ describe('generateParagraphDiffOperations', () => {
       makeElem('code_block', 'const x = 2;'),
     ];
 
-    const ops = generateParagraphDiffOperations(apiParas, modelElements);
+    const ops = generateParagraphDiffOperations(apiParas, modelElements) as TestDocsRequest[];
 
     // Should produce character-level diff for the code change
     expect(ops.length).toBeGreaterThan(0);
@@ -254,7 +264,7 @@ describe('generateParagraphDiffOperations', () => {
       makeElem('paragraph', 'Third changed'),
     ];
 
-    const ops = generateParagraphDiffOperations(apiParas, modelElements);
+    const ops = generateParagraphDiffOperations(apiParas, modelElements) as TestDocsRequest[];
 
     // Operations should be in reverse order (highest indices first)
     // so earlier operations don't invalidate later ones

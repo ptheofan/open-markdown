@@ -19,7 +19,6 @@ vi.mock('electron', () => ({
   app: { getPath: () => '/tmp/mock-userdata' },
 }));
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 describe('GoogleDocsSyncService Integration', () => {
   let linkStore: GoogleDocsLinkStore;
@@ -654,7 +653,7 @@ describe('GoogleDocsSyncService Integration', () => {
 
     function validateRequest(req: any): string[] {
       const errors: string[] = [];
-      const type = Object.keys(req)[0];
+      const type = Object.keys(req as Record<string, unknown>)[0];
 
       switch (type) {
         case 'insertText': {
@@ -683,7 +682,7 @@ describe('GoogleDocsSyncService Integration', () => {
             errors.push('updateParagraphStyle.range must have startIndex and endIndex');
           if (!r.paragraphStyle) errors.push('updateParagraphStyle.paragraphStyle is required');
           if (!r.fields || typeof r.fields !== 'string') errors.push('updateParagraphStyle.fields is required');
-          if (r.paragraphStyle?.namedStyleType && !VALID_NAMED_STYLES.has(r.paragraphStyle.namedStyleType))
+          if (r.paragraphStyle?.namedStyleType && !VALID_NAMED_STYLES.has(r.paragraphStyle.namedStyleType as string))
             errors.push(`Invalid namedStyleType: ${r.paragraphStyle.namedStyleType}`);
           if (r.paragraphStyle?.indentStart) {
             if (r.paragraphStyle.indentStart.unit !== 'PT')
@@ -705,7 +704,7 @@ describe('GoogleDocsSyncService Integration', () => {
           const r = req.createParagraphBullets;
           if (!r.range || typeof r.range.startIndex !== 'number' || typeof r.range.endIndex !== 'number')
             errors.push('createParagraphBullets.range must have startIndex and endIndex');
-          if (!VALID_BULLET_PRESETS.has(r.bulletPreset))
+          if (!VALID_BULLET_PRESETS.has(r.bulletPreset as string))
             errors.push(`Invalid bulletPreset: ${r.bulletPreset}`);
           break;
         }

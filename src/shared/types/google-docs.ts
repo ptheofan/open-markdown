@@ -1,3 +1,83 @@
+// ── Google Docs API response types ─────────────────────────────────
+// These mirror the subset of the Google Docs REST API v1 response
+// structure that we actually use.  They are intentionally loose
+// (most fields optional) to match the API's shape without requiring
+// a full generated client.
+
+export interface GDocsLink {
+  url?: string;
+}
+
+export interface GDocsTextStyle {
+  bold?: boolean;
+  italic?: boolean;
+  strikethrough?: boolean;
+  link?: GDocsLink;
+  fontSize?: { magnitude: number; unit: string };
+  weightedFontFamily?: { fontFamily: string };
+}
+
+export interface GDocsTextRun {
+  content?: string;
+  textStyle?: GDocsTextStyle;
+  startIndex?: number;
+  endIndex?: number;
+}
+
+export interface GDocsInlineObjectElement {
+  inlineObjectId?: string;
+  startIndex?: number;
+  endIndex?: number;
+}
+
+export interface GDocsParagraphElement {
+  startIndex?: number;
+  endIndex?: number;
+  textRun?: GDocsTextRun;
+  inlineObjectElement?: GDocsInlineObjectElement;
+}
+
+export interface GDocsParagraph {
+  elements?: GDocsParagraphElement[];
+  paragraphStyle?: Record<string, unknown>;
+}
+
+export interface GDocsTableCell {
+  content?: GDocsStructuralElement[];
+}
+
+export interface GDocsTableRow {
+  tableCells?: GDocsTableCell[];
+}
+
+export interface GDocsTable {
+  rows?: number;
+  columns?: number;
+  tableRows?: GDocsTableRow[];
+}
+
+export interface GDocsStructuralElement {
+  startIndex?: number;
+  endIndex?: number;
+  paragraph?: GDocsParagraph;
+  table?: GDocsTable;
+  sectionBreak?: Record<string, unknown>;
+}
+
+export interface GDocsBody {
+  content?: GDocsStructuralElement[];
+}
+
+/** A Google Docs API document response (subset of fields we use). */
+export interface GDocsApiDocument {
+  documentId?: string;
+  title?: string;
+  body?: GDocsBody;
+  inlineObjects?: Record<string, unknown>;
+}
+
+// ── Application types ──────────────────────────────────────────────
+
 /** Mapping of a local file to a Google Doc */
 export interface GoogleDocLink {
   docId: string;

@@ -69,19 +69,19 @@ export class GoogleDocsSettings {
     // Event listeners
     toggle.addEventListener('change', () => {
       fields.classList.toggle('hidden', !toggle.checked);
-      this.savePreferences(toggle.checked, clientIdInput.value);
+      void this.savePreferences(toggle.checked, clientIdInput.value);
     });
 
     clientIdInput.addEventListener('change', () => {
-      this.savePreferences(toggle.checked, clientIdInput.value);
+      void this.savePreferences(toggle.checked, clientIdInput.value);
     });
 
     signOutBtn.addEventListener('click', () => {
-      window.electronAPI.googleDocs.signOut();
+      void window.electronAPI.googleDocs.signOut();
     });
 
     this.container = section;
-    this.loadPreferences(toggle, clientIdInput, fields);
+    void this.loadPreferences(toggle, clientIdInput, fields);
 
     return section;
   }

@@ -6,7 +6,7 @@ import { createGoogleDocsService } from '@main/services/GoogleDocsService';
 import { createGoogleDocsSyncService } from '@main/services/GoogleDocsSyncService';
 import type { MermaidDiagramData } from '@shared/types/google-docs';
 
-function sendToAllWindows(channel: string, data: any): void {
+function sendToAllWindows(channel: string, data: unknown): void {
   const windows = BrowserWindow.getAllWindows();
   for (const win of windows) {
     if (!win.isDestroyed()) {
@@ -83,14 +83,14 @@ export function registerGoogleDocsHandlers(): void {
     IPC_CHANNELS.GOOGLE_DOCS.SYNC,
     async (_event, filePath: string, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[]) => {
       try {
-        console.log('[SYNC] Starting sync for:', filePath);
+        console.warn('[SYNC] Starting sync for:', filePath);
         const link = linkStore.getLink(filePath);
-        console.log('[SYNC] Link:', link);
+        console.warn('[SYNC] Link:', link);
         if (!link) return { success: false, error: 'File not linked to Google Docs' };
-        console.log('[SYNC] Calling syncService.sync...');
+        console.warn('[SYNC] Calling syncService.sync...');
         sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, { syncing: true });
         const result = await syncService.sync(filePath, link.docId, markdownContent, mermaidDiagrams);
-        console.log('[SYNC] Result:', JSON.stringify(result));
+        console.warn('[SYNC] Result:', JSON.stringify(result));
         sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, { syncing: false });
         return result;
       } catch (error) {

@@ -58,7 +58,7 @@ export class GoogleDocsLinkStore {
 
   async updateLastSynced(filePath: string, timestamp: string): Promise<void> {
     if (this.links[filePath]) {
-      this.links[filePath]!.lastSyncedAt = timestamp;
+      this.links[filePath].lastSyncedAt = timestamp;
       await this.save();
     }
   }

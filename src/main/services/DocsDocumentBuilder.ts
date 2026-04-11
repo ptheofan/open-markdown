@@ -5,13 +5,12 @@
  * Google Docs API request objects that, when applied via batchUpdate, will
  * insert the document content starting at the given index.
  */
-import type { DocsDocument, DocsElement, DocsTextRun } from '@shared/types/google-docs';
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
+import type { DocsDocument, DocsElement, DocsTextRun, GDocsApiDocument } from '@shared/types/google-docs';
+import type { DocsBatchUpdateRequest } from '@main/services/GoogleDocsService';
 
 interface BuildContext {
   index: number;
-  requests: any[];
+  requests: DocsBatchUpdateRequest[];
   pendingTables: PendingTable[];
 }
 
@@ -21,7 +20,7 @@ export interface PendingTable {
 }
 
 export interface BuildResult {
-  requests: any[];
+  requests: DocsBatchUpdateRequest[];
   pendingTables: PendingTable[];
 }
 
@@ -410,23 +409,22 @@ export interface ApiParagraph {
   textStartIndex: number;
 }
 
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
-export function extractApiParagraphs(apiDoc: any): ApiParagraph[] {
+export function extractApiParagraphs(apiDoc: GDocsApiDocument): ApiParagraph[] {
   const result: ApiParagraph[] = [];
   const content = apiDoc?.body?.content;
-  if (!Array.isArray(content)) return result;
+  if (!content) return result;
 
   for (const el of content) {
     if (el.paragraph) {
       let text = '';
-      let firstTextIndex = el.startIndex;
+      let firstTextIndex = el.startIndex ?? 0;
       let foundText = false;
       for (const pe of el.paragraph.elements ?? []) {
         if (pe.textRun?.content) {
           if (!foundText) {
             // pe.startIndex gives the exact text position; fall back to
             // the paragraph's startIndex if the element doesn't have one.
-            firstTextIndex = pe.startIndex ?? el.startIndex;
+            firstTextIndex = pe.startIndex ?? el.startIndex ?? 0;
             foundText = true;
           }
           text += pe.textRun.content;
@@ -434,8 +432,8 @@ export function extractApiParagraphs(apiDoc: any): ApiParagraph[] {
       }
       result.push({
         text,
-        startIndex: el.startIndex,
-        endIndex: el.endIndex,
+        startIndex: el.startIndex ?? 0,
+        endIndex: el.endIndex ?? 0,
         textStartIndex: firstTextIndex,
       });
     }
@@ -444,7 +442,6 @@ export function extractApiParagraphs(apiDoc: any): ApiParagraph[] {
   }
   return result;
 }
-/* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
 
 /**
  * Flatten DocsDocument elements into an ordered list of leaf elements
@@ -490,7 +487,7 @@ export function getLeafText(element: DocsElement): string {
  * using the actual API paragraph indices.
  */
 function applyElementFormatting(
-  requests: any[],
+  requests: DocsBatchUpdateRequest[],
   elem: DocsElement,
   apiPara: ApiParagraph,
 ): void {
@@ -625,8 +622,8 @@ const LOOKAHEAD_WINDOW = 10;
  * text).  When a mismatch occurs the algorithm scans ahead in the API list
  * (up to LOOKAHEAD_WINDOW) to find the next matching paragraph.
  */
-export function buildFormattingFromApiDoc(apiDoc: any, docsDoc: DocsDocument): any[] {
-  const requests: any[] = [];
+export function buildFormattingFromApiDoc(apiDoc: GDocsApiDocument, docsDoc: DocsDocument): DocsBatchUpdateRequest[] {
+  const requests: DocsBatchUpdateRequest[] = [];
   const apiParas = extractApiParagraphs(apiDoc);
   const modelElements = flattenElements(docsDoc.elements);
 

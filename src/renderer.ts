@@ -89,6 +89,7 @@ class App {
   };
 
   private cleanupFunctions: Array<() => void> = [];
+  private contentRenderTimer: ReturnType<typeof setTimeout> | null = null;
 
   /**
    * Initialize the application
@@ -329,7 +330,7 @@ class App {
     // Get plugin theme declarations
     const pluginDeclarations = this.markdownViewer?.getPluginThemeDeclarations() ?? {};
 
-    // Apply theme CSS variables with preferences
+    // Apply theme CSS variables immediately (cheap)
     applyThemeCSS(
       resolvedTheme,
       pluginDeclarations,
@@ -339,8 +340,11 @@ class App {
     // Update toolbar theme indicator
     this.toolbar?.setTheme(resolvedTheme);
 
-    // Update theme-aware plugins (like Mermaid)
-    await this.markdownViewer?.setTheme(resolvedTheme);
+    // Debounce expensive content re-render (diagrams like Mermaid)
+    if (this.contentRenderTimer) clearTimeout(this.contentRenderTimer);
+    this.contentRenderTimer = setTimeout(() => {
+      void this.markdownViewer?.setTheme(resolvedTheme);
+    }, 300);
   }
 
   /**

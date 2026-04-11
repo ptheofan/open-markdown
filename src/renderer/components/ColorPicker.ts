@@ -143,10 +143,12 @@ export class ColorPicker {
 
     const swatchBg = document.createElement('div');
     swatchBg.className = 'color-picker-swatch-bg';
+    swatchBg.style.pointerEvents = 'none';
     preview.appendChild(swatchBg);
 
     const swatch = document.createElement('div');
     swatch.className = 'color-picker-swatch';
+    swatch.style.pointerEvents = 'none';
     preview.appendChild(swatch);
 
     return preview;
@@ -155,10 +157,14 @@ export class ColorPicker {
   private setupEventListeners(): void {
     // Both swatches open the OKLCH widget
     const handleSwatchClick = (): void => {
-      if (this.widgetPopup) {
-        this.closeWidget();
-      } else {
-        this.openWidget();
+      try {
+        if (this.widgetPopup) {
+          this.closeWidget();
+        } else {
+          this.openWidget();
+        }
+      } catch (err) {
+        console.error('ColorPicker: failed to open widget:', err);
       }
     };
 

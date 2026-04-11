@@ -79,9 +79,12 @@ export class GoogleDocsLinkDialog {
   }
 
   /**
-   * Show the dialog
+   * Show the dialog, optionally pre-filled with a URL
    */
-  show(): void {
+  show(prefillUrl?: string): void {
+    if (this.urlInput && prefillUrl) {
+      this.urlInput.value = prefillUrl;
+    }
     this.overlay.classList.remove('hidden');
     this.urlInput?.focus();
     this.hideError();

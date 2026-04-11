@@ -52,6 +52,26 @@ export interface ListStyle {
 }
 
 /**
+ * Known external editor/IDE presets
+ */
+export type ExternalEditorId =
+  | 'none'
+  | 'vscode'
+  | 'cursor'
+  | 'webstorm'
+  | 'sublime'
+  | 'zed'
+  | 'custom';
+
+/**
+ * External editor configuration
+ */
+export interface ExternalEditorPreferences {
+  editor: ExternalEditorId;
+  customCommand: string;
+}
+
+/**
  * Core application preferences
  */
 export interface CorePreferences {
@@ -94,6 +114,7 @@ export interface CorePreferences {
     autoSave: boolean;
     autoSaveDelay: number;
   };
+  externalEditor: ExternalEditorPreferences;
 }
 
 /**

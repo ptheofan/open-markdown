@@ -27,6 +27,10 @@ import {
   registerWindowHandlers,
   unregisterWindowHandlers,
 } from './WindowHandler';
+import {
+  registerShellHandlers,
+  unregisterShellHandlers,
+} from './ShellHandler';
 
 /**
  * Register all IPC handlers
@@ -40,6 +44,7 @@ export function registerAllHandlers(): void {
   registerFileAssociationHandlers();
   registerRecentFilesHandlers();
   registerWindowHandlers();
+  registerShellHandlers();
 }
 
 /**
@@ -54,6 +59,7 @@ export function unregisterAllHandlers(): void {
   unregisterFileAssociationHandlers();
   unregisterRecentFilesHandlers();
   unregisterWindowHandlers();
+  unregisterShellHandlers();
 }
 
 // Re-export individual handlers
@@ -83,3 +89,7 @@ export {
   registerWindowHandlers,
   unregisterWindowHandlers,
 } from './WindowHandler';
+export {
+  registerShellHandlers,
+  unregisterShellHandlers,
+} from './ShellHandler';

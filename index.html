@@ -33,6 +33,22 @@
         </div>
         <div class="toolbar-right">
           <div class="toolbar-spacer"></div>
+          <!-- Open Externally Dropdown -->
+          <div id="open-external-dropdown" class="toolbar-dropdown">
+            <button id="open-external-btn" class="toolbar-btn toolbar-btn-dropdown" title="Open externally" disabled>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M8.636 3.5a.5.5 0 0 0-.5-.5H1.5A1.5 1.5 0 0 0 0 4.5v10A1.5 1.5 0 0 0 1.5 16h10a1.5 1.5 0 0 0 1.5-1.5V7.864a.5.5 0 0 0-1 0V14.5a.5.5 0 0 1-.5.5h-10a.5.5 0 0 1-.5-.5v-10a.5.5 0 0 1 .5-.5h6.636a.5.5 0 0 0 .5-.5z"/>
+                <path d="M16 .5a.5.5 0 0 0-.5-.5h-5a.5.5 0 0 0 0 1h3.793L6.146 9.146a.5.5 0 1 0 .708.708L15 1.707V5.5a.5.5 0 0 0 1 0v-5z"/>
+              </svg>
+              <svg class="dropdown-chevron" width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
+                <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z"/>
+              </svg>
+            </button>
+            <div class="dropdown-menu hidden">
+              <button id="reveal-in-file-manager-btn" class="dropdown-item" type="button">Reveal in File Manager</button>
+              <button id="open-in-editor-btn" class="dropdown-item hidden" type="button">Open in Editor</button>
+            </div>
+          </div>
           <!-- Edit / Save split button -->
           <div id="edit-save-group" class="toolbar-dropdown edit-save-group">
             <button id="edit-mode-btn" class="toolbar-btn edit-save-main" title="Enter edit mode" disabled>
@@ -116,21 +132,6 @@
       <footer id="status-bar" class="status-bar">
         <div class="status-left">
           <span id="status-file-path" class="status-item" title="File path">No file</span>
-          <div id="open-external-dropdown" class="status-dropdown" style="display: none;">
-            <button id="open-external-btn" class="status-btn" type="button" title="Open externally">
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M8.636 3.5a.5.5 0 0 0-.5-.5H1.5A1.5 1.5 0 0 0 0 4.5v10A1.5 1.5 0 0 0 1.5 16h10a1.5 1.5 0 0 0 1.5-1.5V7.864a.5.5 0 0 0-1 0V14.5a.5.5 0 0 1-.5.5h-10a.5.5 0 0 1-.5-.5v-10a.5.5 0 0 1 .5-.5h6.636a.5.5 0 0 0 .5-.5z"/>
-                <path d="M16 .5a.5.5 0 0 0-.5-.5h-5a.5.5 0 0 0 0 1h3.793L6.146 9.146a.5.5 0 1 0 .708.708L15 1.707V5.5a.5.5 0 0 0 1 0v-5z"/>
-              </svg>
-              <svg class="dropdown-chevron" width="8" height="8" viewBox="0 0 16 16" fill="currentColor">
-                <path fill-rule="evenodd" d="M7.646 4.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1-.708.708L8 5.707l-5.646 5.647a.5.5 0 0 1-.708-.708l6-6z"/>
-              </svg>
-            </button>
-            <div class="dropdown-menu dropdown-menu-up hidden">
-              <button id="reveal-in-file-manager-btn" class="dropdown-item" type="button">Reveal in File Manager</button>
-              <button id="open-in-editor-btn" class="dropdown-item hidden" type="button">Open in Editor</button>
-            </div>
-          </div>
         </div>
         <div class="status-right">
           <span id="status-zoom" class="status-item status-zoom" title="Zoom level">100%</span>

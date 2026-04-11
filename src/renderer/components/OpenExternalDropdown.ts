@@ -1,5 +1,5 @@
 /**
- * OpenExternalDropdown - Dropdown button for opening files externally
+ * OpenExternalDropdown - Toolbar dropdown button for opening files externally
  * (reveal in file manager or open in configured IDE)
  */
 
@@ -13,7 +13,7 @@ export interface OpenExternalDropdownCallbacks {
 
 /**
  * OpenExternalDropdown component
- * A dropdown button in the status bar for external file operations
+ * A dropdown button in the toolbar for external file operations
  */
 export class OpenExternalDropdown {
   private container: HTMLElement;
@@ -23,6 +23,7 @@ export class OpenExternalDropdown {
   private editorBtn: HTMLButtonElement | null = null;
   private callbacks: OpenExternalDropdownCallbacks | null = null;
   private isOpen = false;
+  private isEnabled = false;
 
   private boundHandleOutsideClick: (e: MouseEvent) => void;
   private boundHandleKeydown: (e: KeyboardEvent) => void;
@@ -51,7 +52,9 @@ export class OpenExternalDropdown {
   private setupEventListeners(): void {
     this.button?.addEventListener('click', (e) => {
       e.stopPropagation();
-      this.toggleMenu();
+      if (this.isEnabled) {
+        this.toggleMenu();
+      }
     });
 
     this.revealBtn?.addEventListener('click', () => {
@@ -73,11 +76,14 @@ export class OpenExternalDropdown {
   }
 
   /**
-   * Show or hide the dropdown (based on whether a file is open)
+   * Enable or disable the dropdown (disabled when no file is open)
    */
-  setVisible(visible: boolean): void {
-    this.container.style.display = visible ? '' : 'none';
-    if (!visible) {
+  setEnabled(enabled: boolean): void {
+    this.isEnabled = enabled;
+    if (this.button) {
+      this.button.disabled = !enabled;
+    }
+    if (!enabled) {
       this.closeMenu();
     }
   }
@@ -111,6 +117,8 @@ export class OpenExternalDropdown {
    * Open the dropdown menu
    */
   private openMenu(): void {
+    if (!this.isEnabled) return;
+
     this.isOpen = true;
     this.menu?.classList.remove('hidden');
     this.container.classList.add('is-open');

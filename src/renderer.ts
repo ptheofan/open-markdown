@@ -520,7 +520,7 @@ class App {
     this.copyDropdown?.setEnabled(false);
 
     // Hide open external dropdown
-    this.openExternalDropdown?.setVisible(false);
+    this.openExternalDropdown?.setEnabled(false);
 
     // Disable edit mode button
     const editModeBtn = document.getElementById('edit-mode-btn') as HTMLButtonElement | null;
@@ -541,7 +541,7 @@ class App {
     this.copyDropdown?.setEnabled(true);
 
     // Show open external dropdown
-    this.openExternalDropdown?.setVisible(true);
+    this.openExternalDropdown?.setEnabled(true);
 
     // Enable edit mode button
     const editModeBtn = document.getElementById('edit-mode-btn') as HTMLButtonElement | null;

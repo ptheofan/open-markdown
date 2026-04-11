@@ -424,7 +424,9 @@ export function extractApiParagraphs(apiDoc: any): ApiParagraph[] {
       for (const pe of el.paragraph.elements ?? []) {
         if (pe.textRun?.content) {
           if (!foundText) {
-            firstTextIndex = pe.startIndex;
+            // pe.startIndex gives the exact text position; fall back to
+            // the paragraph's startIndex if the element doesn't have one.
+            firstTextIndex = pe.startIndex ?? el.startIndex;
             foundText = true;
           }
           text += pe.textRun.content;

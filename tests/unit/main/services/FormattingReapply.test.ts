@@ -200,5 +200,62 @@ describe('buildFormattingFromApiDoc', () => {
       expect(boldReq.updateTextStyle.range.startIndex).toBe(7);
       expect(boldReq.updateTextStyle.range.endIndex).toBe(11);
     });
+
+    it('should have fields mask matching style properties in every updateTextStyle', () => {
+      const apiDoc = makeApiDoc([
+        makePara('Hello bold code world', 1),
+      ]);
+      const docsDoc: DocsDocument = {
+        elements: [{
+          type: 'paragraph',
+          runs: [
+            { text: 'Hello ' },
+            { text: 'bold', bold: true },
+            { text: ' ' },
+            { text: 'code', code: true },
+            { text: ' world' },
+          ],
+        }],
+      };
+
+      const reqs = buildFormattingFromApiDoc(apiDoc, docsDoc);
+
+      // Every updateTextStyle must have a fields mask that covers all style keys
+      const textStyleReqs = reqs.filter((r: any) => r.updateTextStyle?.fields);
+      for (const req of textStyleReqs) {
+        const fields = req.updateTextStyle.fields as string;
+        const style = req.updateTextStyle.textStyle as Record<string, unknown>;
+
+        // Skip the foregroundColor reset (it's intentionally just { foregroundColor: {} })
+        if (fields === 'foregroundColor') continue;
+
+        // Each style property must appear in the fields mask
+        for (const key of Object.keys(style)) {
+          expect(fields).toContain(key);
+        }
+      }
+    });
+
+    it('should handle code block monospace without trailing newline in styled range', () => {
+      // Code "const x = 1;\n" — monospace should cover "const x = 1;" but NOT the \n
+      const apiDoc = makeApiDoc([
+        makePara('const x = 1;', 1),
+      ]);
+      const docsDoc: DocsDocument = {
+        elements: [
+          { type: 'code_block', code: 'const x = 1;\n' },
+        ],
+      };
+
+      const reqs = buildFormattingFromApiDoc(apiDoc, docsDoc);
+
+      const monoReq = reqs.find((r: any) =>
+        r.updateTextStyle?.textStyle?.weightedFontFamily?.fontFamily === 'Courier New'
+      );
+      expect(monoReq).toBeDefined();
+      // Should style "const x = 1;" (12 chars) starting at index 1
+      expect(monoReq.updateTextStyle.range.startIndex).toBe(1);
+      expect(monoReq.updateTextStyle.range.endIndex).toBe(13); // 1 + 12
+    });
   });
 });

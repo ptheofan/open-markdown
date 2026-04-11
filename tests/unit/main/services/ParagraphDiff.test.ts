@@ -46,6 +46,35 @@ describe('generateParagraphDiffOperations', () => {
     expect(ops).toEqual([]);
   });
 
+  it('should ONLY touch the changed paragraph, leaving unchanged ones intact (comment preservation)', () => {
+    // This is the core guarantee: unchanged paragraphs must generate ZERO
+    // operations so Google Docs comment anchors on them are preserved.
+    const apiParas: ApiParagraph[] = [
+      makePara('Keep this with comments', 1),   // indices 1-25
+      makePara('Change me', 25),                 // indices 25-35
+      makePara('Also keep with comments', 35),   // indices 35-58
+    ];
+    const modelElements: DocsElement[] = [
+      makeElem('paragraph', 'Keep this with comments'),   // identical
+      makeElem('paragraph', 'Changed to new text'),       // modified
+      makeElem('paragraph', 'Also keep with comments'),   // identical
+    ];
+
+    const ops = generateParagraphDiffOperations(apiParas, modelElements);
+
+    // Should have operations (the middle paragraph changed)
+    expect(ops.length).toBeGreaterThan(0);
+
+    // ALL operations must target indices within [25, 35) — the changed paragraph
+    // NO operation may touch [1, 25) or [35, 58) — the unchanged paragraphs
+    for (const op of ops) {
+      const idx = (op as any).deleteContentRange?.range?.startIndex
+        ?? (op as any).insertText?.location?.index;
+      expect(idx).toBeGreaterThanOrEqual(25);
+      expect(idx).toBeLessThan(35);
+    }
+  });
+
   it('should use character-level diff for 1:1 paragraph modification', () => {
     // "Hello world" at indices 1-13 in the API doc
     const apiParas: ApiParagraph[] = [

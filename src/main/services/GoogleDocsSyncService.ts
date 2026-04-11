@@ -643,11 +643,6 @@ export class GoogleDocsSyncService {
     }
 
     // ── Images (mermaid diagrams) ───────────────────────────────
-    // Re-read doc since table operations may have shifted indices
-    if (tablesToReplace.length > 0 || tablesToDelete.length > 0 || tablesToAdd.length > 0) {
-      // doc changed, but image sync will re-read anyway
-    }
-
     const modelImages = newDocsDoc.elements.filter(
       e => e.type === 'image' && e.imageLink
     );

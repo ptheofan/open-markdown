@@ -579,9 +579,10 @@ function applyElementFormatting(
     }
   }
 
-  // Code block: apply monospace to entire text
+  // Code block: apply monospace to entire text (excluding trailing newline,
+  // consistent with buildCodeBlock which styles up to fullText.length - 1)
   if (elem.type === 'code_block') {
-    const codeText = elem.code ?? '';
+    const codeText = (elem.code ?? '').replace(/\n$/, '');
     const styledEnd = apiPara.textStartIndex + codeText.length;
     if (styledEnd > apiPara.textStartIndex) {
       requests.push({

@@ -5,123 +5,277 @@
  * Ties together the converter, builder, API wrapper, and link store to
  * detect external edits and apply minimal changes that preserve comments.
  */
-import { diffChars } from 'diff';
+import { diffChars, diffArrays } from 'diff';
 import { convertMarkdownToDocs } from '@main/services/MarkdownToDocsConverter';
-import { buildInsertRequests } from '@main/services/DocsDocumentBuilder';
+import {
+  buildInsertRequests,
+  buildFormattingFromApiDoc,
+  extractApiParagraphs,
+  flattenElements,
+  getLeafText,
+} from '@main/services/DocsDocumentBuilder';
+import type { ApiParagraph, PendingTable } from '@main/services/DocsDocumentBuilder';
 import type { GoogleDocsService } from '@main/services/GoogleDocsService';
 import type { GoogleDocsLinkStore } from '@main/services/GoogleDocsLinkStore';
 import type { DocsDocument, DocsElement, GoogleDocsSyncResult, MermaidDiagramData } from '@shared/types/google-docs';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-// ── Plain-text extraction from our DocsDocument structure ────────────
+// ── Paragraph-level diff with actual API indices ────────────────────
+//
+// Instead of diffing flat text (which breaks when structural elements
+// like tables/images shift the index space), we diff at the paragraph
+// level using diffArrays, then do character-level diffChars within
+// modified paragraphs.  All operations use ACTUAL API indices from
+// extractApiParagraphs, so they target the correct content regardless
+// of tables/images in the document.
 
-function extractPlainTextFromDocsDoc(doc: DocsDocument): string {
-  let text = '';
-  for (const element of doc.elements) {
-    text += extractElementText(element);
-  }
-  return text;
+interface DiffOp {
+  type: 'delete' | 'insert';
+  index: number;
+  endIndex?: number;
+  text?: string;
 }
 
-function extractElementText(element: DocsElement): string {
-  let text = '';
-  switch (element.type) {
-    case 'paragraph':
-    case 'heading':
-    case 'list_item':
-      if (element.runs) {
-        for (const run of element.runs) {
-          text += run.text;
-        }
-      }
-      text += '\n';
-      break;
-    case 'code_block':
-      text += (element.code ?? '') + '\n';
-      break;
-    case 'horizontal_rule':
-      text += '───\n';
-      break;
-    case 'table':
-      if (element.rows) {
-        for (const row of element.rows) {
-          for (const cell of row) {
-            for (const run of cell) {
-              text += run.text;
-            }
-            text += '\t';
-          }
-          text += '\n';
-        }
-      }
-      break;
-    case 'blockquote':
-      if (element.children) {
-        text += extractPlainTextFromDocsDoc({ elements: element.children });
-      }
-      break;
-    case 'image':
-      text += '[image]\n';
-      break;
-  }
-  return text;
-}
-
-// ── Diff-based update generation ─────────────────────────────────────
-
-function generateDiffOperations(currentText: string, newText: string, startIndex: number): any[] {
-  const changes = diffChars(currentText, newText);
-  const operations: any[] = [];
-  let index = startIndex;
-
-  // First pass: collect operations with their positions
-  const ops: Array<{ type: 'delete' | 'insert'; index: number; endIndex?: number; text?: string }> = [];
+/**
+ * Character-level diff within a single paragraph, using actual API indices.
+ */
+function charDiffWithinParagraph(
+  apiPara: ApiParagraph,
+  newText: string,
+): DiffOp[] {
+  const oldText = apiPara.text.replace(/\n$/, '');
+  const changes = diffChars(oldText, newText);
+  const ops: DiffOp[] = [];
+  let index = apiPara.textStartIndex;
 
   for (const change of changes) {
     if (change.removed) {
-      ops.push({
-        type: 'delete',
-        index,
-        endIndex: index + change.value.length,
-      });
+      ops.push({ type: 'delete', index, endIndex: index + change.value.length });
       index += change.value.length;
     } else if (change.added) {
-      ops.push({
-        type: 'insert',
-        index,
-        text: change.value,
-      });
-      // Don't advance index — inserted text goes at current position
+      ops.push({ type: 'insert', index, text: change.value });
     } else {
-      // Unchanged — advance index
       index += change.value.length;
     }
   }
+  return ops;
+}
 
-  // Reverse order so earlier indices aren't invalidated
-  for (let i = ops.length - 1; i >= 0; i--) {
-    const op = ops[i]!;
-    if (op.type === 'delete') {
-      operations.push({
-        deleteContentRange: {
-          range: {
-            startIndex: op.index,
-            endIndex: op.endIndex,
-          },
-        },
-      });
-    } else if (op.type === 'insert') {
-      operations.push({
-        insertText: {
-          text: op.text,
-          location: { index: op.index },
-        },
-      });
+/**
+ * Generate diff operations using paragraph-level matching with actual
+ * API indices.  For 1:1 paragraph modifications, uses character-level
+ * diff to preserve comments on unchanged words.
+ */
+function generateParagraphDiffOperations(
+  apiParas: ApiParagraph[],
+  modelElements: DocsElement[],
+): any[] {
+  const oldTexts = apiParas.map(p => p.text.replace(/\n$/, ''));
+  const newTexts = modelElements.map(e => getLeafText(e));
+
+  const changes = diffArrays(oldTexts, newTexts);
+
+  // Collect all primitive ops with their absolute positions
+  const allOps: DiffOp[] = [];
+  let apiIdx = 0;
+  let modelIdx = 0;
+  let lastKeptEndIndex = 1; // track insertion point for adds at start
+
+  for (let ci = 0; ci < changes.length; ci++) {
+    const change = changes[ci]!;
+    const count = change.count ?? 0;
+
+    if (!change.added && !change.removed) {
+      // ── KEPT — skip these paragraphs, comments fully preserved ──
+      for (let i = 0; i < count; i++) {
+        lastKeptEndIndex = apiParas[apiIdx]!.endIndex;
+        apiIdx++;
+        modelIdx++;
+      }
+    } else if (change.removed) {
+      // Check if the next change is an add at the same position (modification)
+      const nextChange = changes[ci + 1];
+      if (nextChange?.added) {
+        const removedCount = count;
+        const addedCount = nextChange.count ?? 0;
+
+        if (removedCount === 1 && addedCount === 1) {
+          // ── 1:1 MODIFICATION — character-level diff within paragraph ──
+          const newText = getLeafText(modelElements[modelIdx]!);
+          const ops = charDiffWithinParagraph(apiParas[apiIdx]!, newText);
+          allOps.push(...ops);
+          lastKeptEndIndex = apiParas[apiIdx]!.endIndex;
+          apiIdx++;
+          modelIdx++;
+        } else {
+          // ── N:M REPLACEMENT — delete old paragraphs, insert new text ──
+          const insertAt = apiParas[apiIdx]!.startIndex;
+          // Delete old paragraphs (collect range from first to last)
+          const deleteStart = apiParas[apiIdx]!.startIndex;
+          const deleteEnd = apiParas[apiIdx + removedCount - 1]!.endIndex;
+          allOps.push({ type: 'delete', index: deleteStart, endIndex: deleteEnd });
+          // Insert new paragraphs as text
+          let newText = '';
+          for (let i = 0; i < addedCount; i++) {
+            newText += getLeafText(modelElements[modelIdx + i]!) + '\n';
+          }
+          allOps.push({ type: 'insert', index: insertAt, text: newText });
+          lastKeptEndIndex = deleteEnd;
+          apiIdx += removedCount;
+          modelIdx += addedCount;
+        }
+        ci++; // skip the next (added) change, we handled it
+      } else {
+        // ── REMOVED ONLY — delete paragraphs ──
+        for (let i = 0; i < count; i++) {
+          const para = apiParas[apiIdx]!;
+          allOps.push({ type: 'delete', index: para.startIndex, endIndex: para.endIndex });
+          apiIdx++;
+        }
+      }
+    } else if (change.added) {
+      // ── ADDED ONLY — insert new paragraphs ──
+      const insertAt = lastKeptEndIndex;
+      let newText = '';
+      for (let i = 0; i < count; i++) {
+        newText += getLeafText(modelElements[modelIdx + i]!) + '\n';
+      }
+      allOps.push({ type: 'insert', index: insertAt, text: newText });
+      modelIdx += count;
     }
   }
 
-  return operations;
+  // Build API requests in reverse order for index stability
+  const requests: any[] = [];
+  for (let i = allOps.length - 1; i >= 0; i--) {
+    const op = allOps[i]!;
+    if (op.type === 'delete') {
+      requests.push({
+        deleteContentRange: { range: { startIndex: op.index, endIndex: op.endIndex } },
+      });
+    } else {
+      requests.push({
+        insertText: { text: op.text, location: { index: op.index } },
+      });
+    }
+  }
+  return requests;
+}
+
+// ── Structural element extraction from API doc ──────────────────────
+
+interface ApiTable {
+  startIndex: number;
+  endIndex: number;
+  cellTexts: string; // concatenated cell text for comparison
+}
+
+interface ApiImageBlock {
+  /** startIndex of the first element (paragraph containing the inline image) */
+  startIndex: number;
+  /** endIndex of the last element (the link paragraph, or the image paragraph if no link) */
+  endIndex: number;
+  /** The mermaid.live edit URL extracted from the link paragraph, if present */
+  mermaidLiveUrl?: string;
+}
+
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
+
+function extractApiTables(apiDoc: any): ApiTable[] {
+  const result: ApiTable[] = [];
+  const content = apiDoc?.body?.content;
+  if (!Array.isArray(content)) return result;
+
+  for (const el of content) {
+    if (el.table) {
+      let cellTexts = '';
+      for (const row of el.table.tableRows ?? []) {
+        for (const cell of row.tableCells ?? []) {
+          for (const cellContent of cell.content ?? []) {
+            if (cellContent.paragraph) {
+              for (const pe of cellContent.paragraph.elements ?? []) {
+                if (pe.textRun?.content) {
+                  cellTexts += pe.textRun.content;
+                }
+              }
+            }
+          }
+        }
+      }
+      result.push({
+        startIndex: el.startIndex,
+        endIndex: el.endIndex,
+        cellTexts,
+      });
+    }
+  }
+  return result;
+}
+
+function extractApiImageBlocks(apiDoc: any): ApiImageBlock[] {
+  const result: ApiImageBlock[] = [];
+  const content = apiDoc?.body?.content;
+  if (!Array.isArray(content)) return result;
+
+  for (let i = 0; i < content.length; i++) {
+    const el = content[i];
+    if (!el.paragraph) continue;
+
+    // Check if this paragraph contains an inline image object
+    let hasInlineImage = false;
+    for (const pe of el.paragraph.elements ?? []) {
+      if (pe.inlineObjectElement) {
+        hasInlineImage = true;
+        break;
+      }
+    }
+    if (!hasInlineImage) continue;
+
+    // This paragraph has an inline image.  Check if the next paragraph
+    // is the "Edit in Mermaid Live" link.
+    let endIndex = el.endIndex;
+    let mermaidLiveUrl: string | undefined;
+    const nextEl = content[i + 1];
+    if (nextEl?.paragraph) {
+      for (const pe of nextEl.paragraph.elements ?? []) {
+        const url = pe.textRun?.textStyle?.link?.url;
+        if (typeof url === 'string' && url.includes('mermaid.live')) {
+          mermaidLiveUrl = url;
+          endIndex = nextEl.endIndex;
+          break;
+        }
+      }
+    }
+
+    result.push({
+      startIndex: el.startIndex,
+      endIndex,
+      mermaidLiveUrl,
+    });
+  }
+  return result;
+}
+
+/* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
+
+/**
+ * Build the cell-text fingerprint for a model table element so we can
+ * compare it with an API table's cellTexts.
+ */
+function modelTableCellTexts(element: DocsElement): string {
+  if (!element.rows) return '';
+  let text = '';
+  for (const row of element.rows) {
+    for (const cell of row) {
+      for (const run of cell) {
+        text += run.text;
+      }
+      // Each cell in a Google Doc ends with '\n' (paragraph terminator)
+      text += '\n';
+    }
+  }
+  return text;
 }
 
 // ── Sync service class ───────────────────────────────────────────────
@@ -145,18 +299,16 @@ export class GoogleDocsSyncService {
       const baseline = await this.linkStore.loadBaseline(docId);
       console.log('[SyncService] Step 2: Reading current doc from API...');
       const currentDoc = await this.docsService.getDocument(docId);
-      console.log('[SyncService] Step 3: Extracting plain text...');
+      console.log('[SyncService] Step 3: Extracting plain text for external-edit check...');
       const theirs = this.docsService.extractPlainText(currentDoc);
       console.log('[SyncService] Step 4: Converting markdown...');
       const docsDoc = convertMarkdownToDocs(markdown);
       console.log('[SyncService] Step 5: Processing mermaid diagrams...');
       await this.processMermaidDiagrams(docsDoc, mermaidDiagrams);
-      console.log('[SyncService] Step 6: Extracting our plain text...');
-      const ours = extractPlainTextFromDocsDoc(docsDoc);
 
       if (baseline === null) {
         console.log('[SyncService] First sync → fullPopulate');
-        return await this.fullPopulate(docId, filePath, docsDoc, ours);
+        return await this.fullPopulate(docId, filePath, docsDoc);
       }
 
       if (baseline !== theirs) {
@@ -164,8 +316,8 @@ export class GoogleDocsSyncService {
         return { success: false, externalEditsDetected: true };
       }
 
-      console.log('[SyncService] Applying diff...');
-      return await this.applyDiff(docId, filePath, theirs, docsDoc, ours);
+      console.log('[SyncService] Applying paragraph-level diff...');
+      return await this.applyDiff(docId, filePath, currentDoc, docsDoc);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       const stack = err instanceof Error ? err.stack : '';
@@ -187,10 +339,9 @@ export class GoogleDocsSyncService {
       console.log('[SyncService] Force overwrite — clearing doc and repopulating');
       const docsDoc = convertMarkdownToDocs(markdown);
       await this.processMermaidDiagrams(docsDoc, mermaidDiagrams);
-      const ours = extractPlainTextFromDocsDoc(docsDoc);
 
       // Full clear + repopulate (same as first sync)
-      return await this.fullPopulate(docId, filePath, docsDoc, ours);
+      return await this.fullPopulate(docId, filePath, docsDoc);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return { success: false, error: message };
@@ -239,7 +390,6 @@ export class GoogleDocsSyncService {
     docId: string,
     filePath: string,
     docsDoc: DocsDocument,
-    plainText: string,
   ): Promise<GoogleDocsSyncResult> {
     // First, clear any existing content from the doc
     const currentDoc = await this.docsService.getDocument(docId);
@@ -265,7 +415,12 @@ export class GoogleDocsSyncService {
       await this.populateTables(docId, pendingTables);
     }
 
-    await this.linkStore.saveBaseline(docId, plainText);
+    // Read back the doc from API and save its text as baseline.
+    // This ensures baseline matches future API reads (avoiding false
+    // external-edit detection from format differences in tables/images).
+    const populatedDoc = await this.docsService.getDocument(docId);
+    const actualText = this.docsService.extractPlainText(populatedDoc);
+    await this.linkStore.saveBaseline(docId, actualText);
     await this.linkStore.updateLastSynced(filePath, new Date().toISOString());
     return { success: true };
   }
@@ -373,33 +528,357 @@ export class GoogleDocsSyncService {
   }
 
   /**
-   * Apply diff — computes minimal changes between current and new text,
-   * then applies them in reverse document order to preserve indices.
+   * Apply diff — uses paragraph-level diffing with actual API indices to
+   * compute minimal changes, then syncs structural elements (tables/images),
+   * then reapplies formatting.
+   *
+   * Comment preservation:
+   * - Unchanged paragraphs are skipped entirely → all comments preserved
+   * - 1:1 modified paragraphs use character-level diff → comments on
+   *   unchanged words within the paragraph are preserved
+   * - Deleted paragraphs lose their comments (unavoidable)
+   * - Formatting operations never affect comment anchors
+   * - Unchanged tables/images are skipped → comments preserved
+   * - Changed tables/images are deleted and re-inserted (comments on them lost)
    */
   private async applyDiff(
     docId: string,
     filePath: string,
-    currentText: string,
-    _newDocsDoc: DocsDocument,
-    newText: string,
+    currentApiDoc: any,
+    newDocsDoc: DocsDocument,
   ): Promise<GoogleDocsSyncResult> {
-    // If content is identical, no update needed
-    if (currentText === newText) {
-      await this.linkStore.saveBaseline(docId, newText);
-      await this.linkStore.updateLastSynced(filePath, new Date().toISOString());
-      return { success: true };
-    }
+    // Phase 1: Text paragraph diff
+    const apiParas = extractApiParagraphs(currentApiDoc);
+    const modelElements = flattenElements(newDocsDoc.elements);
 
-    // Google Docs body content starts at index 1
-    const operations = generateDiffOperations(currentText, newText, 1);
-
+    const operations = generateParagraphDiffOperations(apiParas, modelElements);
     if (operations.length > 0) {
+      console.log(`[SyncService] applyDiff: ${operations.length} paragraph-diff operations`);
       await this.docsService.batchUpdate(docId, operations);
     }
 
-    await this.linkStore.saveBaseline(docId, newText);
+    // Phase 2: Structural element sync (tables and images)
+    await this.syncStructuralElements(docId, newDocsDoc);
+
+    // Phase 3: Read doc back and apply formatting
+    const finalDoc = await this.docsService.getDocument(docId);
+    const formattingOps = buildFormattingFromApiDoc(finalDoc, newDocsDoc);
+    if (formattingOps.length > 0) {
+      console.log(`[SyncService] applyDiff: ${formattingOps.length} formatting requests`);
+      await this.docsService.batchUpdate(docId, formattingOps);
+    }
+
+    // Phase 4: Save baseline from API text
+    const baselineText = this.docsService.extractPlainText(finalDoc);
+    await this.linkStore.saveBaseline(docId, baselineText);
     await this.linkStore.updateLastSynced(filePath, new Date().toISOString());
     return { success: true };
+  }
+
+  /**
+   * Sync structural elements (tables and images) that were excluded from
+   * the paragraph-level diff.  Compares API tables/images with model
+   * elements by position, and deletes + re-inserts any that changed.
+   */
+  private async syncStructuralElements(
+    docId: string,
+    newDocsDoc: DocsDocument,
+  ): Promise<void> {
+    // Read current doc to get structural element positions
+    const doc = await this.docsService.getDocument(docId);
+
+    // ── Tables ──────────────────────────────────────────────────
+    const apiTables = extractApiTables(doc);
+    const modelTables = newDocsDoc.elements.filter(e => e.type === 'table');
+
+    // Match by position (1st model table ↔ 1st API table, etc.)
+    const tableCount = Math.min(apiTables.length, modelTables.length);
+    // Track tables that need replacement (process in reverse for index stability)
+    const tablesToReplace: Array<{ apiTable: ApiTable; modelTable: DocsElement }> = [];
+
+    for (let i = 0; i < tableCount; i++) {
+      const apiTable = apiTables[i]!;
+      const modelTable = modelTables[i]!;
+      const modelCellTexts = modelTableCellTexts(modelTable);
+
+      if (apiTable.cellTexts !== modelCellTexts) {
+        tablesToReplace.push({ apiTable, modelTable });
+      }
+    }
+
+    // Tables removed from markdown (more API tables than model tables)
+    const tablesToDelete: ApiTable[] = [];
+    for (let i = tableCount; i < apiTables.length; i++) {
+      tablesToDelete.push(apiTables[i]!);
+    }
+
+    // Tables added in markdown (more model tables than API tables)
+    // These need to be inserted at the correct position — we use the
+    // end of the document as insertion point for new tables.
+    const tablesToAdd: DocsElement[] = [];
+    for (let i = tableCount; i < modelTables.length; i++) {
+      tablesToAdd.push(modelTables[i]!);
+    }
+
+    // Process table deletions and replacements in reverse document order
+    const allTableOps = [
+      ...tablesToReplace.map(t => ({ type: 'replace' as const, ...t })),
+      ...tablesToDelete.map(t => ({ type: 'delete' as const, apiTable: t })),
+    ].sort((a, b) => b.apiTable.endIndex - a.apiTable.endIndex);
+
+    for (const op of allTableOps) {
+      if (op.type === 'delete') {
+        await this.docsService.batchUpdate(docId, [{
+          deleteContentRange: { range: { startIndex: op.apiTable.startIndex, endIndex: op.apiTable.endIndex } },
+        }]);
+      } else {
+        // Replace: delete old table then insert new one at the same position
+        await this.replaceTable(docId, op.apiTable, op.modelTable);
+      }
+    }
+
+    // Insert new tables (added in markdown)
+    if (tablesToAdd.length > 0) {
+      await this.insertNewTables(docId, tablesToAdd);
+    }
+
+    // ── Images (mermaid diagrams) ───────────────────────────────
+    const modelImages = newDocsDoc.elements.filter(
+      e => e.type === 'image' && e.imageLink
+    );
+    if (modelImages.length === 0) return;
+
+    const imgDoc = await this.docsService.getDocument(docId);
+    const apiImages = extractApiImageBlocks(imgDoc);
+
+    const imageCount = Math.min(apiImages.length, modelImages.length);
+    // Track images that need replacement (reverse order)
+    const imagesToReplace: Array<{ apiImage: ApiImageBlock; modelImage: DocsElement }> = [];
+
+    for (let i = 0; i < imageCount; i++) {
+      const apiImage = apiImages[i]!;
+      const modelImage = modelImages[i]!;
+
+      // Compare mermaid.live URLs — if the diagram code changed, the URL changed
+      if (apiImage.mermaidLiveUrl !== modelImage.mermaidLiveUrl) {
+        imagesToReplace.push({ apiImage, modelImage });
+      }
+    }
+
+    // Images removed from markdown
+    const imagesToDelete: ApiImageBlock[] = [];
+    for (let i = imageCount; i < apiImages.length; i++) {
+      imagesToDelete.push(apiImages[i]!);
+    }
+
+    // Process image replacements and deletions in reverse document order
+    const allImageOps = [
+      ...imagesToReplace.map(t => ({ type: 'replace' as const, ...t })),
+      ...imagesToDelete.map(t => ({ type: 'delete' as const, apiImage: t })),
+    ].sort((a, b) => b.apiImage.endIndex - a.apiImage.endIndex);
+
+    for (const op of allImageOps) {
+      if (op.type === 'delete') {
+        await this.docsService.batchUpdate(docId, [{
+          deleteContentRange: { range: { startIndex: op.apiImage.startIndex, endIndex: op.apiImage.endIndex } },
+        }]);
+      } else {
+        await this.replaceImage(docId, op.apiImage, op.modelImage);
+      }
+    }
+
+    // New images added in markdown — these are inserted at doc end for now
+    for (let i = imageCount; i < modelImages.length; i++) {
+      const modelImage = modelImages[i]!;
+      const currentDoc = await this.docsService.getDocument(docId);
+      const endIdx = currentDoc?.body?.content?.at(-1)?.endIndex ?? 2;
+      await this.insertImageAtIndex(docId, endIdx - 1, modelImage);
+    }
+  }
+
+  /**
+   * Replace a table at its current position: delete old, insert new.
+   */
+  private async replaceTable(
+    docId: string,
+    apiTable: ApiTable,
+    modelTable: DocsElement,
+  ): Promise<void> {
+    const insertAt = apiTable.startIndex;
+    const rows = modelTable.rows ?? [];
+    if (rows.length === 0) return;
+
+    const numRows = rows.length;
+    const numCols = rows[0]!.length;
+
+    // Delete old table, insert new one at same position
+    await this.docsService.batchUpdate(docId, [
+      { deleteContentRange: { range: { startIndex: apiTable.startIndex, endIndex: apiTable.endIndex } } },
+      { insertTable: { rows: numRows, columns: numCols, location: { index: insertAt } } },
+    ]);
+
+    // Read doc to get cell indices, then populate cells
+    const pendingTable: PendingTable = {
+      placeholderText: '', // not used for direct table insertion
+      rows,
+    };
+    await this.populateTableAtIndex(docId, insertAt, pendingTable);
+  }
+
+  /**
+   * Populate a table that was just inserted at a known index position.
+   * Similar to populateTables but for a single table at a known location.
+   */
+  private async populateTableAtIndex(
+    docId: string,
+    afterIndex: number,
+    table: PendingTable,
+  ): Promise<void> {
+    const doc = await this.docsService.getDocument(docId);
+    const tableEl = (doc?.body?.content ?? []).find(
+      (el: any) => el.table && el.startIndex >= afterIndex
+    );
+
+    if (!tableEl?.table) {
+      console.warn('[SyncService] Table not found at index', afterIndex);
+      return;
+    }
+
+    const cellRequests: any[] = [];
+    const tableRows = tableEl.table.tableRows ?? [];
+
+    for (let r = tableRows.length - 1; r >= 0; r--) {
+      const cells = tableRows[r].tableCells ?? [];
+      for (let c = cells.length - 1; c >= 0; c--) {
+        const cell = cells[c];
+        const cellContent = cell.content?.[0];
+        if (!cellContent?.paragraph) continue;
+
+        const cellIndex = cellContent.paragraph.elements?.[0]?.startIndex;
+        if (cellIndex === undefined) continue;
+
+        const dataRow = table.rows[r];
+        const dataCell = dataRow?.[c];
+        if (!dataCell || dataCell.length === 0) continue;
+
+        const text = dataCell.map((run: any) => run.text).join('');
+        if (!text) continue;
+
+        cellRequests.push({
+          insertText: { text, location: { index: cellIndex } },
+        });
+
+        // Bold header row
+        if (r === 0) {
+          cellRequests.push({
+            updateTextStyle: {
+              range: { startIndex: cellIndex, endIndex: cellIndex + text.length },
+              textStyle: { bold: true },
+              fields: 'bold',
+            },
+          });
+        }
+      }
+    }
+
+    if (cellRequests.length > 0) {
+      await this.docsService.batchUpdate(docId, cellRequests);
+    }
+  }
+
+  /**
+   * Insert new tables that were added in the markdown.
+   * Uses the two-phase placeholder approach from fullPopulate.
+   */
+  private async insertNewTables(
+    docId: string,
+    modelTables: DocsElement[],
+  ): Promise<void> {
+    for (const modelTable of modelTables) {
+      const rows = modelTable.rows ?? [];
+      if (rows.length === 0) continue;
+
+      // Insert at end of document
+      const currentDoc = await this.docsService.getDocument(docId);
+      const endIdx = currentDoc?.body?.content?.at(-1)?.endIndex ?? 2;
+      const insertAt = endIdx - 1;
+
+      const numRows = rows.length;
+      const numCols = rows[0]!.length;
+
+      await this.docsService.batchUpdate(docId, [
+        { insertTable: { rows: numRows, columns: numCols, location: { index: insertAt } } },
+      ]);
+
+      const pendingTable: PendingTable = { placeholderText: '', rows };
+      await this.populateTableAtIndex(docId, insertAt, pendingTable);
+    }
+  }
+
+  /**
+   * Replace an image block (inline image + optional link paragraph).
+   */
+  private async replaceImage(
+    docId: string,
+    apiImage: ApiImageBlock,
+    modelImage: DocsElement,
+  ): Promise<void> {
+    // Delete old image block
+    await this.docsService.batchUpdate(docId, [{
+      deleteContentRange: { range: { startIndex: apiImage.startIndex, endIndex: apiImage.endIndex } },
+    }]);
+
+    // Insert new image at the same position
+    await this.insertImageAtIndex(docId, apiImage.startIndex, modelImage);
+  }
+
+  /**
+   * Insert an image element at a specific document index.
+   */
+  private async insertImageAtIndex(
+    docId: string,
+    insertAt: number,
+    element: DocsElement,
+  ): Promise<void> {
+    if (!element.imageLink) return;
+
+    const requests: any[] = [];
+    let idx = insertAt;
+
+    requests.push({
+      insertInlineImage: {
+        uri: element.imageLink,
+        location: { index: idx },
+        objectSize: {
+          width: { magnitude: 400, unit: 'PT' },
+          height: { magnitude: 300, unit: 'PT' },
+        },
+      },
+    });
+    idx += 1;
+
+    if (element.mermaidLiveUrl) {
+      const linkText = '\nEdit in Mermaid Live\n';
+      requests.push({
+        insertText: { text: linkText, location: { index: idx } },
+      });
+      requests.push({
+        updateTextStyle: {
+          range: { startIndex: idx + 1, endIndex: idx + linkText.length - 1 },
+          textStyle: {
+            link: { url: element.mermaidLiveUrl },
+            fontSize: { magnitude: 9, unit: 'PT' },
+          },
+          fields: 'link,fontSize',
+        },
+      });
+    } else {
+      requests.push({
+        insertText: { text: '\n', location: { index: idx } },
+      });
+    }
+
+    await this.docsService.batchUpdate(docId, requests);
   }
 }
 
@@ -413,4 +892,4 @@ export function createGoogleDocsSyncService(
 }
 
 // Exported for testing
-export { extractPlainTextFromDocsDoc, generateDiffOperations };
+export { generateParagraphDiffOperations };

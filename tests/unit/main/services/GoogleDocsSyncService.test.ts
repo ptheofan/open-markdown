@@ -123,11 +123,17 @@ describe('GoogleDocsSyncService', () => {
       expect(hasDeleteOrInsert).toBe(true);
     });
 
-    it('should not call batchUpdate when content is unchanged', async () => {
+    it('should still apply formatting when text is unchanged', async () => {
       const text = 'Hello world\n';
       mockLinkStore.loadBaseline.mockResolvedValue(text);
       mockDocsService.getDocument.mockResolvedValue({
-        body: { content: [{ paragraph: { elements: [{ textRun: { content: text } }] } }] },
+        body: {
+          content: [{
+            paragraph: { elements: [{ textRun: { content: text } }] },
+            startIndex: 1,
+            endIndex: 13,
+          }],
+        },
       });
       mockDocsService.extractPlainText.mockReturnValue(text);
       mockDocsService.batchUpdate.mockResolvedValue({});
@@ -138,8 +144,9 @@ describe('GoogleDocsSyncService', () => {
 
       const result = await syncService.sync('/file.md', 'doc-123', 'Hello world');
       expect(result.success).toBe(true);
-      // If text is identical, no batchUpdate needed
-      // (depends on implementation — may still call with empty requests array, or skip entirely)
+      // Even when text is identical, formatting is reapplied to ensure
+      // paragraph styles are correct (e.g. if a paragraph was changed to a heading)
+      expect(mockDocsService.batchUpdate).toHaveBeenCalled();
     });
   });
 

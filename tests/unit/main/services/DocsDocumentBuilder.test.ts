@@ -35,25 +35,26 @@ describe('DocsDocumentBuilder', () => {
     expect(boldStyle.updateTextStyle.range.endIndex).toBe(12); // 'bold' is 4 chars
   });
 
-  it('should build heading style requests', () => {
+  it('should build heading style requests (h1 → TITLE)', () => {
     const doc: DocsDocument = {
       elements: [{ type: 'heading', headingLevel: 1, runs: [{ text: 'Title' }] }],
     };
     const { requests } = buildInsertRequests(doc, 1);
     const paragraphStyle = requests.find((r: any) =>
-      r.updateParagraphStyle?.paragraphStyle?.namedStyleType === 'HEADING_1'
+      r.updateParagraphStyle?.paragraphStyle?.namedStyleType === 'TITLE'
     );
     expect(paragraphStyle).toBeDefined();
   });
 
-  it('should build requests for h2-h6', () => {
+  it('should build requests for h2-h6 → HEADING_1 through HEADING_5', () => {
     for (let level = 2; level <= 6; level++) {
       const doc: DocsDocument = {
         elements: [{ type: 'heading', headingLevel: level as any, runs: [{ text: 'H' }] }],
       };
       const { requests } = buildInsertRequests(doc, 1);
+      const expectedStyle = `HEADING_${level - 1}`;
       const style = requests.find((r: any) =>
-        r.updateParagraphStyle?.paragraphStyle?.namedStyleType === `HEADING_${level}`
+        r.updateParagraphStyle?.paragraphStyle?.namedStyleType === expectedStyle
       );
       expect(style).toBeDefined();
     }

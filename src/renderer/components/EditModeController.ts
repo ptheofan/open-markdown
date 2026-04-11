@@ -24,6 +24,11 @@ export interface EditModeCallbacks {
 export type SliceAction = 'delete' | 'duplicate' | 'move-up' | 'move-down' | 'add-above' | 'add-below';
 
 /**
+ * Block types a slice can be converted to
+ */
+export type BlockType = 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'paragraph' | 'bullet-list' | 'numbered-list' | 'blockquote' | 'code';
+
+/**
  * EditModeController class
  */
 export class EditModeController {
@@ -254,9 +259,65 @@ export class EditModeController {
       return;
     }
 
+    const slice = this.slices.find(s => s.index === sliceIndex);
+    const currentBlockType = slice ? this.detectBlockType(slice.raw) : 'paragraph';
+
     const menu = document.createElement('div');
     menu.className = 'slice-menu';
-    menu.innerHTML = `
+
+    // "Turn into" submenu trigger
+    const turnIntoItem = document.createElement('div');
+    turnIntoItem.className = 'slice-menu-item slice-menu-submenu-trigger';
+    turnIntoItem.innerHTML = `
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+        <path d="M1 2.828c.885-.37 2.154-.769 3.388-.893 1.33-.134 2.458.063 3.112.752v9.746c-.935-.53-2.12-.603-3.213-.493-1.18.12-2.37.461-3.287.811V2.828zm7.5-.141c.654-.689 1.782-.886 3.112-.752 1.234.124 2.503.523 3.388.893v9.923c-.918-.35-2.107-.692-3.287-.81-1.094-.111-2.278-.039-3.213.492V2.687zM8 1.783C7.015.936 5.587.81 4.287.94c-1.514.153-3.042.672-3.994 1.105A.5.5 0 0 0 0 2.5v11a.5.5 0 0 0 .707.455c.882-.4 2.303-.881 3.68-1.02 1.409-.142 2.59.087 3.223.877a.5.5 0 0 0 .78 0c.633-.79 1.814-1.019 3.222-.877 1.378.139 2.8.62 3.681 1.02A.5.5 0 0 0 16 13.5v-11a.5.5 0 0 0-.293-.455c-.952-.433-2.48-.952-3.994-1.105C10.413.809 8.985.936 8 1.783z"/>
+      </svg>
+      Turn into
+      <svg class="slice-menu-chevron" width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
+        <path fill-rule="evenodd" d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708z"/>
+      </svg>
+    `;
+
+    // Build submenu
+    const submenu = document.createElement('div');
+    submenu.className = 'slice-submenu';
+
+    const blockTypes: { type: BlockType; label: string; shortLabel: string }[] = [
+      { type: 'paragraph', label: 'Text', shortLabel: 'Aa' },
+      { type: 'h1', label: 'Heading 1', shortLabel: 'H1' },
+      { type: 'h2', label: 'Heading 2', shortLabel: 'H2' },
+      { type: 'h3', label: 'Heading 3', shortLabel: 'H3' },
+      { type: 'h4', label: 'Heading 4', shortLabel: 'H4' },
+      { type: 'h5', label: 'Heading 5', shortLabel: 'H5' },
+      { type: 'h6', label: 'Heading 6', shortLabel: 'H6' },
+      { type: 'bullet-list', label: 'Bullet list', shortLabel: '•' },
+      { type: 'numbered-list', label: 'Numbered list', shortLabel: '1.' },
+      { type: 'blockquote', label: 'Quote', shortLabel: '"' },
+      { type: 'code', label: 'Code block', shortLabel: '</>' },
+    ];
+
+    for (const bt of blockTypes) {
+      const btn = document.createElement('button');
+      btn.className = 'slice-menu-item';
+      if (bt.type === currentBlockType) {
+        btn.classList.add('slice-menu-item-active');
+      }
+      btn.dataset.blockType = bt.type;
+      btn.innerHTML = `<span class="slice-block-type-badge">${bt.shortLabel}</span> ${bt.label}`;
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.closeMenu();
+        this.convertSlice(sliceIndex, bt.type);
+      });
+      submenu.appendChild(btn);
+    }
+
+    turnIntoItem.appendChild(submenu);
+    menu.appendChild(turnIntoItem);
+
+    // Rest of the menu items
+    menu.insertAdjacentHTML('beforeend', `
+      <div class="slice-menu-divider"></div>
       <button data-action="add-above" class="slice-menu-item">
         <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
           <path d="M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2z"/>
@@ -297,10 +358,10 @@ export class EditModeController {
         </svg>
         Delete
       </button>
-    `;
+    `);
 
-    // Handle menu item clicks
-    menu.querySelectorAll('.slice-menu-item').forEach(btn => {
+    // Handle action menu item clicks
+    menu.querySelectorAll('.slice-menu-item[data-action]').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         const action = (btn as HTMLElement).dataset.action as SliceAction;
@@ -341,6 +402,106 @@ export class EditModeController {
         this.commitActiveEdit();
       }
     }
+  }
+
+  /**
+   * Detect the current block type from raw markdown
+   */
+  private detectBlockType(raw: string): BlockType {
+    const trimmed = raw.trimStart();
+    if (trimmed.startsWith('######')) return 'h6';
+    if (trimmed.startsWith('#####')) return 'h5';
+    if (trimmed.startsWith('####')) return 'h4';
+    if (trimmed.startsWith('###')) return 'h3';
+    if (trimmed.startsWith('##')) return 'h2';
+    if (trimmed.startsWith('# ')) return 'h1';
+    if (trimmed.startsWith('```')) return 'code';
+    if (trimmed.startsWith('>')) return 'blockquote';
+    if (/^\d+\.\s/.test(trimmed)) return 'numbered-list';
+    if (/^[-*+]\s/.test(trimmed)) return 'bullet-list';
+    return 'paragraph';
+  }
+
+  /**
+   * Strip existing block prefix from raw markdown to get plain text content.
+   * For multi-line blocks (code, blockquote), handles each line appropriately.
+   */
+  private stripBlockPrefix(raw: string): string {
+    const trimmed = raw.trimStart();
+
+    // Code block: unwrap from fences
+    if (trimmed.startsWith('```')) {
+      const lines = trimmed.split('\n');
+      // Remove opening fence (possibly with language) and closing fence
+      const inner = lines.slice(1, lines[lines.length - 1]?.trim() === '```' ? -1 : undefined);
+      return inner.join('\n');
+    }
+
+    // Blockquote: strip leading > from each line
+    if (trimmed.startsWith('>')) {
+      return trimmed.split('\n').map(line => line.replace(/^>\s?/, '')).join('\n');
+    }
+
+    // Heading
+    const headingMatch = trimmed.match(/^#{1,6}\s+(.*)/s);
+    if (headingMatch) return headingMatch[1];
+
+    // List item
+    const listMatch = trimmed.match(/^(?:[-*+]|\d+\.)\s+(.*)/s);
+    if (listMatch) return listMatch[1];
+
+    return raw;
+  }
+
+  /**
+   * Apply a block type prefix to plain text content
+   */
+  private applyBlockPrefix(content: string, blockType: BlockType): string {
+    const text = content.trim();
+    switch (blockType) {
+      case 'h1': return `# ${text}`;
+      case 'h2': return `## ${text}`;
+      case 'h3': return `### ${text}`;
+      case 'h4': return `#### ${text}`;
+      case 'h5': return `##### ${text}`;
+      case 'h6': return `###### ${text}`;
+      case 'bullet-list': return `- ${text}`;
+      case 'numbered-list': return `1. ${text}`;
+      case 'blockquote':
+        return text.split('\n').map(line => `> ${line}`).join('\n');
+      case 'code':
+        return `\`\`\`\n${text}\n\`\`\``;
+      case 'paragraph':
+      default:
+        return text;
+    }
+  }
+
+  /**
+   * Convert a slice to a different block type
+   */
+  private convertSlice(sliceIndex: number, targetType: BlockType): void {
+    this.commitActiveEdit();
+
+    const slice = this.slices.find(s => s.index === sliceIndex);
+    if (!slice) return;
+
+    const currentType = this.detectBlockType(slice.raw);
+    if (currentType === targetType) return;
+
+    // Strip current prefix, apply new one
+    const plainContent = this.stripBlockPrefix(slice.raw);
+    const newRaw = this.applyBlockPrefix(plainContent, targetType);
+
+    // Update slice via slicer
+    const result = this.slicer.updateSlice(this.slices, sliceIndex, newRaw);
+    this.rawMarkdown = result.markdown;
+    this.slices = result.slices;
+    this.callbacks.onContentChange?.(this.rawMarkdown);
+
+    // Re-slice and re-render to ensure correct structure
+    this.slices = this.slicer.slice(this.rawMarkdown);
+    void this.renderSlices();
   }
 
   /**

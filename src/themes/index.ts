@@ -120,10 +120,10 @@ export function generateTypographyCSS(
 
   // Font families (override theme defaults when set in preferences)
   if (typography.fontFamily) {
-    lines.push(`  --font-body: ${typography.fontFamily};`);
+    lines.push(`  --font-doc-body: ${typography.fontFamily};`);
   }
   if (typography.monoFontFamily) {
-    lines.push(`  --font-mono: ${typography.monoFontFamily};`);
+    lines.push(`  --font-doc-mono: ${typography.monoFontFamily};`);
   }
 
   // Base font size

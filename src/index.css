@@ -270,7 +270,7 @@ body {
 .markdown-body {
   max-width: 900px;
   margin: 0 auto;
-  font-family: var(--font-body, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif);
+  font-family: var(--font-doc-body, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif);
   font-size: var(--base-font-size, 14px);
 }
 
@@ -390,7 +390,7 @@ body {
   font-size: var(--code-font-size, 85%);
   background-color: var(--user-code-bg, var(--code-bg));
   border-radius: var(--code-border-radius, 6px);
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace);
+  font-family: var(--font-doc-mono, ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace);
 }
 
 .markdown-body pre {

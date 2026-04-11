@@ -10,7 +10,7 @@ const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
 describe('GoogleDocsService', () => {
-  const tokenProvider = () => Promise.resolve('fake-token');
+  const tokenProvider = (): Promise<string> => Promise.resolve('fake-token');
   let service: GoogleDocsService;
 
   beforeEach(() => {
@@ -284,8 +284,10 @@ describe('GoogleDocsService', () => {
     });
 
     it('should return empty string for null/undefined', () => {
-      expect(service.extractPlainText(null)).toBe('');
-      expect(service.extractPlainText(undefined)).toBe('');
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+      expect(service.extractPlainText(null as any)).toBe('');
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+      expect(service.extractPlainText(undefined as any)).toBe('');
     });
 
     it('should skip elements without textRun', () => {

@@ -17,9 +17,16 @@ import {
 import type { ApiParagraph, PendingTable } from '@main/services/DocsDocumentBuilder';
 import type { GoogleDocsService } from '@main/services/GoogleDocsService';
 import type { GoogleDocsLinkStore } from '@main/services/GoogleDocsLinkStore';
-import type { DocsDocument, DocsElement, GoogleDocsSyncResult, MermaidDiagramData } from '@shared/types/google-docs';
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
+import type {
+  DocsDocument,
+  DocsElement,
+  DocsTextRun,
+  GDocsApiDocument,
+  GDocsStructuralElement,
+  GoogleDocsSyncResult,
+  MermaidDiagramData,
+} from '@shared/types/google-docs';
+import type { DocsBatchUpdateRequest } from '@main/services/GoogleDocsService';
 
 // ── Paragraph-level diff with actual API indices ────────────────────
 //
@@ -70,7 +77,7 @@ function charDiffWithinParagraph(
 function generateParagraphDiffOperations(
   apiParas: ApiParagraph[],
   modelElements: DocsElement[],
-): any[] {
+): DocsBatchUpdateRequest[] {
   const oldTexts = apiParas.map(p => p.text.replace(/\n$/, ''));
   const newTexts = modelElements.map(e => getLeafText(e));
 
@@ -147,23 +154,23 @@ function generateParagraphDiffOperations(
   }
 
   // Build API requests in reverse order for index stability
-  const requests: any[] = [];
+  const requests: DocsBatchUpdateRequest[] = [];
   for (let i = allOps.length - 1; i >= 0; i--) {
     const op = allOps[i]!;
     if (op.type === 'delete') {
       requests.push({
-        deleteContentRange: { range: { startIndex: op.index, endIndex: op.endIndex } },
+        deleteContentRange: { range: { startIndex: op.index, endIndex: op.endIndex ?? op.index } },
       });
     } else {
       requests.push({
-        insertText: { text: op.text, location: { index: op.index } },
+        insertText: { text: op.text ?? '', location: { index: op.index } },
       });
     }
   }
   return requests;
 }
 
-// ── Structural element extraction from API doc ──────────────────────
+// ── Structural element extraction from API doc ──────────��───────────
 
 interface ApiTable {
   startIndex: number;
@@ -180,12 +187,10 @@ interface ApiImageBlock {
   mermaidLiveUrl?: string;
 }
 
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
-
-function extractApiTables(apiDoc: any): ApiTable[] {
+function extractApiTables(apiDoc: GDocsApiDocument): ApiTable[] {
   const result: ApiTable[] = [];
   const content = apiDoc?.body?.content;
-  if (!Array.isArray(content)) return result;
+  if (!content) return result;
 
   for (const el of content) {
     if (el.table) {
@@ -204,8 +209,8 @@ function extractApiTables(apiDoc: any): ApiTable[] {
         }
       }
       result.push({
-        startIndex: el.startIndex,
-        endIndex: el.endIndex,
+        startIndex: el.startIndex ?? 0,
+        endIndex: el.endIndex ?? 0,
         cellTexts,
       });
     }
@@ -213,13 +218,13 @@ function extractApiTables(apiDoc: any): ApiTable[] {
   return result;
 }
 
-function extractApiImageBlocks(apiDoc: any): ApiImageBlock[] {
+function extractApiImageBlocks(apiDoc: GDocsApiDocument): ApiImageBlock[] {
   const result: ApiImageBlock[] = [];
   const content = apiDoc?.body?.content;
-  if (!Array.isArray(content)) return result;
+  if (!content) return result;
 
   for (let i = 0; i < content.length; i++) {
-    const el = content[i];
+    const el = content[i]!;
     if (!el.paragraph) continue;
 
     // Check if this paragraph contains an inline image object
@@ -234,7 +239,7 @@ function extractApiImageBlocks(apiDoc: any): ApiImageBlock[] {
 
     // This paragraph has an inline image.  Check if the next paragraph
     // is the "Edit in Mermaid Live" link.
-    let endIndex = el.endIndex;
+    let endIndex = el.endIndex ?? 0;
     let mermaidLiveUrl: string | undefined;
     const nextEl = content[i + 1];
     if (nextEl?.paragraph) {
@@ -242,22 +247,20 @@ function extractApiImageBlocks(apiDoc: any): ApiImageBlock[] {
         const url = pe.textRun?.textStyle?.link?.url;
         if (typeof url === 'string' && url.includes('mermaid.live')) {
           mermaidLiveUrl = url;
-          endIndex = nextEl.endIndex;
+          endIndex = nextEl.endIndex ?? 0;
           break;
         }
       }
     }
 
     result.push({
-      startIndex: el.startIndex,
+      startIndex: el.startIndex ?? 0,
       endIndex,
       mermaidLiveUrl,
     });
   }
   return result;
 }
-
-/* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
 
 /**
  * Build the cell-text fingerprint for a model table element so we can
@@ -278,7 +281,68 @@ function modelTableCellTexts(element: DocsElement): string {
   return text;
 }
 
-// ── Sync service class ───────────────────────────────────────────────
+/**
+ * Helper to find the first table structural element at or after a given index.
+ */
+function findTableElement(
+  content: GDocsStructuralElement[],
+  afterIndex: number,
+): GDocsStructuralElement | undefined {
+  return content.find(el => el.table && (el.startIndex ?? 0) >= afterIndex);
+}
+
+/**
+ * Build cell insert/format requests for a table element from the API doc.
+ * Processes cells in reverse order to preserve indices.
+ */
+function buildCellRequests(
+  tableEl: GDocsStructuralElement,
+  dataRows: DocsTextRun[][][],
+): DocsBatchUpdateRequest[] {
+  const cellRequests: DocsBatchUpdateRequest[] = [];
+  const tableRows = tableEl.table?.tableRows ?? [];
+
+  for (let r = tableRows.length - 1; r >= 0; r--) {
+    const cells = tableRows[r]?.tableCells ?? [];
+    for (let c = cells.length - 1; c >= 0; c--) {
+      const cell = cells[c];
+      const cellContent = cell?.content?.[0];
+      if (!cellContent?.paragraph) continue;
+
+      const cellIndex = cellContent.paragraph.elements?.[0]?.startIndex;
+      if (cellIndex === undefined) continue;
+
+      const dataRow = dataRows[r];
+      const dataCell = dataRow?.[c];
+      if (!dataCell || dataCell.length === 0) continue;
+
+      const text = dataCell.map((run: DocsTextRun) => run.text).join('');
+      if (!text) continue;
+
+      cellRequests.push({
+        insertText: {
+          text,
+          location: { index: cellIndex },
+        },
+      });
+
+      // Bold header row
+      if (r === 0) {
+        cellRequests.push({
+          updateTextStyle: {
+            range: { startIndex: cellIndex, endIndex: cellIndex + text.length },
+            textStyle: { bold: true },
+            fields: 'bold',
+          },
+        });
+      }
+    }
+  }
+
+  return cellRequests;
+}
+
+// ── Sync service class ─────────────────────────────���─────────────────
 
 export class GoogleDocsSyncService {
   private docsService: GoogleDocsService;
@@ -295,28 +359,28 @@ export class GoogleDocsSyncService {
    */
   async sync(filePath: string, docId: string, markdown: string, mermaidDiagrams?: MermaidDiagramData[]): Promise<GoogleDocsSyncResult> {
     try {
-      console.log('[SyncService] Step 1: Loading baseline...');
+      console.warn('[SyncService] Step 1: Loading baseline...');
       const baseline = await this.linkStore.loadBaseline(docId);
-      console.log('[SyncService] Step 2: Reading current doc from API...');
+      console.warn('[SyncService] Step 2: Reading current doc from API...');
       const currentDoc = await this.docsService.getDocument(docId);
-      console.log('[SyncService] Step 3: Extracting plain text for external-edit check...');
+      console.warn('[SyncService] Step 3: Extracting plain text for external-edit check...');
       const theirs = this.docsService.extractPlainText(currentDoc);
-      console.log('[SyncService] Step 4: Converting markdown...');
+      console.warn('[SyncService] Step 4: Converting markdown...');
       const docsDoc = convertMarkdownToDocs(markdown);
-      console.log('[SyncService] Step 5: Processing mermaid diagrams...');
+      console.warn('[SyncService] Step 5: Processing mermaid diagrams...');
       await this.processMermaidDiagrams(docsDoc, mermaidDiagrams);
 
       if (baseline === null) {
-        console.log('[SyncService] First sync → fullPopulate');
+        console.warn('[SyncService] First sync -> fullPopulate');
         return await this.fullPopulate(docId, filePath, docsDoc);
       }
 
       if (baseline !== theirs) {
-        console.log('[SyncService] External edits detected');
+        console.warn('[SyncService] External edits detected');
         return { success: false, externalEditsDetected: true };
       }
 
-      console.log('[SyncService] Applying paragraph-level diff...');
+      console.warn('[SyncService] Applying paragraph-level diff...');
       return await this.applyDiff(docId, filePath, currentDoc, docsDoc);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -336,7 +400,7 @@ export class GoogleDocsSyncService {
     mermaidDiagrams?: MermaidDiagramData[],
   ): Promise<GoogleDocsSyncResult> {
     try {
-      console.log('[SyncService] Force overwrite — clearing doc and repopulating');
+      console.warn('[SyncService] Force overwrite -- clearing doc and repopulating');
       const docsDoc = convertMarkdownToDocs(markdown);
       await this.processMermaidDiagrams(docsDoc, mermaidDiagrams);
 
@@ -395,7 +459,7 @@ export class GoogleDocsSyncService {
     const currentDoc = await this.docsService.getDocument(docId);
     const endIndex = currentDoc?.body?.content?.at(-1)?.endIndex;
     if (endIndex && endIndex > 2) {
-      console.log(`[SyncService] Clearing existing doc content (endIndex: ${endIndex})`);
+      console.warn('[SyncService] Clearing existing doc content (endIndex: %d)', endIndex);
       await this.docsService.batchUpdate(docId, [{
         deleteContentRange: {
           range: { startIndex: 1, endIndex: endIndex - 1 },
@@ -405,7 +469,7 @@ export class GoogleDocsSyncService {
 
     // Phase 1: Insert all text content (tables as placeholders)
     const { requests, pendingTables } = buildInsertRequests(docsDoc, 1);
-    console.log(`[SyncService] fullPopulate: ${requests.length} requests, ${pendingTables.length} pending tables`);
+    console.warn('[SyncService] fullPopulate: %d requests, %d pending tables', requests.length, pendingTables.length);
     if (requests.length > 0) {
       await this.docsService.batchUpdate(docId, requests);
     }
@@ -431,7 +495,7 @@ export class GoogleDocsSyncService {
    */
   private async populateTables(
     docId: string,
-    pendingTables: import('./DocsDocumentBuilder').PendingTable[],
+    pendingTables: PendingTable[],
   ): Promise<void> {
     for (const table of pendingTables) {
       // Read doc to find the placeholder
@@ -445,8 +509,8 @@ export class GoogleDocsSyncService {
         if (el.paragraph) {
           for (const pe of el.paragraph.elements ?? []) {
             if (pe.textRun?.content?.includes(table.placeholderText.trim())) {
-              placeholderIndex = el.startIndex;
-              placeholderEndIndex = el.endIndex;
+              placeholderIndex = el.startIndex ?? -1;
+              placeholderEndIndex = el.endIndex ?? -1;
               break;
             }
           }
@@ -470,9 +534,7 @@ export class GoogleDocsSyncService {
 
       // Read doc to find actual cell indices
       const docAfterTable = await this.docsService.getDocument(docId);
-      const tableEl = (docAfterTable?.body?.content ?? []).find(
-        (el: any) => el.table && el.startIndex >= placeholderIndex
-      );
+      const tableEl = findTableElement(docAfterTable?.body?.content ?? [], placeholderIndex);
 
       if (!tableEl?.table) {
         console.warn('[SyncService] Inserted table not found at index', placeholderIndex);
@@ -481,45 +543,7 @@ export class GoogleDocsSyncService {
 
       // Populate cells — insert text into each cell's paragraph
       // Process in reverse order to preserve indices
-      const cellRequests: any[] = [];
-      const tableRows = tableEl.table.tableRows ?? [];
-
-      for (let r = tableRows.length - 1; r >= 0; r--) {
-        const cells = tableRows[r].tableCells ?? [];
-        for (let c = cells.length - 1; c >= 0; c--) {
-          const cell = cells[c];
-          const cellContent = cell.content?.[0];
-          if (!cellContent?.paragraph) continue;
-
-          const cellIndex = cellContent.paragraph.elements?.[0]?.startIndex;
-          if (cellIndex === undefined) continue;
-
-          const dataRow = table.rows[r];
-          const dataCell = dataRow?.[c];
-          if (!dataCell || dataCell.length === 0) continue;
-
-          const text = dataCell.map((run: any) => run.text).join('');
-          if (!text) continue;
-
-          cellRequests.push({
-            insertText: {
-              text,
-              location: { index: cellIndex },
-            },
-          });
-
-          // Bold header row
-          if (r === 0) {
-            cellRequests.push({
-              updateTextStyle: {
-                range: { startIndex: cellIndex, endIndex: cellIndex + text.length },
-                textStyle: { bold: true },
-                fields: 'bold',
-              },
-            });
-          }
-        }
-      }
+      const cellRequests = buildCellRequests(tableEl, table.rows);
 
       if (cellRequests.length > 0) {
         await this.docsService.batchUpdate(docId, cellRequests);
@@ -533,18 +557,18 @@ export class GoogleDocsSyncService {
    * then reapplies formatting.
    *
    * Comment preservation:
-   * - Unchanged paragraphs are skipped entirely → all comments preserved
-   * - 1:1 modified paragraphs use character-level diff → comments on
+   * - Unchanged paragraphs are skipped entirely -> all comments preserved
+   * - 1:1 modified paragraphs use character-level diff -> comments on
    *   unchanged words within the paragraph are preserved
    * - Deleted paragraphs lose their comments (unavoidable)
    * - Formatting operations never affect comment anchors
-   * - Unchanged tables/images are skipped → comments preserved
+   * - Unchanged tables/images are skipped -> comments preserved
    * - Changed tables/images are deleted and re-inserted (comments on them lost)
    */
   private async applyDiff(
     docId: string,
     filePath: string,
-    currentApiDoc: any,
+    currentApiDoc: GDocsApiDocument,
     newDocsDoc: DocsDocument,
   ): Promise<GoogleDocsSyncResult> {
     // Phase 1: Text paragraph diff
@@ -553,7 +577,7 @@ export class GoogleDocsSyncService {
 
     const operations = generateParagraphDiffOperations(apiParas, modelElements);
     if (operations.length > 0) {
-      console.log(`[SyncService] applyDiff: ${operations.length} paragraph-diff operations`);
+      console.warn('[SyncService] applyDiff: %d paragraph-diff operations', operations.length);
       await this.docsService.batchUpdate(docId, operations);
     }
 
@@ -564,7 +588,7 @@ export class GoogleDocsSyncService {
     const finalDoc = await this.docsService.getDocument(docId);
     const formattingOps = buildFormattingFromApiDoc(finalDoc, newDocsDoc);
     if (formattingOps.length > 0) {
-      console.log(`[SyncService] applyDiff: ${formattingOps.length} formatting requests`);
+      console.warn('[SyncService] applyDiff: %d formatting requests', formattingOps.length);
       await this.docsService.batchUpdate(docId, formattingOps);
     }
 
@@ -587,11 +611,11 @@ export class GoogleDocsSyncService {
     // Read current doc to get structural element positions
     const doc = await this.docsService.getDocument(docId);
 
-    // ── Tables ──────────────────────────────────────────────────
+    // ── Tables ────��────────────────────────��────────────────────
     const apiTables = extractApiTables(doc);
     const modelTables = newDocsDoc.elements.filter(e => e.type === 'table');
 
-    // Match by position (1st model table ↔ 1st API table, etc.)
+    // Match by position (1st model table <-> 1st API table, etc.)
     const tableCount = Math.min(apiTables.length, modelTables.length);
     // Track tables that need replacement (process in reverse for index stability)
     const tablesToReplace: Array<{ apiTable: ApiTable; modelTable: DocsElement }> = [];
@@ -642,7 +666,7 @@ export class GoogleDocsSyncService {
       await this.insertNewTables(docId, tablesToAdd);
     }
 
-    // ── Images (mermaid diagrams) ───────────────────────────────
+    // ── Images (mermaid diagrams) ────────────���──────────────────
     const modelImages = newDocsDoc.elements.filter(
       e => e.type === 'image' && e.imageLink
     );
@@ -735,51 +759,14 @@ export class GoogleDocsSyncService {
     table: PendingTable,
   ): Promise<void> {
     const doc = await this.docsService.getDocument(docId);
-    const tableEl = (doc?.body?.content ?? []).find(
-      (el: any) => el.table && el.startIndex >= afterIndex
-    );
+    const tableEl = findTableElement(doc?.body?.content ?? [], afterIndex);
 
     if (!tableEl?.table) {
       console.warn('[SyncService] Table not found at index', afterIndex);
       return;
     }
 
-    const cellRequests: any[] = [];
-    const tableRows = tableEl.table.tableRows ?? [];
-
-    for (let r = tableRows.length - 1; r >= 0; r--) {
-      const cells = tableRows[r].tableCells ?? [];
-      for (let c = cells.length - 1; c >= 0; c--) {
-        const cell = cells[c];
-        const cellContent = cell.content?.[0];
-        if (!cellContent?.paragraph) continue;
-
-        const cellIndex = cellContent.paragraph.elements?.[0]?.startIndex;
-        if (cellIndex === undefined) continue;
-
-        const dataRow = table.rows[r];
-        const dataCell = dataRow?.[c];
-        if (!dataCell || dataCell.length === 0) continue;
-
-        const text = dataCell.map((run: any) => run.text).join('');
-        if (!text) continue;
-
-        cellRequests.push({
-          insertText: { text, location: { index: cellIndex } },
-        });
-
-        // Bold header row
-        if (r === 0) {
-          cellRequests.push({
-            updateTextStyle: {
-              range: { startIndex: cellIndex, endIndex: cellIndex + text.length },
-              textStyle: { bold: true },
-              fields: 'bold',
-            },
-          });
-        }
-      }
-    }
+    const cellRequests = buildCellRequests(tableEl, table.rows);
 
     if (cellRequests.length > 0) {
       await this.docsService.batchUpdate(docId, cellRequests);
@@ -842,7 +829,7 @@ export class GoogleDocsSyncService {
   ): Promise<void> {
     if (!element.imageLink) return;
 
-    const requests: any[] = [];
+    const requests: DocsBatchUpdateRequest[] = [];
     let idx = insertAt;
 
     requests.push({
@@ -882,7 +869,7 @@ export class GoogleDocsSyncService {
   }
 }
 
-// ── Factory ──────────────────────────────────────────────────────────
+// ── Factory ───��──────────────────────────────────────────────────────
 
 export function createGoogleDocsSyncService(
   docsService: GoogleDocsService,

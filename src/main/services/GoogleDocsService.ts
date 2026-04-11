@@ -4,12 +4,51 @@
  * Handles all HTTP communication with Google's APIs using native `fetch`.
  * No Electron dependency — this is pure HTTP.
  */
+import type { GDocsApiDocument } from '@shared/types/google-docs';
 
 type TokenProvider = () => Promise<string>;
 
 const DOCS_API_BASE = 'https://docs.googleapis.com/v1/documents';
 const DRIVE_UPLOAD_URL =
   'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
+
+// ── Google API response types ────────────────────────────────
+
+/** Google API error response shape */
+interface GoogleApiErrorResponse {
+  error?: {
+    message?: string;
+  };
+}
+
+/** Google Drive file upload response */
+interface DriveFileResponse {
+  id: string;
+}
+
+/** Range within a Google Docs document */
+export interface DocsRange {
+  startIndex: number;
+  endIndex: number;
+}
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/** A single batch update request (various Google Docs API request types) */
+export type DocsBatchUpdateRequest =
+  | { insertText: { text: string; location: { index: number } } }
+  | { updateTextStyle: { range: DocsRange; textStyle: Record<string, any>; fields: string } }
+  | { updateParagraphStyle: { range: DocsRange; paragraphStyle: Record<string, any>; fields: string } }
+  | { createParagraphBullets: { range: DocsRange; bulletPreset: string } }
+  | { insertInlineImage: { uri: string; location: { index: number }; objectSize: Record<string, any> } }
+  | { deleteContentRange: { range: DocsRange } }
+  | { insertTable: { rows: number; columns: number; location: { index: number } } };
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+/** Response from batchUpdate */
+interface DocsBatchUpdateResponse {
+  documentId?: string;
+  replies?: Record<string, unknown>[];
+}
 
 export class GoogleDocsService {
   private tokenProvider: TokenProvider;
@@ -21,27 +60,27 @@ export class GoogleDocsService {
   /**
    * Read the full document structure from the Google Docs API.
    */
-  async getDocument(docId: string): Promise<any> {
+  async getDocument(docId: string): Promise<GDocsApiDocument> {
     const token = await this.tokenProvider();
     const response = await fetch(`${DOCS_API_BASE}/${docId}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!response.ok) {
-      const error = await response.json();
+      const error = (await response.json()) as GoogleApiErrorResponse;
       throw new Error(
         error.error?.message ?? `API error: ${response.status} ${response.statusText}`,
       );
     }
-    return response.json();
+    return (await response.json()) as GDocsApiDocument;
   }
 
   /**
    * Apply batch updates to a document.
    */
-  async batchUpdate(docId: string, requests: any[]): Promise<any> {
+  async batchUpdate(docId: string, requests: DocsBatchUpdateRequest[]): Promise<DocsBatchUpdateResponse> {
     const token = await this.tokenProvider();
-    console.log(`[DocsAPI] batchUpdate: ${requests.length} requests for doc ${docId}`);
-    console.log('[DocsAPI] First 3 requests:', JSON.stringify(requests.slice(0, 3), null, 2));
+    console.warn(`[DocsAPI] batchUpdate: ${requests.length} requests for doc ${docId}`);
+    console.warn('[DocsAPI] First 3 requests:', JSON.stringify(requests.slice(0, 3), null, 2));
     const response = await fetch(`${DOCS_API_BASE}/${docId}:batchUpdate`, {
       method: 'POST',
       headers: {
@@ -57,7 +96,7 @@ export class GoogleDocsService {
         `Google Docs API error (${response.status}): ${errorText}`,
       );
     }
-    return response.json();
+    return (await response.json()) as DocsBatchUpdateResponse;
   }
 
   /**
@@ -92,10 +131,10 @@ export class GoogleDocsService {
       body: bodyBuffer,
     });
     if (!response.ok) {
-      const error = await response.json();
+      const error = (await response.json()) as GoogleApiErrorResponse;
       throw new Error(error.error?.message ?? `Upload failed: ${response.status}`);
     }
-    const result = await response.json();
+    const result = (await response.json()) as DriveFileResponse;
     const fileId = result.id;
 
     // Make the image publicly accessible so insertInlineImage can use it
@@ -115,7 +154,7 @@ export class GoogleDocsService {
    * Extract plain text content from a Google Docs API document response.
    * Walks the body.content array and concatenates textRun.content values.
    */
-  extractPlainText(document: any): string {
+  extractPlainText(document: GDocsApiDocument): string {
     let text = '';
     const content = document?.body?.content;
     if (!Array.isArray(content)) return text;

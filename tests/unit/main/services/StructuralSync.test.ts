@@ -18,7 +18,6 @@ vi.mock('electron', () => ({
   app: { getPath: () => '/tmp/mock-userdata' },
 }));
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 describe('Structural element sync', () => {
   let linkStore: GoogleDocsLinkStore;

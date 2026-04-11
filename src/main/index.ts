@@ -6,7 +6,6 @@ import path from 'node:path';
 
 import { registerAllHandlers } from './ipc/handlers';
 import { setupApplicationMenu } from './menu/applicationMenu';
-import { getThemeService } from './services/ThemeService';
 import { getPreferencesService } from './services/PreferencesService';
 import { getRecentFilesService } from './services/RecentFilesService';
 import { getWindowManager } from './window/WindowManager';
@@ -104,7 +103,8 @@ async function initialize(): Promise<void> {
   preReadyFilePath = null;
 
   // Initialize services
-  await getThemeService().initialize();
+  // Note: ThemeService needs no initialization — it only detects OS theme.
+  // PreferencesService is the single source of truth for theme mode preference.
   await getPreferencesService().initialize();
   await getRecentFilesService().initialize();
 

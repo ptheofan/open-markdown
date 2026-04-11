@@ -1,5 +1,8 @@
 /**
  * ThemeHandler unit tests
+ *
+ * GET_CURRENT and SET now delegate to PreferencesService.
+ * GET_SYSTEM and ON_SYSTEM_CHANGE still use ThemeService.
  */
 import { ipcMain, BrowserWindow } from 'electron';
 
@@ -11,16 +14,18 @@ import { IPC_CHANNELS } from '@shared/types/api';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import type { ThemeService } from '@main/services/ThemeService';
-import type { ThemeMode, ResolvedTheme, ThemeChangeEvent } from '@shared/types';
+import type { PreferencesService } from '@main/services/PreferencesService';
+import type { ThemeMode, ResolvedTheme, ThemeChangeEvent, AppPreferences } from '@shared/types';
 
 interface MockThemeService {
-  getCurrentTheme: ReturnType<typeof vi.fn>;
-  setTheme: ReturnType<typeof vi.fn>;
   getSystemTheme: ReturnType<typeof vi.fn>;
   onSystemThemeChange: ReturnType<typeof vi.fn>;
   _triggerSystemThemeChange: (theme: ResolvedTheme) => void;
-  _setCurrentTheme: (theme: ThemeMode) => void;
-  _setSystemTheme: (theme: ResolvedTheme) => void;
+}
+
+interface MockPreferencesService {
+  getPreferences: ReturnType<typeof vi.fn>;
+  updatePreferences: ReturnType<typeof vi.fn>;
 }
 
 // Mock Electron modules
@@ -44,17 +49,11 @@ vi.mock('electron', () => {
   };
 });
 
-// Create mock ThemeService
+// Create mock ThemeService (system detection only)
 function createMockThemeService(): MockThemeService {
-  let currentTheme: ThemeMode = 'system';
   let systemThemeChangeCallback: ((theme: ResolvedTheme) => void) | null = null;
 
   return {
-    getCurrentTheme: vi.fn(() => currentTheme),
-    setTheme: vi.fn((theme: ThemeMode) => {
-      currentTheme = theme;
-      return Promise.resolve();
-    }),
     getSystemTheme: vi.fn((): ResolvedTheme => 'light'),
     onSystemThemeChange: vi.fn((callback: (theme: ResolvedTheme) => void) => {
       systemThemeChangeCallback = callback;
@@ -62,16 +61,32 @@ function createMockThemeService(): MockThemeService {
         systemThemeChangeCallback = null;
       };
     }),
-    // Test helper to simulate system theme change
     _triggerSystemThemeChange: (theme: ResolvedTheme) => {
       systemThemeChangeCallback?.(theme);
     },
-    _setCurrentTheme: (theme: ThemeMode) => {
-      currentTheme = theme;
-    },
-    _setSystemTheme: (theme: ResolvedTheme) => {
-      vi.mocked(createMockThemeService().getSystemTheme).mockReturnValue(theme);
-    },
+  };
+}
+
+// Create mock PreferencesService
+function createMockPreferencesService(initialMode: ThemeMode = 'system'): MockPreferencesService {
+  let currentMode: ThemeMode = initialMode;
+
+  return {
+    getPreferences: vi.fn((): AppPreferences => ({
+      version: 1,
+      core: {
+        theme: { mode: currentMode, background: { light: '#fff', dark: '#000' } },
+        typography: {} as AppPreferences['core']['typography'],
+        lists: {} as AppPreferences['core']['lists'],
+      },
+      plugins: {},
+    })),
+    updatePreferences: vi.fn((updates: { core?: { theme?: { mode?: ThemeMode } } }) => {
+      if (updates.core?.theme?.mode) {
+        currentMode = updates.core.theme.mode;
+      }
+      return Promise.resolve();
+    }),
   };
 }
 
@@ -81,13 +96,15 @@ type MockIpcMain = typeof ipcMain & {
 };
 
 describe('ThemeHandler', () => {
-  let mockThemeService: ReturnType<typeof createMockThemeService>;
+  let mockThemeService: MockThemeService;
+  let mockPreferencesService: MockPreferencesService;
   const mockIpcMain = ipcMain as MockIpcMain;
 
   beforeEach(() => {
     vi.clearAllMocks();
     mockIpcMain._clearHandlers();
     mockThemeService = createMockThemeService();
+    mockPreferencesService = createMockPreferencesService();
   });
 
   afterEach(() => {
@@ -96,7 +113,10 @@ describe('ThemeHandler', () => {
 
   describe('registerThemeHandlers', () => {
     it('should register all theme IPC handlers', () => {
-      registerThemeHandlers(mockThemeService as unknown as ThemeService);
+      registerThemeHandlers(
+        mockThemeService as unknown as ThemeService,
+        mockPreferencesService as unknown as PreferencesService
+      );
 
       expect(ipcMain.handle).toHaveBeenCalledWith(
         IPC_CHANNELS.THEME.GET_CURRENT,
@@ -113,7 +133,10 @@ describe('ThemeHandler', () => {
     });
 
     it('should subscribe to system theme changes', () => {
-      registerThemeHandlers(mockThemeService as unknown as ThemeService);
+      registerThemeHandlers(
+        mockThemeService as unknown as ThemeService,
+        mockPreferencesService as unknown as PreferencesService
+      );
 
       expect(mockThemeService.onSystemThemeChange).toHaveBeenCalled();
     });
@@ -121,7 +144,10 @@ describe('ThemeHandler', () => {
 
   describe('unregisterThemeHandlers', () => {
     it('should remove all theme IPC handlers', () => {
-      registerThemeHandlers(mockThemeService as unknown as ThemeService);
+      registerThemeHandlers(
+        mockThemeService as unknown as ThemeService,
+        mockPreferencesService as unknown as PreferencesService
+      );
       unregisterThemeHandlers();
 
       expect(ipcMain.removeHandler).toHaveBeenCalledWith(IPC_CHANNELS.THEME.GET_CURRENT);
@@ -130,29 +156,36 @@ describe('ThemeHandler', () => {
     });
 
     it('should cleanup system theme change subscription', () => {
-      // The cleanup happens when unregister is called
-      // We just verify no errors occur
-      registerThemeHandlers(mockThemeService as unknown as ThemeService);
+      registerThemeHandlers(
+        mockThemeService as unknown as ThemeService,
+        mockPreferencesService as unknown as PreferencesService
+      );
       expect(() => unregisterThemeHandlers()).not.toThrow();
     });
   });
 
   describe('GET_CURRENT handler', () => {
-    it('should return current theme from service', () => {
-      mockThemeService._setCurrentTheme('dark');
-      registerThemeHandlers(mockThemeService as unknown as ThemeService);
+    it('should return theme mode from PreferencesService', () => {
+      mockPreferencesService = createMockPreferencesService('dark');
+      registerThemeHandlers(
+        mockThemeService as unknown as ThemeService,
+        mockPreferencesService as unknown as PreferencesService
+      );
 
       const handler = mockIpcMain._getHandler(IPC_CHANNELS.THEME.GET_CURRENT);
       expect(handler).toBeDefined();
 
       const result = handler?.();
-      expect(mockThemeService.getCurrentTheme).toHaveBeenCalled();
+      expect(mockPreferencesService.getPreferences).toHaveBeenCalled();
       expect(result).toBe('dark');
     });
 
     it('should return system when that is the preference', () => {
-      mockThemeService._setCurrentTheme('system');
-      registerThemeHandlers(mockThemeService as unknown as ThemeService);
+      mockPreferencesService = createMockPreferencesService('system');
+      registerThemeHandlers(
+        mockThemeService as unknown as ThemeService,
+        mockPreferencesService as unknown as PreferencesService
+      );
 
       const handler = mockIpcMain._getHandler(IPC_CHANNELS.THEME.GET_CURRENT);
       const result = handler?.();
@@ -162,39 +195,57 @@ describe('ThemeHandler', () => {
   });
 
   describe('SET handler', () => {
-    it('should set light theme', async () => {
-      registerThemeHandlers(mockThemeService as unknown as ThemeService);
+    it('should set light theme via PreferencesService', async () => {
+      registerThemeHandlers(
+        mockThemeService as unknown as ThemeService,
+        mockPreferencesService as unknown as PreferencesService
+      );
 
       const handler = mockIpcMain._getHandler(IPC_CHANNELS.THEME.SET);
       expect(handler).toBeDefined();
 
       await handler?.({}, 'light');
-      expect(mockThemeService.setTheme).toHaveBeenCalledWith('light');
+      expect(mockPreferencesService.updatePreferences).toHaveBeenCalledWith({
+        core: { theme: { mode: 'light' } },
+      });
     });
 
-    it('should set dark theme', async () => {
-      registerThemeHandlers(mockThemeService as unknown as ThemeService);
+    it('should set dark theme via PreferencesService', async () => {
+      registerThemeHandlers(
+        mockThemeService as unknown as ThemeService,
+        mockPreferencesService as unknown as PreferencesService
+      );
 
       const handler = mockIpcMain._getHandler(IPC_CHANNELS.THEME.SET);
       await handler?.({}, 'dark');
 
-      expect(mockThemeService.setTheme).toHaveBeenCalledWith('dark');
+      expect(mockPreferencesService.updatePreferences).toHaveBeenCalledWith({
+        core: { theme: { mode: 'dark' } },
+      });
     });
 
-    it('should set system theme', async () => {
-      registerThemeHandlers(mockThemeService as unknown as ThemeService);
+    it('should set system theme via PreferencesService', async () => {
+      registerThemeHandlers(
+        mockThemeService as unknown as ThemeService,
+        mockPreferencesService as unknown as PreferencesService
+      );
 
       const handler = mockIpcMain._getHandler(IPC_CHANNELS.THEME.SET);
       await handler?.({}, 'system');
 
-      expect(mockThemeService.setTheme).toHaveBeenCalledWith('system');
+      expect(mockPreferencesService.updatePreferences).toHaveBeenCalledWith({
+        core: { theme: { mode: 'system' } },
+      });
     });
   });
 
   describe('GET_SYSTEM handler', () => {
-    it('should return system theme from service', () => {
+    it('should return system theme from ThemeService', () => {
       vi.mocked(mockThemeService.getSystemTheme).mockReturnValue('dark');
-      registerThemeHandlers(mockThemeService as unknown as ThemeService);
+      registerThemeHandlers(
+        mockThemeService as unknown as ThemeService,
+        mockPreferencesService as unknown as PreferencesService
+      );
 
       const handler = mockIpcMain._getHandler(IPC_CHANNELS.THEME.GET_SYSTEM);
       expect(handler).toBeDefined();
@@ -206,7 +257,10 @@ describe('ThemeHandler', () => {
 
     it('should return light when system uses light colors', () => {
       vi.mocked(mockThemeService.getSystemTheme).mockReturnValue('light');
-      registerThemeHandlers(mockThemeService as unknown as ThemeService);
+      registerThemeHandlers(
+        mockThemeService as unknown as ThemeService,
+        mockPreferencesService as unknown as PreferencesService
+      );
 
       const handler = mockIpcMain._getHandler(IPC_CHANNELS.THEME.GET_SYSTEM);
       const result = handler?.();
@@ -225,9 +279,11 @@ describe('ThemeHandler', () => {
       };
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([mockWindow as unknown as BrowserWindow]);
 
-      registerThemeHandlers(mockThemeService as unknown as ThemeService);
+      registerThemeHandlers(
+        mockThemeService as unknown as ThemeService,
+        mockPreferencesService as unknown as PreferencesService
+      );
 
-      // Trigger system theme change
       mockThemeService._triggerSystemThemeChange('dark');
 
       expect(mockWindow.webContents.send).toHaveBeenCalledWith(
@@ -253,7 +309,10 @@ describe('ThemeHandler', () => {
         mockWindow2 as unknown as BrowserWindow,
       ]);
 
-      registerThemeHandlers(mockThemeService as unknown as ThemeService);
+      registerThemeHandlers(
+        mockThemeService as unknown as ThemeService,
+        mockPreferencesService as unknown as PreferencesService
+      );
       mockThemeService._triggerSystemThemeChange('light');
 
       expect(mockWindow1.webContents.send).toHaveBeenCalled();
@@ -274,7 +333,10 @@ describe('ThemeHandler', () => {
         destroyedWindow as unknown as BrowserWindow,
       ]);
 
-      registerThemeHandlers(mockThemeService as unknown as ThemeService);
+      registerThemeHandlers(
+        mockThemeService as unknown as ThemeService,
+        mockPreferencesService as unknown as PreferencesService
+      );
       mockThemeService._triggerSystemThemeChange('dark');
 
       expect(activeWindow.webContents.send).toHaveBeenCalled();
@@ -284,9 +346,11 @@ describe('ThemeHandler', () => {
     it('should handle no windows gracefully', () => {
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
 
-      registerThemeHandlers(mockThemeService as unknown as ThemeService);
+      registerThemeHandlers(
+        mockThemeService as unknown as ThemeService,
+        mockPreferencesService as unknown as PreferencesService
+      );
 
-      // Should not throw
       expect(() => mockThemeService._triggerSystemThemeChange('dark')).not.toThrow();
     });
 
@@ -297,7 +361,10 @@ describe('ThemeHandler', () => {
       };
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([mockWindow as unknown as BrowserWindow]);
 
-      registerThemeHandlers(mockThemeService as unknown as ThemeService);
+      registerThemeHandlers(
+        mockThemeService as unknown as ThemeService,
+        mockPreferencesService as unknown as PreferencesService
+      );
       mockThemeService._triggerSystemThemeChange('light');
 
       const [, event] = mockWindow.webContents.send.mock.calls[0] as [string, ThemeChangeEvent];

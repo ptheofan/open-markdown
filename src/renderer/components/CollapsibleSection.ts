@@ -17,7 +17,6 @@ export class CollapsibleSection {
   private element: HTMLElement;
   private header: HTMLElement;
   private content: HTMLElement;
-  private chevron: HTMLElement;
   private isOpen: boolean;
 
   constructor(options: CollapsibleSectionOptions) {
@@ -25,7 +24,6 @@ export class CollapsibleSection {
     this.element = this.createElement(options.title);
     this.header = this.element.querySelector('.collapsible-header')!;
     this.content = this.element.querySelector('.collapsible-content')!;
-    this.chevron = this.element.querySelector('.collapsible-chevron')!;
     this.setupEventListeners();
     this.updateVisualState();
   }
@@ -65,12 +63,8 @@ export class CollapsibleSection {
   private updateVisualState(): void {
     if (this.isOpen) {
       this.element.classList.add('is-open');
-      this.content.style.display = 'block';
-      this.chevron.style.transform = 'rotate(0deg)';
     } else {
       this.element.classList.remove('is-open');
-      this.content.style.display = 'none';
-      this.chevron.style.transform = 'rotate(-90deg)';
     }
   }
 

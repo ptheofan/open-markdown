@@ -89,6 +89,7 @@ class App {
   };
 
   private cleanupFunctions: Array<() => void> = [];
+  private contentRenderTimer: ReturnType<typeof setTimeout> | null = null;
 
   /**
    * Initialize the application
@@ -329,7 +330,7 @@ class App {
     // Get plugin theme declarations
     const pluginDeclarations = this.markdownViewer?.getPluginThemeDeclarations() ?? {};
 
-    // Apply theme CSS variables with preferences
+    // Apply theme CSS variables immediately (cheap)
     applyThemeCSS(
       resolvedTheme,
       pluginDeclarations,
@@ -339,8 +340,11 @@ class App {
     // Update toolbar theme indicator
     this.toolbar?.setTheme(resolvedTheme);
 
-    // Update theme-aware plugins (like Mermaid)
-    await this.markdownViewer?.setTheme(resolvedTheme);
+    // Debounce expensive content re-render (diagrams like Mermaid)
+    if (this.contentRenderTimer) clearTimeout(this.contentRenderTimer);
+    this.contentRenderTimer = setTimeout(() => {
+      void this.markdownViewer?.setTheme(resolvedTheme);
+    }, 300);
   }
 
   /**
@@ -745,14 +749,9 @@ class App {
       const updatedPrefs = await window.electronAPI.preferences.set(updates);
       this.preferencesPanel?.updateValues(updatedPrefs);
 
-      // Update current preferences state
+      // Update current preferences state (PreferencesService is the single source of truth)
       this.state.currentPreferences = updatedPrefs.core;
-
-      // Update theme mode if changed — sync to ThemeService so it persists on restart
-      if (updates.core?.theme?.mode) {
-        this.state.currentTheme = updates.core.theme.mode;
-        await window.electronAPI.theme.set(updates.core.theme.mode);
-      }
+      this.state.currentTheme = updatedPrefs.core.theme.mode;
 
       // Notify plugins of preference changes
       if (updates.plugins) {

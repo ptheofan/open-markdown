@@ -265,12 +265,14 @@ body {
   height: 100%;
   overflow-y: auto;
   padding: 32px;
+  background-color: var(--doc-bg-color, var(--bg-color));
 }
 
 .markdown-body {
   max-width: 900px;
   margin: 0 auto;
-  font-size: var(--base-font-size, 14px);
+  font-family: var(--doc-font-body, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif);
+  font-size: var(--doc-font-size, 14px);
 }
 
 /* GitHub-flavored markdown styles */
@@ -285,70 +287,70 @@ body {
 }
 
 .markdown-body h1 {
-  margin-top: var(--h1-margin-top, 24px);
-  margin-bottom: var(--h1-margin-bottom, 16px);
-  padding-bottom: var(--h1-padding-bottom, 0.3em);
-  font-size: var(--h1-font-size, 2em);
-  font-weight: var(--h1-font-weight, 600);
-  line-height: var(--h1-line-height, 1.25);
-  color: var(--h1-color, inherit);
-  border-bottom: var(--h1-border-width, 1px) var(--h1-border-style, solid) var(--border-color);
+  margin-top: var(--doc-h1-margin-top, 24px);
+  margin-bottom: var(--doc-h1-margin-bottom, 16px);
+  padding-bottom: var(--doc-h1-padding-bottom, 0.3em);
+  font-size: var(--doc-h1-font-size, 2em);
+  font-weight: var(--doc-h1-font-weight, 600);
+  line-height: var(--doc-h1-line-height, 1.25);
+  color: var(--doc-h1-color, inherit);
+  border-bottom: var(--doc-h1-border-width, 1px) var(--doc-h1-border-style, solid) var(--border-color);
 }
 
 .markdown-body h2 {
-  margin-top: var(--h2-margin-top, 24px);
-  margin-bottom: var(--h2-margin-bottom, 16px);
-  padding-bottom: var(--h2-padding-bottom, 0.3em);
-  font-size: var(--h2-font-size, 1.5em);
-  font-weight: var(--h2-font-weight, 600);
-  line-height: var(--h2-line-height, 1.25);
-  color: var(--h2-color, inherit);
-  border-bottom: var(--h2-border-width, 1px) var(--h2-border-style, solid) var(--border-color);
+  margin-top: var(--doc-h2-margin-top, 24px);
+  margin-bottom: var(--doc-h2-margin-bottom, 16px);
+  padding-bottom: var(--doc-h2-padding-bottom, 0.3em);
+  font-size: var(--doc-h2-font-size, 1.5em);
+  font-weight: var(--doc-h2-font-weight, 600);
+  line-height: var(--doc-h2-line-height, 1.25);
+  color: var(--doc-h2-color, inherit);
+  border-bottom: var(--doc-h2-border-width, 1px) var(--doc-h2-border-style, solid) var(--border-color);
 }
 
 .markdown-body h3 {
-  margin-top: var(--h3-margin-top, 24px);
-  margin-bottom: var(--h3-margin-bottom, 16px);
-  font-size: var(--h3-font-size, 1.25em);
-  font-weight: var(--h3-font-weight, 600);
-  line-height: var(--h3-line-height, 1.25);
-  color: var(--h3-color, inherit);
+  margin-top: var(--doc-h3-margin-top, 24px);
+  margin-bottom: var(--doc-h3-margin-bottom, 16px);
+  font-size: var(--doc-h3-font-size, 1.25em);
+  font-weight: var(--doc-h3-font-weight, 600);
+  line-height: var(--doc-h3-line-height, 1.25);
+  color: var(--doc-h3-color, inherit);
 }
 
 .markdown-body h4 {
-  margin-top: var(--h4-margin-top, 24px);
-  margin-bottom: var(--h4-margin-bottom, 16px);
-  font-size: var(--h4-font-size, 1em);
-  font-weight: var(--h4-font-weight, 600);
-  line-height: var(--h4-line-height, 1.25);
-  color: var(--h4-color, inherit);
+  margin-top: var(--doc-h4-margin-top, 24px);
+  margin-bottom: var(--doc-h4-margin-bottom, 16px);
+  font-size: var(--doc-h4-font-size, 1em);
+  font-weight: var(--doc-h4-font-weight, 600);
+  line-height: var(--doc-h4-line-height, 1.25);
+  color: var(--doc-h4-color, inherit);
 }
 
 .markdown-body h5 {
-  margin-top: var(--h5-margin-top, 24px);
-  margin-bottom: var(--h5-margin-bottom, 16px);
-  font-size: var(--h5-font-size, 0.875em);
-  font-weight: var(--h5-font-weight, 600);
-  line-height: var(--h5-line-height, 1.25);
-  color: var(--h5-color, inherit);
+  margin-top: var(--doc-h5-margin-top, 24px);
+  margin-bottom: var(--doc-h5-margin-bottom, 16px);
+  font-size: var(--doc-h5-font-size, 0.875em);
+  font-weight: var(--doc-h5-font-weight, 600);
+  line-height: var(--doc-h5-line-height, 1.25);
+  color: var(--doc-h5-color, inherit);
 }
 
 .markdown-body h6 {
-  margin-top: var(--h6-margin-top, 24px);
-  margin-bottom: var(--h6-margin-bottom, 16px);
-  font-size: var(--h6-font-size, 0.85em);
-  font-weight: var(--h6-font-weight, 600);
-  line-height: var(--h6-line-height, 1.25);
-  color: var(--h6-color, var(--text-muted));
+  margin-top: var(--doc-h6-margin-top, 24px);
+  margin-bottom: var(--doc-h6-margin-bottom, 16px);
+  font-size: var(--doc-h6-font-size, 0.85em);
+  font-weight: var(--doc-h6-font-weight, 600);
+  line-height: var(--doc-h6-line-height, 1.25);
+  color: var(--doc-h6-color, var(--text-muted));
 }
 
 .markdown-body p {
   margin-top: 0;
-  margin-bottom: var(--paragraph-margin-bottom, 16px);
+  margin-bottom: var(--doc-paragraph-margin-bottom, 16px);
 }
 
 .markdown-body a {
-  color: var(--user-link-color, var(--link-color));
+  color: var(--doc-link-color, var(--link-color));
   text-decoration: none;
 }
 
@@ -359,46 +361,46 @@ body {
 .markdown-body ul {
   margin-top: 0;
   margin-bottom: 16px;
-  padding-left: var(--ul-padding-left, 2em);
+  padding-left: var(--doc-ul-padding-left, 2em);
 }
 
 .markdown-body ol {
   margin-top: 0;
   margin-bottom: 16px;
-  padding-left: var(--ol-padding-left, 2em);
+  padding-left: var(--doc-ol-padding-left, 2em);
 }
 
 .markdown-body li {
-  margin-top: var(--ul-item-spacing, 0.25em);
+  margin-top: var(--doc-ul-item-spacing, 0.25em);
 }
 
 .markdown-body li + li {
-  margin-top: var(--ul-item-spacing, 0.25em);
+  margin-top: var(--doc-ul-item-spacing, 0.25em);
 }
 
 .markdown-body blockquote {
   margin: 0 0 16px;
   padding: 0 1em;
-  color: var(--blockquote-text-color, var(--text-muted));
-  border-left: var(--blockquote-border-width, 0.25em) solid var(--blockquote-border-color, var(--blockquote-border));
+  color: var(--doc-blockquote-text-color, var(--text-muted));
+  border-left: var(--doc-blockquote-border-width, 0.25em) solid var(--doc-blockquote-border-color, var(--blockquote-border));
 }
 
 .markdown-body code {
   padding: 0.2em 0.4em;
   margin: 0;
-  font-size: var(--code-font-size, 85%);
-  background-color: var(--user-code-bg, var(--code-bg));
-  border-radius: var(--code-border-radius, 6px);
-  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+  font-size: var(--doc-code-font-size, 85%);
+  background-color: var(--doc-code-bg, var(--code-bg));
+  border-radius: var(--doc-code-border-radius, 6px);
+  font-family: var(--doc-font-mono, ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace);
 }
 
 .markdown-body pre {
   padding: 16px;
   overflow: auto;
-  font-size: var(--code-font-size, 85%);
+  font-size: var(--doc-code-font-size, 85%);
   line-height: 1.45;
-  background-color: var(--user-code-bg, var(--code-bg));
-  border-radius: var(--code-border-radius, 6px);
+  background-color: var(--doc-code-bg, var(--code-bg));
+  border-radius: var(--doc-code-border-radius, 6px);
   margin-bottom: 16px;
 }
 
@@ -678,13 +680,12 @@ button:focus:not(:focus-visible) {
 .preferences-content {
   flex: 1;
   overflow-y: auto;
-  padding: 16px 0;
+  padding: 0;
 }
 
 .preferences-sections {
   display: flex;
   flex-direction: column;
-  gap: 8px;
 }
 
 /* Footer */
@@ -751,13 +752,22 @@ button:focus:not(:focus-visible) {
   flex-shrink: 0;
   color: var(--text-muted);
   transition: transform 0.2s ease;
+  transform: rotate(-90deg);
+}
+
+.is-open > .collapsible-header .collapsible-chevron {
+  transform: rotate(0deg);
 }
 
 .collapsible-content {
-  padding: 0 20px 16px;
-  display: flex;
+  padding: 20px;
+  display: none;
   flex-direction: column;
   gap: 16px;
+}
+
+.is-open > .collapsible-content {
+  display: flex;
 }
 
 /* Nested collapsible sections */
@@ -957,6 +967,101 @@ button:focus:not(:focus-visible) {
   color: var(--text-muted);
 }
 
+/* OKLCH Color Widget */
+.oklch-widget {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+}
+
+.oklch-widget-canvas {
+  width: 240px;
+  height: 160px;
+  border-radius: 4px;
+  cursor: crosshair;
+  display: block;
+}
+
+.oklch-widget-hue {
+  width: 240px;
+  height: 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: block;
+}
+
+.oklch-widget-popup {
+  position: fixed;
+  background: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  z-index: 10000;
+  user-select: none;
+}
+
+/* Font Select */
+.font-select-container {
+  position: relative;
+}
+
+.font-select-input {
+  cursor: pointer;
+}
+
+.font-select-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  background-color: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  margin-top: 4px;
+  z-index: 1000;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.font-select-dropdown.is-open {
+  display: block;
+}
+
+.font-select-option {
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--text-color);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.font-select-option:hover,
+.font-select-option.is-highlighted {
+  background-color: var(--hover-bg);
+}
+
+.font-select-option-default {
+  font-style: italic;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.font-select-more {
+  font-style: italic;
+  color: var(--text-muted);
+  cursor: default;
+  border-top: 1px solid var(--border-color);
+}
+
+.font-select-more:hover {
+  background-color: transparent;
+}
+
 /* ===========================================
    Color Picker
    =========================================== */
@@ -964,7 +1069,15 @@ button:focus:not(:focus-visible) {
 .color-picker {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+}
+
+.color-picker-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
 }
 
 .color-picker-preview {
@@ -975,6 +1088,34 @@ button:focus:not(:focus-visible) {
   overflow: hidden;
   flex-shrink: 0;
   border: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.color-picker-preview:hover {
+  border-color: var(--link-color);
+}
+
+.color-picker-reset {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background-color: var(--bg-color);
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+  align-self: flex-start;
+  margin-top: 0;
+}
+
+.color-picker-reset:hover {
+  border-color: var(--text-muted);
+  color: var(--text-color);
 }
 
 .color-picker-swatch-bg {
@@ -992,14 +1133,6 @@ button:focus:not(:focus-visible) {
 .color-picker-swatch {
   position: absolute;
   inset: 0;
-}
-
-.color-picker-inputs {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  flex: 1;
-  min-width: 0;
 }
 
 .color-picker-hex,
@@ -1026,7 +1159,23 @@ button:focus:not(:focus-visible) {
   outline: none;
 }
 
-/* Color Pair Picker */
+/* Form separator line between groups */
+.form-separator {
+  border: none;
+  border-top: 1px solid var(--border-color);
+  margin: 0;
+}
+
+.form-group-label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Color Pair Picker — extra spacing when following another field */
+.form-field + .form-field-color-pair {
+  margin-top: 8px;
+}
+
 .form-field-color-pair .color-pair-pickers {
   display: grid;
   grid-template-columns: 1fr 1fr;

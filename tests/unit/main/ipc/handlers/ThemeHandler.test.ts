@@ -78,6 +78,7 @@ function createMockPreferencesService(initialMode: ThemeMode = 'system'): MockPr
         theme: { mode: currentMode, background: { light: '#fff', dark: '#000' } },
         typography: {} as AppPreferences['core']['typography'],
         lists: {} as AppPreferences['core']['lists'],
+        editor: { autoSave: true, autoSaveDelay: 1000 },
       },
       plugins: {},
     })),

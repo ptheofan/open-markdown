@@ -2,7 +2,7 @@
  * FileService - Handles file operations in the main process
  */
 import { dialog, BrowserWindow } from 'electron';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, writeFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { MARKDOWN_EXTENSIONS, MAX_FILE_SIZE_BYTES } from '@shared/constants';
@@ -12,7 +12,7 @@ import {
   InvalidFileTypeError,
 } from '@shared/errors';
 
-import type { FileOpenResult, FileReadResult, FileStats } from '@shared/types';
+import type { FileOpenResult, FileReadResult, FileWriteResult, FileStats } from '@shared/types';
 
 /**
  * Service for handling file operations
@@ -140,6 +140,19 @@ export class FileService {
         success: false,
         error: readError.toUserMessage(),
       };
+    }
+  }
+
+  /**
+   * Write content to a file
+   */
+  async writeFile(filePath: string, content: string): Promise<FileWriteResult> {
+    try {
+      await writeFile(filePath, content, 'utf-8');
+      return { success: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return { success: false, error: message };
     }
   }
 

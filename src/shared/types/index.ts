@@ -2,6 +2,7 @@
 export type {
   FileOpenResult,
   FileReadResult,
+  FileWriteResult,
   FileStats,
   WatchedFile,
   FileChangeEvent,

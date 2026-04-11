@@ -12,6 +12,9 @@ import {
 import { BUILTIN_PLUGINS } from '@shared/constants';
 import { Toast } from './Toast';
 
+import { EditModeController, createEditModeController } from './EditModeController';
+import type { EditModeCallbacks } from './EditModeController';
+
 import type {
   MarkdownPlugin,
   ContextMenuData,
@@ -42,6 +45,8 @@ export class MarkdownViewer {
   private initialized = false;
   private highlightedElement: HTMLElement | null = null;
   private toast: Toast;
+  private editModeController: EditModeController | null = null;
+  private isEditMode = false;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -220,6 +225,56 @@ export class MarkdownViewer {
     preferencesMap: Record<string, unknown>
   ): void {
     this.pluginManager.notifyAllPluginsPreferencesChange(preferencesMap);
+  }
+
+  /**
+   * Enter edit mode - switch to slice-based rendering
+   */
+  async enterEditMode(callbacks?: EditModeCallbacks): Promise<void> {
+    if (this.isEditMode || !this.state.content) return;
+
+    this.isEditMode = true;
+    this.editModeController = createEditModeController(
+      this.container,
+      this.pluginManager
+    );
+    if (callbacks) {
+      this.editModeController.setCallbacks(callbacks);
+    }
+    await this.editModeController.enter(this.state.content);
+  }
+
+  /**
+   * Exit edit mode - return to normal rendering
+   */
+  async exitEditMode(): Promise<void> {
+    if (!this.isEditMode || !this.editModeController) return;
+
+    const markdown = this.editModeController.exit();
+    this.isEditMode = false;
+    this.editModeController = null;
+    this.container.classList.remove('edit-mode');
+
+    // Update state and re-render normally
+    this.state.content = markdown;
+    await this.render(markdown, this.state.filePath ?? undefined);
+  }
+
+  /**
+   * Check if in edit mode
+   */
+  getEditMode(): boolean {
+    return this.isEditMode;
+  }
+
+  /**
+   * Get the current markdown (possibly modified in edit mode)
+   */
+  getCurrentMarkdown(): string {
+    if (this.isEditMode && this.editModeController) {
+      return this.editModeController.getMarkdown();
+    }
+    return this.state.content;
   }
 
   /**

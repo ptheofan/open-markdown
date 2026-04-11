@@ -12,6 +12,7 @@ import type {
   FileDeleteEvent,
   FileOpenResult,
   FileReadResult,
+  FileWriteResult,
   FullscreenChangeEvent,
   RecentFileEntry,
   ResolvedTheme,
@@ -37,6 +38,10 @@ const electronAPI: ElectronAPI = {
 
     read: (filePath: string): Promise<FileReadResult> => {
       return ipcRenderer.invoke(IPC_CHANNELS.FILE.READ, filePath);
+    },
+
+    write: (filePath: string, content: string): Promise<FileWriteResult> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.FILE.WRITE, filePath, content);
     },
 
     watch: (filePath: string): Promise<void> => {

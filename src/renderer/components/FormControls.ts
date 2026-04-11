@@ -336,7 +336,7 @@ export class FontSelect {
 
   constructor(options: FontSelectOptions) {
     this.currentValue = options.value;
-    this.defaultLabel = options.defaultLabel ?? 'System Default';
+    this.defaultLabel = options.defaultLabel ?? 'Default';
     this.element = this.createElement(options);
     this.inputElement = this.element.querySelector('.font-select-input')!;
     this.dropdownElement = this.element.querySelector('.font-select-dropdown')!;

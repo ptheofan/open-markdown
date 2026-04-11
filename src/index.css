@@ -958,6 +958,40 @@ button:focus:not(:focus-visible) {
   color: var(--text-muted);
 }
 
+/* OKLCH Color Widget */
+.oklch-widget {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+}
+
+.oklch-widget-canvas {
+  width: 240px;
+  height: 160px;
+  border-radius: 4px;
+  cursor: crosshair;
+  display: block;
+}
+
+.oklch-widget-hue {
+  width: 240px;
+  height: 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: block;
+}
+
+.oklch-widget-popup {
+  position: fixed;
+  background: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  z-index: 2000;
+  user-select: none;
+}
+
 /* Font Select */
 .font-select-container {
   position: relative;

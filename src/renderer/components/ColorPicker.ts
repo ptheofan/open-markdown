@@ -1,13 +1,14 @@
 /**
  * ColorPicker - OKLCH color picker component
  *
- * A color picker that supports OKLCH color input with a clickable
- * preview swatch (opens native color picker), text inputs for direct
- * hex/OKLCH editing, and an optional reset-to-default button.
+ * A color picker with a clickable swatch that opens a custom OKLCH
+ * canvas picker (Lightness×Chroma plane + hue strip), text inputs
+ * for direct hex/OKLCH editing, and an optional reset-to-default button.
  */
 
 import type { OklchColor } from '@shared/types';
 import { parseOklch, formatOklch, hexToOklch, oklchToHex } from '@shared/utils';
+import { OklchColorWidget } from './OklchColorWidget';
 
 /**
  * ColorPicker options
@@ -28,11 +29,16 @@ export class ColorPicker {
   private swatchElement: HTMLElement;
   private textInput: HTMLInputElement;
   private hexInput: HTMLInputElement;
-  private nativeInput: HTMLInputElement;
   private resetBtn: HTMLButtonElement | null = null;
   private currentValue: OklchColor;
   private readonly defaultValue: OklchColor | null;
   private onChange: ((color: OklchColor) => void) | null = null;
+
+  // OKLCH widget popup state
+  private widget: OklchColorWidget | null = null;
+  private widgetPopup: HTMLElement | null = null;
+  private boundClosePopup: ((e: MouseEvent) => void) | null = null;
+  private boundCloseOnEscape: ((e: KeyboardEvent) => void) | null = null;
 
   constructor(options: ColorPickerOptions) {
     this.currentValue = options.value;
@@ -41,7 +47,6 @@ export class ColorPicker {
     this.swatchElement = this.element.querySelector('.color-picker-swatch')!;
     this.textInput = this.element.querySelector('.color-picker-oklch')!;
     this.hexInput = this.element.querySelector('.color-picker-hex')!;
-    this.nativeInput = this.element.querySelector('.color-picker-native')!;
     this.resetBtn = this.element.querySelector('.color-picker-reset');
     this.setupEventListeners();
     this.updateDisplay();
@@ -68,7 +73,7 @@ export class ColorPicker {
     const picker = document.createElement('div');
     picker.className = 'color-picker';
 
-    // Swatch preview (clickable → opens native picker)
+    // Swatch preview (clickable → opens OKLCH widget)
     const preview = document.createElement('div');
     preview.className = 'color-picker-preview';
     preview.title = 'Click to open color picker';
@@ -80,12 +85,6 @@ export class ColorPicker {
     const swatch = document.createElement('div');
     swatch.className = 'color-picker-swatch';
     preview.appendChild(swatch);
-
-    // Hidden native color input
-    const nativeInput = document.createElement('input');
-    nativeInput.type = 'color';
-    nativeInput.className = 'color-picker-native';
-    preview.appendChild(nativeInput);
 
     picker.appendChild(preview);
 
@@ -124,22 +123,13 @@ export class ColorPicker {
   }
 
   private setupEventListeners(): void {
-    // Swatch click → open native picker
+    // Swatch click → open OKLCH widget popup
     const preview = this.element.querySelector('.color-picker-preview')!;
     preview.addEventListener('click', () => {
-      this.nativeInput.click();
-    });
-
-    // Native color picker change
-    this.nativeInput.addEventListener('input', () => {
-      const hex = this.nativeInput.value;
-      try {
-        const oklch = hexToOklch(hex);
-        this.currentValue = oklch;
-        this.updateDisplay();
-        this.onChange?.(this.currentValue);
-      } catch {
-        // Ignore invalid values
+      if (this.widgetPopup) {
+        this.closeWidget();
+      } else {
+        this.openWidget();
       }
     });
 
@@ -179,6 +169,97 @@ export class ColorPicker {
     }
   }
 
+  private openWidget(): void {
+    const parsed = parseOklch(this.currentValue);
+    if (!parsed) return;
+
+    // Create widget
+    this.widget = new OklchColorWidget({
+      lightness: parsed.lightness,
+      chroma: parsed.chroma,
+      hue: parsed.hue,
+    });
+
+    this.widget.setOnChange((l, c, h) => {
+      this.currentValue = formatOklch({
+        lightness: l,
+        chroma: c,
+        hue: h,
+        alpha: parsed.alpha,
+      });
+      this.updateDisplay();
+      this.onChange?.(this.currentValue);
+    });
+
+    // Create popup container
+    this.widgetPopup = document.createElement('div');
+    this.widgetPopup.className = 'oklch-widget-popup';
+    this.widgetPopup.appendChild(this.widget.getElement());
+
+    // Position relative to the swatch
+    const preview = this.element.querySelector('.color-picker-preview')!;
+    const rect = preview.getBoundingClientRect();
+
+    this.widgetPopup.style.left = `${rect.left}px`;
+    this.widgetPopup.style.top = `${rect.bottom + 6}px`;
+
+    document.body.appendChild(this.widgetPopup);
+
+    // Adjust if popup goes off-screen
+    requestAnimationFrame(() => {
+      if (!this.widgetPopup) return;
+      const popupRect = this.widgetPopup.getBoundingClientRect();
+      if (popupRect.bottom > window.innerHeight - 8) {
+        this.widgetPopup.style.top = `${rect.top - popupRect.height - 6}px`;
+      }
+      if (popupRect.right > window.innerWidth - 8) {
+        this.widgetPopup.style.left = `${window.innerWidth - popupRect.width - 8}px`;
+      }
+    });
+
+    // Close on click outside (delay to avoid catching the opening click)
+    setTimeout(() => {
+      this.boundClosePopup = (e: MouseEvent) => {
+        if (
+          this.widgetPopup &&
+          !this.widgetPopup.contains(e.target as Node) &&
+          !(e.target as Node === this.element.querySelector('.color-picker-preview') ||
+            this.element.querySelector('.color-picker-preview')?.contains(e.target as Node))
+        ) {
+          this.closeWidget();
+        }
+      };
+      document.addEventListener('mousedown', this.boundClosePopup);
+    }, 0);
+
+    // Close on Escape
+    this.boundCloseOnEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        this.closeWidget();
+      }
+    };
+    document.addEventListener('keydown', this.boundCloseOnEscape);
+  }
+
+  private closeWidget(): void {
+    if (this.widget) {
+      this.widget.destroy();
+      this.widget = null;
+    }
+    if (this.widgetPopup) {
+      this.widgetPopup.remove();
+      this.widgetPopup = null;
+    }
+    if (this.boundClosePopup) {
+      document.removeEventListener('mousedown', this.boundClosePopup);
+      this.boundClosePopup = null;
+    }
+    if (this.boundCloseOnEscape) {
+      document.removeEventListener('keydown', this.boundCloseOnEscape);
+      this.boundCloseOnEscape = null;
+    }
+  }
+
   private updateDisplay(): void {
     // Update swatch color
     this.swatchElement.style.backgroundColor = this.currentValue;
@@ -186,16 +267,22 @@ export class ColorPicker {
     // Update text inputs
     this.textInput.value = this.currentValue;
 
-    // Convert to hex for inputs
+    // Convert to hex
     try {
-      const hex = oklchToHex(this.currentValue);
-      this.hexInput.value = hex;
-      this.nativeInput.value = hex;
+      this.hexInput.value = oklchToHex(this.currentValue);
     } catch {
       this.hexInput.value = '';
     }
 
-    // Show/hide reset button based on whether value differs from default
+    // Update widget if open
+    if (this.widget) {
+      const parsed = parseOklch(this.currentValue);
+      if (parsed) {
+        this.widget.setValues(parsed.lightness, parsed.chroma, parsed.hue);
+      }
+    }
+
+    // Show/hide reset button
     if (this.resetBtn && this.defaultValue) {
       this.resetBtn.style.visibility =
         this.currentValue === this.defaultValue ? 'hidden' : 'visible';

@@ -245,7 +245,7 @@ export class PreferencesPanel {
     this.googleDocsSyncToggle = new Toggle({
       label: 'Google Docs Sync',
       description:
-        'Synchronize the MD file to Google Docs without losing comments etc. This is an experimental feature. Before using, better keep a copy-backup of the Google Doc. Use with caution.',
+        'Synchronize the MD file to Google Docs without losing comments etc. This is an experimental feature. Before using, better keep a copy-backup of the Google Doc. Use with caution. If you run into problems, please <a href="https://github.com/ptheofan/open-markdown/issues" target="_blank" rel="noopener noreferrer">open an issue on GitHub</a>.',
       value: this.currentPreferences.core.experimental.googleDocsSync,
     });
     this.googleDocsSyncToggle.setOnChange((value) => {

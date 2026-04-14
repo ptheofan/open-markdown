@@ -25,6 +25,10 @@ import type {
   FileAssociationStatus,
   FileAssociationResult,
   ExternalFileOpenEvent,
+  GoogleAuthState,
+  GoogleDocLink,
+  GoogleDocsSyncResult,
+  MermaidDiagramData,
   OpenInEditorResult,
 } from '@shared/types';
 
@@ -316,6 +320,77 @@ const electronAPI: ElectronAPI = {
 
       return () => {
         ipcRenderer.removeListener(IPC_CHANNELS.MENU.ACTION, handler);
+      };
+    },
+  },
+
+  googleDocs: {
+    getAuthStatus: (): Promise<GoogleAuthState> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.GOOGLE_DOCS.AUTH_STATUS);
+    },
+
+    signIn: (): Promise<GoogleAuthState> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.GOOGLE_DOCS.AUTH_SIGN_IN);
+    },
+
+    signOut: (): Promise<void> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.GOOGLE_DOCS.AUTH_SIGN_OUT);
+    },
+
+    link: (filePath: string, docUrl: string): Promise<GoogleDocLink> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.GOOGLE_DOCS.LINK, filePath, docUrl);
+    },
+
+    unlink: (filePath: string): Promise<void> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.GOOGLE_DOCS.UNLINK, filePath);
+    },
+
+    getLink: (filePath: string): Promise<GoogleDocLink | null> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.GOOGLE_DOCS.GET_LINK, filePath);
+    },
+
+    sync: (filePath: string, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[]): Promise<GoogleDocsSyncResult> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.GOOGLE_DOCS.SYNC, filePath, markdownContent, mermaidDiagrams);
+    },
+
+    syncConfirmOverwrite: (filePath: string, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[]): Promise<GoogleDocsSyncResult> => {
+      return ipcRenderer.invoke(
+        IPC_CHANNELS.GOOGLE_DOCS.SYNC_CONFIRM_OVERWRITE,
+        filePath,
+        markdownContent,
+        mermaidDiagrams
+      );
+    },
+
+    onAuthChange: (callback: (state: GoogleAuthState) => void): (() => void) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        state: GoogleAuthState
+      ): void => {
+        callback(state);
+      };
+
+      ipcRenderer.on(IPC_CHANNELS.GOOGLE_DOCS.ON_AUTH_CHANGE, handler);
+
+      return () => {
+        ipcRenderer.removeListener(IPC_CHANNELS.GOOGLE_DOCS.ON_AUTH_CHANGE, handler);
+      };
+    },
+
+    onSyncStatus: (
+      callback: (status: { syncing: boolean; error?: string }) => void
+    ): (() => void) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        status: { syncing: boolean; error?: string }
+      ): void => {
+        callback(status);
+      };
+
+      ipcRenderer.on(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, handler);
+
+      return () => {
+        ipcRenderer.removeListener(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, handler);
       };
     },
   },

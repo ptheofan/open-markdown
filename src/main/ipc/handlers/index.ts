@@ -28,6 +28,10 @@ import {
   unregisterWindowHandlers,
 } from './WindowHandler';
 import {
+  registerGoogleDocsHandlers,
+  unregisterGoogleDocsHandlers,
+} from './GoogleDocsHandler';
+import {
   registerShellHandlers,
   unregisterShellHandlers,
 } from './ShellHandler';
@@ -44,6 +48,7 @@ export function registerAllHandlers(): void {
   registerFileAssociationHandlers();
   registerRecentFilesHandlers();
   registerWindowHandlers();
+  registerGoogleDocsHandlers();
   registerShellHandlers();
 }
 
@@ -59,6 +64,7 @@ export function unregisterAllHandlers(): void {
   unregisterFileAssociationHandlers();
   unregisterRecentFilesHandlers();
   unregisterWindowHandlers();
+  unregisterGoogleDocsHandlers();
   unregisterShellHandlers();
 }
 
@@ -89,6 +95,10 @@ export {
   registerWindowHandlers,
   unregisterWindowHandlers,
 } from './WindowHandler';
+export {
+  registerGoogleDocsHandlers,
+  unregisterGoogleDocsHandlers,
+} from './GoogleDocsHandler';
 export {
   registerShellHandlers,
   unregisterShellHandlers,

@@ -126,6 +126,10 @@ export const DEFAULT_CORE_PREFERENCES: CorePreferences = {
       itemSpacing: '0.25em',
     },
   },
+  googleDocs: {
+    useCustomCredentials: false,
+    customClientId: '',
+  },
   editor: {
     autoSave: true,
     autoSaveDelay: 1000,
@@ -133,6 +137,9 @@ export const DEFAULT_CORE_PREFERENCES: CorePreferences = {
   externalEditor: {
     editor: 'none',
     customCommand: '',
+  },
+  experimental: {
+    googleDocsSync: false,
   },
 };
 

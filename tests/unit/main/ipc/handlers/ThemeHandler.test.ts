@@ -80,6 +80,8 @@ function createMockPreferencesService(initialMode: ThemeMode = 'system'): MockPr
         lists: {} as AppPreferences['core']['lists'],
         editor: { autoSave: true, autoSaveDelay: 1000 },
         externalEditor: { editor: 'none', customCommand: '' },
+        googleDocs: { useCustomCredentials: false, customClientId: '' },
+        experimental: { googleDocsSync: false },
       },
       plugins: {},
     })),

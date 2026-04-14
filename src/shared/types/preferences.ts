@@ -110,11 +110,18 @@ export interface CorePreferences {
     ul: ListStyle;
     ol: ListStyle;
   };
+  googleDocs: {
+    useCustomCredentials: boolean;
+    customClientId: string;
+  };
   editor: {
     autoSave: boolean;
     autoSaveDelay: number;
   };
   externalEditor: ExternalEditorPreferences;
+  experimental: {
+    googleDocsSync: boolean;
+  };
 }
 
 /**

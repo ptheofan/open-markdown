@@ -68,6 +68,7 @@ export type {
   PreferencesAPI,
   FileAssociationAPI,
   RecentFilesAPI,
+  GoogleDocsAPI,
   ShellAPI,
   OpenInEditorResult,
   ElectronAPI,
@@ -87,6 +88,18 @@ export type {
 
 // Recent files types
 export type { RecentFileEntry } from './recentFiles';
+
+// Google Docs types
+export type {
+  GoogleDocLink,
+  GoogleDocsSyncResult,
+  GoogleAuthState,
+  GoogleCredentialsConfig,
+  DocsTextRun,
+  DocsElement,
+  DocsDocument,
+  MermaidDiagramData,
+} from './google-docs';
 
 // Diff types
 export type {

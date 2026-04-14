@@ -113,6 +113,34 @@ export {
   type RecentFilesDropdownCallbacks,
 } from './RecentFilesDropdown';
 
+// GoogleDocsLinkDialog
+export {
+  GoogleDocsLinkDialog,
+  createGoogleDocsLinkDialog,
+  type GoogleDocsLinkDialogCallbacks,
+} from './GoogleDocsLinkDialog';
+
+// GoogleDocsButton
+export {
+  GoogleDocsButton,
+  createGoogleDocsButton,
+  type GoogleDocsButtonState,
+  type GoogleDocsButtonCallbacks,
+} from './GoogleDocsButton';
+
+// GoogleDocsConfirmDialog
+export {
+  GoogleDocsConfirmDialog,
+  createGoogleDocsConfirmDialog,
+  type GoogleDocsConfirmDialogCallbacks,
+} from './GoogleDocsConfirmDialog';
+
+// GoogleDocsSettings
+export {
+  GoogleDocsSettings,
+  createGoogleDocsSettings,
+} from './GoogleDocsSettings';
+
 // EditModeController
 export {
   EditModeController,

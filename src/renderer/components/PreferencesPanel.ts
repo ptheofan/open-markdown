@@ -53,6 +53,7 @@ export class PreferencesPanel {
   private externalEditorSelect: Select | null = null;
   private customCommandInput: TextInput | null = null;
   private customCommandField: HTMLElement | null = null;
+  private googleDocsSyncToggle: Toggle | null = null;
 
   constructor() {
     this.element = this.createElement();
@@ -184,6 +185,8 @@ export class PreferencesPanel {
     this.customCommandInput?.setValue(preferences.core.externalEditor.customCommand);
     this.updateCustomCommandVisibility(preferences.core.externalEditor.editor);
 
+    this.googleDocsSyncToggle?.setValue(preferences.core.experimental.googleDocsSync);
+
     for (const [level, controls] of this.headingControls) {
       const style = preferences.core.typography[level as keyof typeof preferences.core.typography] as { color: ColorPair; fontSize: string; fontWeight: number };
       controls.color.setValue(style.color);
@@ -224,7 +227,35 @@ export class PreferencesPanel {
     this.renderAppearanceSection();
     this.renderTypographySection();
     this.renderPluginSections();
+    this.renderExperimentalSection();
     this.sectionsBuilt = true;
+  }
+
+  /**
+   * Render the Experimental Features section
+   */
+  private renderExperimentalSection(): void {
+    if (!this.currentPreferences) return;
+
+    const section = new CollapsibleSection({
+      title: 'Experimental Features',
+      initiallyOpen: false,
+    });
+
+    this.googleDocsSyncToggle = new Toggle({
+      label: 'Google Docs Sync',
+      description:
+        'Synchronize the MD file to Google Docs without losing comments etc. This is an experimental feature. Before using, better keep a copy-backup of the Google Doc. Use with caution.',
+      value: this.currentPreferences.core.experimental.googleDocsSync,
+    });
+    this.googleDocsSyncToggle.setOnChange((value) => {
+      this.emitChange({
+        core: { experimental: { googleDocsSync: value } },
+      });
+    });
+
+    section.setContent([this.googleDocsSyncToggle.getElement()]);
+    this.sectionsContainer.appendChild(section.getElement());
   }
 
   /**

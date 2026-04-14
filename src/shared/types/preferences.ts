@@ -119,6 +119,9 @@ export interface CorePreferences {
     autoSaveDelay: number;
   };
   externalEditor: ExternalEditorPreferences;
+  experimental: {
+    googleDocsSync: boolean;
+  };
 }
 
 /**

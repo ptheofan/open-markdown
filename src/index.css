@@ -97,6 +97,7 @@ body {
 
 /* Toolbar */
 .toolbar {
+  position: relative;
   display: flex;
   align-items: center;
   padding: 8px 16px;
@@ -137,9 +138,22 @@ body {
 }
 
 .toolbar-center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
   display: flex;
   align-items: center;
   justify-content: center;
+  pointer-events: none;
+  max-width: 50%;
+}
+
+.toolbar > .toolbar-left {
+  flex: 1;
+}
+
+.toolbar > .toolbar-right {
   flex: 1;
 }
 
@@ -886,17 +900,27 @@ button:focus:not(:focus-visible) {
 
 /* Toggle */
 .form-field-toggle {
-  flex-direction: row;
-  align-items: flex-start;
-  gap: 12px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
 }
 
 .form-toggle-label {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
   cursor: pointer;
   user-select: none;
+}
+
+.form-field-toggle .form-toggle-text {
+  flex: 1;
+  order: 0;
+}
+
+.form-field-toggle .form-toggle-switch {
+  order: 1;
 }
 
 .form-toggle-input {

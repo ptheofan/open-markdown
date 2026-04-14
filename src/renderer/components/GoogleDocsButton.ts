@@ -94,6 +94,13 @@ export class GoogleDocsButton {
   }
 
   /**
+   * Show or hide the button entirely
+   */
+  setVisible(visible: boolean): void {
+    this.button.classList.toggle('hidden', !visible);
+  }
+
+  /**
    * Get the current button state
    */
   getState(): GoogleDocsButtonState {

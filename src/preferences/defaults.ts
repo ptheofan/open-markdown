@@ -138,6 +138,9 @@ export const DEFAULT_CORE_PREFERENCES: CorePreferences = {
     editor: 'none',
     customCommand: '',
   },
+  experimental: {
+    googleDocsSync: false,
+  },
 };
 
 /**

@@ -140,6 +140,9 @@ export const DEFAULT_CORE_PREFERENCES: CorePreferences = {
     useCustomCredentials: false,
     customClientId: '',
   },
+  experimental: {
+    googleDocsSync: false,
+  },
 };
 
 /**

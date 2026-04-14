@@ -57,6 +57,8 @@ function createMockPreferences(
       lists: {} as AppPreferences['core']['lists'],
       editor: { autoSave: true, autoSaveDelay: 1000 },
       externalEditor: { editor, customCommand },
+      googleDocs: { useCustomCredentials: false, customClientId: '' },
+      experimental: { googleDocsSync: false },
     },
     plugins: {},
     windowState: { width: 900, height: 700, isMaximized: false },

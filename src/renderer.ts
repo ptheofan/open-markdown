@@ -385,6 +385,7 @@ class App {
       this.state.currentTheme = preferences.core.theme.mode;
       this.preferencesPanel.updateValues(preferences);
       this.updateExternalEditorLabel(preferences.core.externalEditor.editor);
+      this.applyExperimentalFeatures(preferences.core.experimental);
       await this.applyTheme(this.state.currentTheme);
 
       // Load plugin preference schemas
@@ -406,6 +407,9 @@ class App {
 
           // Update external editor label
           this.updateExternalEditorLabel(prefs.core.externalEditor.editor);
+
+          // Apply experimental feature visibility
+          this.applyExperimentalFeatures(prefs.core.experimental);
 
           // Notify plugins of preference changes
           this.markdownViewer?.notifyAllPluginsPreferencesChange(prefs.plugins);
@@ -1030,6 +1034,17 @@ class App {
     } catch (error) {
       console.error('Failed to update preferences:', error);
     }
+  }
+
+  /**
+   * Apply experimental feature flags to the UI.
+   * Google Docs sync is gated behind an experimental toggle — when disabled,
+   * the sync button is hidden from the toolbar entirely.
+   */
+  private applyExperimentalFeatures(
+    experimental: CorePreferences['experimental']
+  ): void {
+    this.googleDocsButton?.setVisible(experimental.googleDocsSync);
   }
 
   /**

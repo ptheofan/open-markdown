@@ -119,6 +119,9 @@ export interface CorePreferences {
     useCustomCredentials: boolean;
     customClientId: string;
   };
+  experimental: {
+    googleDocsSync: boolean;
+  };
 }
 
 /**

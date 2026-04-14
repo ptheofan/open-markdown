@@ -132,13 +132,17 @@ const config: ForgeConfig = {
         },
       ],
     }),
-    // Security hardening fuses - enabled in CI for release builds
+    // Security hardening fuses - enabled in CI for release builds.
+    // Cookie encryption is disabled for MAS builds: Chromium's cookie encryption
+    // key lives in the macOS Keychain, and a sandboxed MAS app without a matching
+    // keychain-access-groups entitlement prompts the user on every launch. This
+    // app has no meaningful cookie state to protect, so the fuse is off for MAS.
     ...(process.env['CI']
       ? [
           new FusesPlugin({
             version: FuseVersion.V1,
             [FuseV1Options.RunAsNode]: false,
-            [FuseV1Options.EnableCookieEncryption]: true,
+            [FuseV1Options.EnableCookieEncryption]: !isMasBuild,
             [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
             [FuseV1Options.EnableNodeCliInspectArguments]: false,
             [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,

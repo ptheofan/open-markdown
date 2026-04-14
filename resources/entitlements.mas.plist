@@ -32,5 +32,12 @@
     <!-- Network client - for loading remote images/resources in markdown -->
     <key>com.apple.security.network.client</key>
     <true/>
+    <!-- Keychain access group - required for safeStorage to persist its
+         Keychain ACL inside the sandbox without prompting on every launch.
+         Used by GoogleAuthService to encrypt Google OAuth tokens at rest. -->
+    <key>keychain-access-groups</key>
+    <array>
+        <string>$(AppIdentifierPrefix)com.aralu.markdown-viewer</string>
+    </array>
 </dict>
 </plist>

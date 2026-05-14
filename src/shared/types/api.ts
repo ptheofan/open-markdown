@@ -259,6 +259,18 @@ export interface ShellAPI {
 }
 
 /**
+ * Local asset resolution API exposed to renderer
+ */
+export interface AssetsAPI {
+  /**
+   * Resolve an image reference from a markdown document to an `om-asset:` URL
+   * the app can load. Returns `null` when the reference is already a URL or
+   * otherwise should be left untouched.
+   */
+  resolve: (baseFilePath: string, ref: string) => string | null;
+}
+
+/**
  * Complete Electron API exposed via contextBridge
  */
 export interface ElectronAPI {
@@ -273,6 +285,7 @@ export interface ElectronAPI {
   recentFiles: RecentFilesAPI;
   menu: MenuAPI;
   shell: ShellAPI;
+  assets: AssetsAPI;
 }
 
 /**

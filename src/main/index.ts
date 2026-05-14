@@ -5,6 +5,10 @@ import { app, BrowserWindow } from 'electron';
 import path from 'node:path';
 
 import { registerAllHandlers } from './ipc/handlers';
+import {
+  registerAssetProtocolScheme,
+  registerAssetProtocolHandler,
+} from './services/AssetProtocolService';
 import { setupApplicationMenu } from './menu/applicationMenu';
 import { getPreferencesService } from './services/PreferencesService';
 import { getRecentFilesService } from './services/RecentFilesService';
@@ -20,6 +24,10 @@ interface PendingWindow {
 
 const pendingWindows = new Map<number, PendingWindow>();
 let preReadyFilePath: string | null = null;
+
+// Custom protocol used to serve local image assets must be registered as a
+// privileged scheme before the app `ready` event fires.
+registerAssetProtocolScheme();
 
 /**
  * Check command-line arguments for markdown file
@@ -107,6 +115,9 @@ async function initialize(): Promise<void> {
   // PreferencesService is the single source of truth for theme mode preference.
   await getPreferencesService().initialize();
   await getRecentFilesService().initialize();
+
+  // Serve local image assets referenced by markdown documents
+  registerAssetProtocolHandler();
 
   // Register IPC handlers before creating windows
   registerAllHandlers();

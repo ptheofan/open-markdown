@@ -7,9 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.3] - 2026-05-14
+
 ### Added
 
+- **Local image rendering**: Markdown documents now display images referenced by relative or absolute filesystem paths, served through a dedicated `om-asset:` protocol restricted to image file types
+- **Remote image rendering**: Images referenced over `https:` now load in rendered documents
 - **Link hover preview**: Hovering over a link in a rendered document now shows the target URL in the status bar
+- **Open links in browser**: Clicking an internet link in a rendered document opens it in the default system browser; right-clicking a link offers copy and open actions
+- **Window state persistence**: Window size, position, and maximized state are restored across application sessions
 
 ## [1.1.0] - 2025-01-21
 

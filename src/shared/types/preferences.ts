@@ -123,12 +123,25 @@ export interface CorePreferences {
 export type PluginPreferencesMap = Record<string, unknown>;
 
 /**
+ * Persisted window size, position, and maximized state.
+ * x/y are omitted when no on-screen position has been recorded yet.
+ */
+export interface WindowState {
+  width: number;
+  height: number;
+  x?: number;
+  y?: number;
+  isMaximized: boolean;
+}
+
+/**
  * Complete preferences structure
  */
 export interface AppPreferences {
   version: number;
   core: CorePreferences;
   plugins: PluginPreferencesMap;
+  windowState: WindowState;
 }
 
 /**

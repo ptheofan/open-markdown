@@ -34,6 +34,9 @@ vi.mock('electron', () => {
     BrowserWindow: {
       fromWebContents: vi.fn(),
     },
+    app: {
+      getPath: vi.fn(() => '/tmp/open-markdown-test'),
+    },
   };
 });
 

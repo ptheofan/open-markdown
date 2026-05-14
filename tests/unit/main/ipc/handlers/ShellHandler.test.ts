@@ -58,6 +58,7 @@ function createMockPreferences(
       externalEditor: { editor, customCommand },
     },
     plugins: {},
+    windowState: { width: 900, height: 700, isMaximized: false },
   };
 }
 

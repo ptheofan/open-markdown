@@ -91,6 +91,9 @@ export class MarkdownViewer {
     // Setup context menu handling
     this.setupContextMenu();
 
+    // Setup external link handling
+    this.setupLinkHandling();
+
     this.initialized = true;
   }
 
@@ -304,10 +307,51 @@ export class MarkdownViewer {
   }
 
   /**
+   * Setup click handling so links to the internet open in the system browser
+   */
+  private setupLinkHandling(): void {
+    this.container.addEventListener('click', (e) => {
+      if (e.button !== 0) return;
+
+      const target = e.target as HTMLElement;
+      const anchor = target.closest('a[href]');
+      if (!(anchor instanceof HTMLAnchorElement)) return;
+
+      const href = anchor.getAttribute('href');
+      if (!href || !this.isExternalUrl(href)) return;
+
+      e.preventDefault();
+      void window.electronAPI.shell.openExternal(href);
+    });
+  }
+
+  /**
+   * Determine whether a link points to the internet (vs. an in-document anchor)
+   */
+  private isExternalUrl(href: string): boolean {
+    try {
+      const protocol = new URL(href).protocol;
+      return protocol === 'http:' || protocol === 'https:' || protocol === 'mailto:';
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Handle context menu event
    */
   private async handleContextMenu(e: MouseEvent): Promise<void> {
     const target = e.target as HTMLElement;
+
+    // External links: offer copy/open actions
+    const anchor = target.closest('a[href]');
+    if (anchor instanceof HTMLAnchorElement) {
+      const href = anchor.getAttribute('href');
+      if (href && this.isExternalUrl(href)) {
+        await this.handleLinkContextMenu(e, href);
+        return;
+      }
+    }
 
     // Find plugin-rendered element
     const pluginElement = target.closest('[data-plugin-id]');
@@ -353,6 +397,29 @@ export class MarkdownViewer {
     // Execute selected action
     if (selectedId && plugin.getContextMenuData) {
       await this.executeContextMenuItem(plugin, pluginElement, selectedId);
+    }
+  }
+
+  /**
+   * Show a context menu for an external link
+   */
+  private async handleLinkContextMenu(e: MouseEvent, href: string): Promise<void> {
+    e.preventDefault();
+
+    const selectedId = await window.electronAPI.contextMenu.show({
+      items: [
+        { id: 'copy-link', label: 'Copy Link to Clipboard', enabled: true },
+        { id: 'open-link', label: 'Open in Default Browser', enabled: true },
+      ],
+      x: e.screenX,
+      y: e.screenY,
+    });
+
+    if (selectedId === 'copy-link') {
+      await window.electronAPI.clipboard.writeText(href);
+      this.toast.success('Link copied to clipboard');
+    } else if (selectedId === 'open-link') {
+      await window.electronAPI.shell.openExternal(href);
     }
   }
 

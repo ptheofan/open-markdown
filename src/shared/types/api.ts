@@ -78,6 +78,7 @@ export const IPC_CHANNELS = {
   SHELL: {
     REVEAL_IN_FILE_MANAGER: 'shell:reveal-in-file-manager',
     OPEN_IN_EDITOR: 'shell:open-in-editor',
+    OPEN_EXTERNAL: 'shell:open-external',
   },
 } as const;
 
@@ -254,6 +255,7 @@ export interface OpenInEditorResult {
 export interface ShellAPI {
   revealInFileManager: (filePath: string) => Promise<void>;
   openInEditor: (filePath: string) => Promise<OpenInEditorResult>;
+  openExternal: (url: string) => Promise<void>;
 }
 
 /**

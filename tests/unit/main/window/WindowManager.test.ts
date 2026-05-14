@@ -34,20 +34,43 @@ vi.mock('electron', () => {
         isDestroyed: vi.fn(() => false),
         isMinimized: vi.fn(() => false),
         isFullScreen: vi.fn(() => false),
+        isMaximized: vi.fn(() => false),
+        maximize: vi.fn(),
         restore: vi.fn(),
         focus: vi.fn(),
         setTitle: vi.fn(),
+        getNormalBounds: vi.fn(() => ({ x: 100, y: 120, width: 1024, height: 768 })),
+        getBounds: vi.fn(() => ({ x: 100, y: 120, width: 1024, height: 768 })),
         _handlers: handlers,
         _simulateEvent: (event: string, ...args: unknown[]) => {
           handlers[event]?.forEach(cb => cb(...args));
         },
       };
     }),
+    screen: {
+      getAllDisplays: vi.fn(() => [
+        { workArea: { x: 0, y: 0, width: 1920, height: 1080 } },
+      ]),
+    },
     app: {
       isPackaged: false,
     },
   };
 });
+
+interface FakePreferencesService {
+  getPreferences: ReturnType<typeof vi.fn>;
+  updatePreferences: ReturnType<typeof vi.fn>;
+}
+
+function createFakePreferencesService(
+  windowState: Record<string, unknown> = { width: 900, height: 700, isMaximized: false }
+): FakePreferencesService {
+  return {
+    getPreferences: vi.fn(() => ({ windowState })),
+    updatePreferences: vi.fn().mockResolvedValue(undefined),
+  };
+}
 
 describe('WindowManager', () => {
   let manager: WindowManager;
@@ -192,6 +215,95 @@ describe('WindowManager', () => {
       manager.createWindow();
       manager.destroy();
       expect(manager.getAllWindows()).toEqual([]);
+    });
+  });
+
+  describe('window state persistence', () => {
+    it('should create the window with the saved size and position', () => {
+      const prefs = createFakePreferencesService({
+        width: 1280,
+        height: 800,
+        x: 200,
+        y: 150,
+        isMaximized: false,
+      });
+      const stateManager = new WindowManager(prefs as never);
+
+      stateManager.createWindow();
+
+      expect(BrowserWindow).toHaveBeenCalledWith(
+        expect.objectContaining({ width: 1280, height: 800, x: 200, y: 150 })
+      );
+      stateManager.destroy();
+    });
+
+    it('should drop an off-screen saved position but keep the size', () => {
+      const prefs = createFakePreferencesService({
+        width: 1280,
+        height: 800,
+        x: 5000,
+        y: 5000,
+        isMaximized: false,
+      });
+      const stateManager = new WindowManager(prefs as never);
+
+      stateManager.createWindow();
+
+      expect(BrowserWindow).toHaveBeenCalledWith(
+        expect.objectContaining({ width: 1280, height: 800, x: undefined, y: undefined })
+      );
+      stateManager.destroy();
+    });
+
+    it('should maximize the window when the saved state is maximized', () => {
+      const prefs = createFakePreferencesService({
+        width: 900,
+        height: 700,
+        isMaximized: true,
+      });
+      const stateManager = new WindowManager(prefs as never);
+
+      const win = stateManager.createWindow();
+
+      expect(win.maximize).toHaveBeenCalled();
+      stateManager.destroy();
+    });
+
+    it('should persist window state on close', () => {
+      const prefs = createFakePreferencesService();
+      const stateManager = new WindowManager(prefs as never);
+
+      const win = stateManager.createWindow();
+      (win as unknown as { _simulateEvent: (event: string) => void })._simulateEvent('close');
+
+      expect(prefs.updatePreferences).toHaveBeenCalledWith({
+        windowState: {
+          x: 100,
+          y: 120,
+          width: 1024,
+          height: 768,
+          isMaximized: false,
+        },
+      });
+      stateManager.destroy();
+    });
+
+    it('should persist window state on maximize', () => {
+      const prefs = createFakePreferencesService();
+      const stateManager = new WindowManager(prefs as never);
+
+      const win = stateManager.createWindow();
+      (win as unknown as { _simulateEvent: (event: string) => void })._simulateEvent('maximize');
+
+      expect(prefs.updatePreferences).toHaveBeenCalled();
+      stateManager.destroy();
+    });
+
+    it('should not touch preferences when no service is provided', () => {
+      const win = manager.createWindow();
+      expect(() => {
+        (win as unknown as { _simulateEvent: (event: string) => void })._simulateEvent('close');
+      }).not.toThrow();
     });
   });
 });

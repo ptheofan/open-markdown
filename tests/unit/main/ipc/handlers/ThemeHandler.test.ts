@@ -82,6 +82,7 @@ function createMockPreferencesService(initialMode: ThemeMode = 'system'): MockPr
         externalEditor: { editor: 'none', customCommand: '' },
       },
       plugins: {},
+      windowState: { width: 900, height: 700, isMaximized: false },
     })),
     updatePreferences: vi.fn((updates: { core?: { theme?: { mode?: ThemeMode } } }) => {
       if (updates.core?.theme?.mode) {

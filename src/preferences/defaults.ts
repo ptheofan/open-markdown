@@ -13,11 +13,13 @@
  *   #58a6ff → oklch(70% 0.14 250)
  */
 
+import { DEFAULT_WINDOW } from '@shared/constants';
 import type {
   CorePreferences,
   AppPreferences,
   TypographyStyle,
   ColorPair,
+  WindowState,
 } from '@shared/types';
 
 /**
@@ -176,6 +178,16 @@ export const DEFAULT_MERMAID_PREFERENCES: MermaidPreferences = {
 };
 
 /**
+ * Default window state - used on first launch before any window
+ * size/position has been recorded.
+ */
+export const DEFAULT_WINDOW_STATE: WindowState = {
+  width: DEFAULT_WINDOW.WIDTH,
+  height: DEFAULT_WINDOW.HEIGHT,
+  isMaximized: false,
+};
+
+/**
  * Default app preferences (complete structure)
  */
 export const DEFAULT_APP_PREFERENCES: AppPreferences = {
@@ -184,6 +196,7 @@ export const DEFAULT_APP_PREFERENCES: AppPreferences = {
   plugins: {
     mermaid: DEFAULT_MERMAID_PREFERENCES,
   },
+  windowState: DEFAULT_WINDOW_STATE,
 };
 
 /**

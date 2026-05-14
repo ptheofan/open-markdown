@@ -39,6 +39,7 @@ export type {
   ExternalEditorPreferences,
   CorePreferences,
   PluginPreferencesMap,
+  WindowState,
   AppPreferences,
   PreferencesChangeEvent,
   DeepPartial,

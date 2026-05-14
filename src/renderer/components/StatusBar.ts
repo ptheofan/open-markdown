@@ -10,6 +10,7 @@ export interface StatusBarState {
   modifiedTime: Date | null;
   isWatching: boolean;
   zoomLevel: number;
+  linkUrl: string | null;
 }
 
 /**
@@ -22,11 +23,13 @@ export class StatusBar {
   private watchElement: HTMLElement | null = null;
   private watchTextElement: HTMLElement | null = null;
   private zoomElement: HTMLElement | null = null;
+  private linkElement: HTMLElement | null = null;
   private state: StatusBarState = {
     filePath: null,
     modifiedTime: null,
     isWatching: false,
     zoomLevel: 1.0,
+    linkUrl: null,
   };
 
   constructor(element: HTMLElement) {
@@ -43,6 +46,19 @@ export class StatusBar {
     this.watchElement = this.element.querySelector('#status-watch');
     this.watchTextElement = this.element.querySelector('#status-watch-text');
     this.zoomElement = this.element.querySelector('#status-zoom');
+    this.linkElement = this.element.querySelector('#status-link');
+  }
+
+  /**
+   * Update the hovered link URL display
+   */
+  setLinkUrl(linkUrl: string | null): void {
+    this.state.linkUrl = linkUrl;
+
+    if (this.linkElement) {
+      this.linkElement.textContent = linkUrl ?? '';
+      this.linkElement.title = linkUrl ?? '';
+    }
   }
 
   /**
@@ -152,6 +168,7 @@ export class StatusBar {
     this.setModifiedTime(null);
     this.setWatching(false);
     this.setZoomLevel(1.0);
+    this.setLinkUrl(null);
   }
 
   /**

@@ -177,6 +177,8 @@ class App {
 
     this.findService = new FindService(viewerContainer);
 
+    this.setupLinkHover(viewerContainer);
+
     this.findBar = createFindBar(viewerElement, {
       onFind: (text, { matchCase }) => {
         const result = this.findService!.find(text, { matchCase });
@@ -283,6 +285,28 @@ class App {
     });
     this.dropZone.setOnOpenLinkClick(() => {
       void this.handleOpenFile();
+    });
+  }
+
+  /**
+   * Show the target URL in the status bar while hovering over a link
+   */
+  private setupLinkHover(container: HTMLElement): void {
+    const updateFromTarget = (target: EventTarget | null): void => {
+      const anchor =
+        target instanceof Element ? target.closest('a[href]') : null;
+      const href = anchor?.getAttribute('href') ?? null;
+      this.statusBar?.setLinkUrl(href);
+    };
+
+    container.addEventListener('mouseover', (e) => {
+      updateFromTarget(e.target);
+    });
+    container.addEventListener('mouseout', (e) => {
+      updateFromTarget(e.relatedTarget);
+    });
+    container.addEventListener('mouseleave', () => {
+      this.statusBar?.setLinkUrl(null);
     });
   }
 

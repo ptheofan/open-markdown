@@ -484,6 +484,18 @@ body {
   opacity: 1;
 }
 
+.status-link {
+  color: var(--link-color);
+  max-width: 60ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-link:empty {
+  display: none;
+}
+
 .status-zoom {
   font-variant-numeric: tabular-nums;
   min-width: 45px;

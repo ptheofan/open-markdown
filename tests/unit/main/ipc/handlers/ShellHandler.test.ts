@@ -31,6 +31,7 @@ vi.mock('electron', () => {
     },
     shell: {
       showItemInFolder: vi.fn(),
+      openExternal: vi.fn(() => Promise.resolve()),
     },
   };
 });
@@ -89,7 +90,7 @@ describe('ShellHandler', () => {
   });
 
   describe('registerShellHandlers', () => {
-    it('should register both shell IPC handlers', () => {
+    it('should register all shell IPC handlers', () => {
       registerShellHandlers();
 
       expect(ipcMain.handle).toHaveBeenCalledWith(
@@ -100,11 +101,15 @@ describe('ShellHandler', () => {
         IPC_CHANNELS.SHELL.OPEN_IN_EDITOR,
         expect.any(Function)
       );
+      expect(ipcMain.handle).toHaveBeenCalledWith(
+        IPC_CHANNELS.SHELL.OPEN_EXTERNAL,
+        expect.any(Function)
+      );
     });
   });
 
   describe('unregisterShellHandlers', () => {
-    it('should remove both shell IPC handlers', () => {
+    it('should remove all shell IPC handlers', () => {
       registerShellHandlers();
       unregisterShellHandlers();
 
@@ -114,6 +119,58 @@ describe('ShellHandler', () => {
       expect(ipcMain.removeHandler).toHaveBeenCalledWith(
         IPC_CHANNELS.SHELL.OPEN_IN_EDITOR
       );
+      expect(ipcMain.removeHandler).toHaveBeenCalledWith(
+        IPC_CHANNELS.SHELL.OPEN_EXTERNAL
+      );
+    });
+  });
+
+  describe('OPEN_EXTERNAL handler', () => {
+    it('should open http URLs in the default browser', async () => {
+      registerShellHandlers();
+
+      const handler = mockIpcMain._getHandler(IPC_CHANNELS.SHELL.OPEN_EXTERNAL);
+      await handler?.({}, 'http://example.com/');
+
+      expect(shell.openExternal).toHaveBeenCalledWith('http://example.com/');
+    });
+
+    it('should open https URLs in the default browser', async () => {
+      registerShellHandlers();
+
+      const handler = mockIpcMain._getHandler(IPC_CHANNELS.SHELL.OPEN_EXTERNAL);
+      await handler?.({}, 'https://example.com/page');
+
+      expect(shell.openExternal).toHaveBeenCalledWith('https://example.com/page');
+    });
+
+    it('should open mailto links', async () => {
+      registerShellHandlers();
+
+      const handler = mockIpcMain._getHandler(IPC_CHANNELS.SHELL.OPEN_EXTERNAL);
+      await handler?.({}, 'mailto:someone@example.com');
+
+      expect(shell.openExternal).toHaveBeenCalledWith('mailto:someone@example.com');
+    });
+
+    it('should ignore disallowed protocols', async () => {
+      registerShellHandlers();
+
+      const handler = mockIpcMain._getHandler(IPC_CHANNELS.SHELL.OPEN_EXTERNAL);
+      await handler?.({}, 'file:///etc/passwd');
+      await handler?.({}, 'javascript:alert(1)');
+
+      expect(shell.openExternal).not.toHaveBeenCalled();
+    });
+
+    it('should ignore invalid URLs', async () => {
+      registerShellHandlers();
+
+      const handler = mockIpcMain._getHandler(IPC_CHANNELS.SHELL.OPEN_EXTERNAL);
+      await handler?.({}, 'not a url');
+      await handler?.({}, '#section');
+
+      expect(shell.openExternal).not.toHaveBeenCalled();
     });
   });
 

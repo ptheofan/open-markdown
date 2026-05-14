@@ -22,6 +22,15 @@ const EDITOR_COMMANDS: Record<Exclude<ExternalEditorId, 'none' | 'custom'>, stri
 };
 
 /**
+ * Protocols allowed to be opened in the default system browser/handler
+ */
+const ALLOWED_EXTERNAL_PROTOCOLS = new Set([
+  'http:',
+  'https:',
+  'mailto:',
+]);
+
+/**
  * Register shell IPC handlers
  */
 export function registerShellHandlers(): void {
@@ -68,6 +77,25 @@ export function registerShellHandlers(): void {
       }
     }
   );
+
+  // Open an external URL in the default system browser/handler
+  ipcMain.handle(
+    IPC_CHANNELS.SHELL.OPEN_EXTERNAL,
+    async (_event, url: string): Promise<void> => {
+      let parsed: URL;
+      try {
+        parsed = new URL(url);
+      } catch {
+        return;
+      }
+
+      if (!ALLOWED_EXTERNAL_PROTOCOLS.has(parsed.protocol)) {
+        return;
+      }
+
+      await shell.openExternal(parsed.toString());
+    }
+  );
 }
 
 /**
@@ -76,4 +104,5 @@ export function registerShellHandlers(): void {
 export function unregisterShellHandlers(): void {
   ipcMain.removeHandler(IPC_CHANNELS.SHELL.REVEAL_IN_FILE_MANAGER);
   ipcMain.removeHandler(IPC_CHANNELS.SHELL.OPEN_IN_EDITOR);
+  ipcMain.removeHandler(IPC_CHANNELS.SHELL.OPEN_EXTERNAL);
 }

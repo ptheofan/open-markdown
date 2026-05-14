@@ -328,6 +328,10 @@ const electronAPI: ElectronAPI = {
     openInEditor: (filePath: string): Promise<OpenInEditorResult> => {
       return ipcRenderer.invoke(IPC_CHANNELS.SHELL.OPEN_IN_EDITOR, filePath);
     },
+
+    openExternal: (url: string): Promise<void> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.SHELL.OPEN_EXTERNAL, url);
+    },
   },
 
 };

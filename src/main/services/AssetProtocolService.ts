@@ -58,13 +58,10 @@ export function registerAssetProtocolHandler(): void {
   protocol.handle(ASSET_PROTOCOL_SCHEME, async (request) => {
     let filePath: string;
     try {
-      // The renderer builds these URLs from `file:` URLs, so converting the
-      // scheme back yields a valid `file:` URL we can decode.
-      const fileUrl = request.url.replace(
-        new RegExp(`^${ASSET_PROTOCOL_SCHEME}:`),
-        'file:'
-      );
-      filePath = fileURLToPath(fileUrl);
+      // The renderer encodes the file path as the URL path under a fixed
+      // host; reattaching it to a `file:` URL yields the original path.
+      const { pathname } = new URL(request.url);
+      filePath = fileURLToPath(`file://${pathname}`);
     } catch {
       return new Response('Invalid asset URL', { status: 400 });
     }

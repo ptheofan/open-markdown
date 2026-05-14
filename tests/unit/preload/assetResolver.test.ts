@@ -8,7 +8,7 @@ import { resolveAssetUrl } from '../../../src/preload/assetResolver';
 const BASE = path.resolve('/docs/project/README.md');
 
 function expectedUrl(absolutePath: string): string {
-  return pathToFileURL(absolutePath).href.replace(/^file:/, 'om-asset:');
+  return `om-asset://local${pathToFileURL(absolutePath).pathname}`;
 }
 
 describe('resolveAssetUrl', () => {

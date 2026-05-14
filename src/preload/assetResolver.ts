@@ -8,7 +8,7 @@
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { ASSET_PROTOCOL_SCHEME } from '@shared/constants';
+import { ASSET_PROTOCOL_SCHEME, ASSET_PROTOCOL_HOST } from '@shared/constants';
 
 /**
  * Resolve an image reference against the markdown file that contains it.
@@ -57,8 +57,9 @@ export function resolveAssetUrl(baseFilePath: string, ref: string): string | nul
     ? decoded
     : path.resolve(path.dirname(baseFilePath), decoded);
 
-  return pathToFileURL(resolved).href.replace(
-    /^file:/,
-    `${ASSET_PROTOCOL_SCHEME}:`
-  );
+  // Embed the (already percent-encoded) file path under a fixed host. A bare
+  // `om-asset:///path` URL is mangled by Chromium's standard-scheme parser,
+  // which treats the first path segment as the host; a fixed host keeps the
+  // full path intact.
+  return `${ASSET_PROTOCOL_SCHEME}://${ASSET_PROTOCOL_HOST}${pathToFileURL(resolved).pathname}`;
 }

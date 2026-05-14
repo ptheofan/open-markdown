@@ -53,6 +53,13 @@ export const BUILTIN_PLUGINS = {
 export const ASSET_PROTOCOL_SCHEME = 'om-asset';
 
 /**
+ * Fixed host used in `om-asset:` URLs. The file path is carried in the URL
+ * path; a fixed host prevents Chromium's standard-scheme parser from
+ * consuming the first path segment as the host.
+ */
+export const ASSET_PROTOCOL_HOST = 'local';
+
+/**
  * Theme IDs
  */
 export const THEMES = {

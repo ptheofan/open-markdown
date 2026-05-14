@@ -31,7 +31,7 @@ function getRegisteredHandler(): ProtocolHandler {
 }
 
 function assetUrl(absolutePath: string): string {
-  return pathToFileURL(absolutePath).href.replace(/^file:/, 'om-asset:');
+  return `om-asset://local${pathToFileURL(absolutePath).pathname}`;
 }
 
 describe('AssetProtocolService', () => {

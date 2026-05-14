@@ -15,6 +15,8 @@ import { Toast } from './Toast';
 import { EditModeController, createEditModeController } from './EditModeController';
 import type { EditModeCallbacks } from './EditModeController';
 
+import { rewriteAssetPaths } from '../utils/assetPaths';
+
 import type {
   MarkdownPlugin,
   ContextMenuData,
@@ -109,6 +111,21 @@ export class MarkdownViewer {
   }
 
   /**
+   * Resolve relative and absolute local image paths in the rendered content
+   * to the app's asset protocol so they load correctly. No-op until a file
+   * path is known (e.g. unsaved content), since paths cannot be resolved
+   * without a document location.
+   */
+  private rewriteAssetPaths(): void {
+    const filePath = this.state.filePath;
+    if (!filePath) return;
+
+    rewriteAssetPaths(this.container, (ref) =>
+      window.electronAPI.assets.resolve(filePath, ref)
+    );
+  }
+
+  /**
    * Render markdown content
    */
   async render(markdown: string, filePath?: string): Promise<void> {
@@ -126,6 +143,9 @@ export class MarkdownViewer {
       // Render markdown to HTML
       const html = this.pluginManager.render(markdown);
       this.container.innerHTML = html;
+
+      // Resolve relative/local image paths against the document's location
+      this.rewriteAssetPaths();
 
       // Run post-render hooks (for Mermaid diagrams, etc.)
       await this.pluginManager.postRender(this.container);

@@ -47,6 +47,12 @@ export const BUILTIN_PLUGINS = {
 } as const;
 
 /**
+ * Custom protocol scheme used to serve local image assets referenced by
+ * relative or absolute filesystem paths in markdown documents.
+ */
+export const ASSET_PROTOCOL_SCHEME = 'om-asset';
+
+/**
  * Theme IDs
  */
 export const THEMES = {

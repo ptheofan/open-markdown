@@ -5,6 +5,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
 import { IPC_CHANNELS } from '@shared/types/api';
+import { resolveAssetUrl } from './assetResolver';
 
 import type {
   ElectronAPI,
@@ -331,6 +332,12 @@ const electronAPI: ElectronAPI = {
 
     openExternal: (url: string): Promise<void> => {
       return ipcRenderer.invoke(IPC_CHANNELS.SHELL.OPEN_EXTERNAL, url);
+    },
+  },
+
+  assets: {
+    resolve: (baseFilePath: string, ref: string): string | null => {
+      return resolveAssetUrl(baseFilePath, ref);
     },
   },
 

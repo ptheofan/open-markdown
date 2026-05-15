@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect } from 'vitest';
-import { serializeInline } from '../../../../src/renderer/services/inlineMarkdownSerializer';
+import { serializeInline, canSerialize } from '../../../../src/renderer/services/inlineMarkdownSerializer';
 
 function div(html: string): HTMLElement {
   const el = document.createElement('div');
@@ -64,5 +64,22 @@ describe('serializeInline — links, breaks, nesting, escaping', () => {
     // returns the original syntax.
     expect(serializeInline(div('the <strong>only</strong> version')))
       .toBe('the **only** version');
+  });
+});
+
+describe('canSerialize', () => {
+  it('accepts content with only supported inline tags', () => {
+    expect(canSerialize(div('a <strong>b <em>c</em></strong> <a href="x">d</a>'))).toBe(true);
+    expect(canSerialize(div('plain text'))).toBe(true);
+    expect(canSerialize(div('line<br>break'))).toBe(true);
+  });
+
+  it('rejects content with an inline image', () => {
+    expect(canSerialize(div('text <img src="x.png"> more'))).toBe(false);
+  });
+
+  it('rejects content with unsupported elements', () => {
+    expect(canSerialize(div('text <sup>2</sup>'))).toBe(false);
+    expect(canSerialize(div('text <span style="color:red">x</span>'))).toBe(false);
   });
 });

@@ -59,3 +59,25 @@ function serializeNode(node: Node): string {
       return inner;
   }
 }
+
+/** Element tags the serializer knows how to faithfully emit. */
+const SUPPORTED_TAGS = new Set([
+  'STRONG', 'B', 'EM', 'I', 'DEL', 'S', 'CODE', 'A', 'BR',
+]);
+
+/**
+ * Returns true when every element inside `root` is one the serializer can
+ * faithfully round-trip. When false, the caller must fall back to raw-markdown
+ * editing rather than risk mangling the source.
+ */
+export function canSerialize(root: HTMLElement): boolean {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+  let node = walker.nextNode();
+  while (node) {
+    if (!SUPPORTED_TAGS.has((node as Element).tagName)) {
+      return false;
+    }
+    node = walker.nextNode();
+  }
+  return true;
+}

@@ -50,3 +50,28 @@ describe('EditModeController — WYSIWYG editing', () => {
     expect(controller.getMarkdown()).toBe('# New Title');
   });
 });
+
+describe('EditModeController — raw markdown editing', () => {
+  it('startRawEdit puts a slim textarea in the slice with the raw markdown', async () => {
+    const { container, controller } = setup();
+    await controller.enter('# Title');
+    container.querySelector<HTMLElement>('.slice-content')!.click(); // WYSIWYG
+    controller.toggleRawForActiveSlice();
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea.slice-raw-editor');
+    expect(textarea).not.toBe(null);
+    expect(textarea!.value).toBe('# Title');
+  });
+
+  it('committing a raw edit updates the markdown verbatim', async () => {
+    const { container, controller } = setup();
+    const onContentChange = vi.fn();
+    controller.setCallbacks({ onContentChange });
+    await controller.enter('# Title');
+    container.querySelector<HTMLElement>('.slice-content')!.click();
+    controller.toggleRawForActiveSlice();
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea.slice-raw-editor')!;
+    textarea.value = '## Changed';
+    controller.commitActiveEditForTest();
+    expect(onContentChange).toHaveBeenCalledWith('## Changed');
+  });
+});

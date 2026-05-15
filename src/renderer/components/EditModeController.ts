@@ -42,6 +42,7 @@ export class EditModeController {
   private callbacks: EditModeCallbacks = {};
   private activeEditIndex: number | null = null;
   private activeInlineEditor: InlineEditor | null = null;
+  private activeRawTextarea: HTMLTextAreaElement | null = null;
   private activeMenu: HTMLElement | null = null;
   private sliceElements: Map<number, HTMLElement> = new Map();
 
@@ -221,11 +222,96 @@ export class EditModeController {
   }
 
   /**
-   * Placeholder for the slim raw-markdown editor wired up in Task 10. Today
-   * it falls back to leaving the slice untouched; Task 10 replaces the body.
+   * Open a slice in the slim raw-markdown textarea. Used as the fallback for
+   * unsupported inline content and as the target of the Cmd+/ toggle.
    */
-  private startRawEdit(_sliceIndex: number): void {
-    // Implemented in Task 10.
+  private startRawEdit(sliceIndex: number): void {
+    this.commitActiveEdit();
+
+    const slice = this.slices.find((s) => s.index === sliceIndex);
+    const el = this.sliceElements.get(sliceIndex);
+    if (!slice || !el) return;
+
+    const contentEl = el.querySelector<HTMLElement>('.slice-content');
+    if (!contentEl) return;
+
+    this.activeEditIndex = sliceIndex;
+    el.classList.add('slice-editing');
+
+    const textarea = document.createElement('textarea');
+    textarea.className = 'slice-raw-editor';
+    textarea.value = slice.raw;
+    textarea.spellcheck = false;
+
+    const resize = (): void => {
+      textarea.style.height = 'auto';
+      textarea.style.height = `${textarea.scrollHeight}px`;
+    };
+    textarea.addEventListener('input', resize);
+    textarea.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        this.commitActiveEdit();
+      }
+    });
+
+    contentEl.replaceChildren(textarea);
+    this.activeRawTextarea = textarea;
+    textarea.focus();
+    resize();
+  }
+
+  /**
+   * Commit a raw-textarea edit: the textarea value is the slice's markdown
+   * verbatim — no block-prefix reconciliation needed.
+   */
+  private commitRawEdit(sliceIndex: number): void {
+    const textarea = this.activeRawTextarea;
+    this.activeRawTextarea = null;
+    if (!textarea) return;
+
+    const slice = this.slices.find((s) => s.index === sliceIndex);
+    const el = this.sliceElements.get(sliceIndex);
+    if (!slice || !el) return;
+
+    const newRaw = textarea.value;
+    if (newRaw !== slice.raw) {
+      const result = this.slicer.updateSlice(this.slices, sliceIndex, newRaw);
+      this.rawMarkdown = result.markdown;
+      this.slices = result.slices;
+      this.callbacks.onContentChange?.(this.rawMarkdown);
+    }
+
+    el.classList.remove('slice-editing');
+    const contentEl = el.querySelector('.slice-content');
+    const updatedSlice = this.slices.find((s) => s.index === sliceIndex);
+    if (contentEl) {
+      const html = this.pluginManager.render(updatedSlice?.raw ?? slice.raw);
+      contentEl.replaceChildren();
+      contentEl.insertAdjacentHTML('afterbegin', html);
+      contentEl.addEventListener('click', (e) => {
+        if ((e.target as HTMLElement).closest('a')) return;
+        e.stopPropagation();
+        this.startEdit(sliceIndex);
+      });
+      void this.pluginManager.postRender(contentEl as HTMLElement);
+    }
+  }
+
+  /**
+   * Toggle the active slice between WYSIWYG and raw-markdown editing.
+   * Bound to Cmd+/ and the "Edit as markdown" handle-menu item.
+   */
+  toggleRawForActiveSlice(): void {
+    const sliceIndex = this.activeEditIndex;
+    if (sliceIndex === null) return;
+    const wasRaw = this.activeRawTextarea !== null;
+    this.commitActiveEdit();
+    if (wasRaw) {
+      this.startEdit(sliceIndex);
+    } else {
+      this.startRawEdit(sliceIndex);
+    }
   }
 
   /**
@@ -234,7 +320,13 @@ export class EditModeController {
    */
   private commitActiveEdit(): void {
     if (this.activeEditIndex === null) return;
+    const sliceIndex = this.activeEditIndex;
     this.activeEditIndex = null;
+
+    if (this.activeRawTextarea) {
+      this.commitRawEdit(sliceIndex);
+      return;
+    }
     const editor = this.activeInlineEditor;
     this.activeInlineEditor = null;
     editor?.commit();

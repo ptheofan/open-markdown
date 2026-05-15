@@ -80,3 +80,60 @@ describe('InlineEditor mark toggle', () => {
     expect(editor.isMarkActive('bold' as InlineMark)).toBe(false);
   });
 });
+
+function keydown(el: HTMLElement, key: string, mods: Partial<KeyboardEventInit> = {}): void {
+  el.dispatchEvent(new KeyboardEvent('keydown', {
+    key, bubbles: true, cancelable: true, ...mods,
+  }));
+}
+
+describe('InlineEditor keyboard shortcuts', () => {
+  it('Cmd+B toggles bold over the selection', () => {
+    const el = contentEl('hello');
+    const editor = new InlineEditor(el, { onCommit: vi.fn() });
+    editor.start();
+    selectAll(el);
+    keydown(el, 'b', { metaKey: true });
+    expect(el.querySelector('strong')?.textContent).toBe('hello');
+  });
+
+  it('Cmd+I toggles italic, Cmd+E toggles code', () => {
+    const el = contentEl('hello');
+    const editor = new InlineEditor(el, { onCommit: vi.fn() });
+    editor.start();
+    selectAll(el);
+    keydown(el, 'i', { metaKey: true });
+    expect(el.querySelector('em')?.textContent).toBe('hello');
+    selectAll(el.querySelector('em')!);
+    keydown(el, 'e', { metaKey: true });
+    expect(el.querySelector('code')).not.toBe(null);
+  });
+
+  it('Cmd+Shift+X toggles strikethrough', () => {
+    const el = contentEl('hello');
+    const editor = new InlineEditor(el, { onCommit: vi.fn() });
+    editor.start();
+    selectAll(el);
+    keydown(el, 'x', { metaKey: true, shiftKey: true });
+    expect(el.querySelector('del')?.textContent).toBe('hello');
+  });
+
+  it('Escape commits the session', () => {
+    const el = contentEl('hello');
+    const onCommit = vi.fn();
+    const editor = new InlineEditor(el, { onCommit });
+    editor.start();
+    keydown(el, 'Escape');
+    expect(onCommit).toHaveBeenCalledWith('hello');
+  });
+
+  it('stops listening for shortcuts after commit', () => {
+    const el = contentEl('hello');
+    const editor = new InlineEditor(el, { onCommit: vi.fn() });
+    editor.start();
+    editor.commit();
+    selectAll(el);
+    keydown(el, 'b', { metaKey: true });
+    expect(el.querySelector('strong')).toBe(null);
+  });
+});

@@ -12,6 +12,8 @@ import { serializeInline } from '../services/inlineMarkdownSerializer';
 export interface InlineEditorCallbacks {
   /** Called once when the session commits, with the segment's inline markdown. */
   onCommit: (markdown: string) => void;
+  /** Called when the user requests link insertion (Cmd+K). Optional. */
+  onRequestLink?: () => void;
 }
 
 /** The inline marks the editor can toggle. */
@@ -47,6 +49,7 @@ export class InlineEditor {
   start(): void {
     this.el.setAttribute('contenteditable', 'true');
     this.el.spellcheck = false;
+    this.el.addEventListener('keydown', this.onKeyDown);
     this.el.focus();
   }
 
@@ -54,10 +57,39 @@ export class InlineEditor {
   commit(): void {
     if (this.committed) return;
     this.committed = true;
+    this.el.removeEventListener('keydown', this.onKeyDown);
     const markdown = serializeInline(this.el);
     this.el.removeAttribute('contenteditable');
     this.callbacks.onCommit(markdown);
   }
+
+  private readonly onKeyDown = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      this.commit();
+      return;
+    }
+    const mod = e.metaKey || e.ctrlKey;
+    if (!mod) return;
+
+    const key = e.key.toLowerCase();
+    if (key === 'b') {
+      e.preventDefault();
+      this.toggleMark('bold');
+    } else if (key === 'i') {
+      e.preventDefault();
+      this.toggleMark('italic');
+    } else if (key === 'e') {
+      e.preventDefault();
+      this.toggleMark('code');
+    } else if (key === 'x' && e.shiftKey) {
+      e.preventDefault();
+      this.toggleMark('strikethrough');
+    } else if (key === 'k') {
+      e.preventDefault();
+      this.callbacks.onRequestLink?.();
+    }
+  };
 
   /** Toggle an inline mark over the current selection. */
   toggleMark(mark: InlineMark): void {

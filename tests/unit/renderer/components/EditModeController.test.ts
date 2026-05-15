@@ -123,7 +123,7 @@ describe('EditModeController — floating toolbar wiring', () => {
     const { container, controller } = setup();
     await controller.enter('Hello world');
     container.querySelector<HTMLElement>('.slice-content')!.click();
-    const toolbar = container.querySelector('.inline-format-toolbar') as HTMLElement | null;
+    const toolbar = container.querySelector<HTMLElement>('.inline-format-toolbar');
     expect(toolbar === null || toolbar.hidden).toBe(true);
   });
 

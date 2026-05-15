@@ -60,9 +60,17 @@ function serializeNode(node: Node): string {
   }
 }
 
-/** Element tags the serializer knows how to faithfully emit. */
+/** Element tags the serializer knows how to faithfully emit. The block-level
+ *  tags (P, H1-H6, UL/OL/LI, BLOCKQUOTE) appear as the markdown-it-rendered
+ *  wrappers around a slice's inline content; serializeNode's default case
+ *  descends into them transparently, and the controller re-applies the slice's
+ *  block prefix on commit. Anything outside this set (inline <img>, <sup>,
+ *  styled <span>, raw HTML, tables, <pre>/code-block, <hr>) routes to the raw
+ *  editor so source is never silently mangled. */
 const SUPPORTED_TAGS = new Set([
   'STRONG', 'B', 'EM', 'I', 'DEL', 'S', 'CODE', 'A', 'BR',
+  'P', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
+  'UL', 'OL', 'LI', 'BLOCKQUOTE',
 ]);
 
 /**

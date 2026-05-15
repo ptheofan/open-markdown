@@ -7,6 +7,8 @@
  */
 import { MarkdownSlicer, type MarkdownSlice } from '../services/MarkdownSlicer';
 import type { PluginManager } from '@plugins/core/PluginManager';
+import { InlineEditor } from './InlineEditor';
+import { canSerialize } from '../services/inlineMarkdownSerializer';
 
 /**
  * Callbacks for EditModeController events
@@ -39,6 +41,7 @@ export class EditModeController {
   private rawMarkdown = '';
   private callbacks: EditModeCallbacks = {};
   private activeEditIndex: number | null = null;
+  private activeInlineEditor: InlineEditor | null = null;
   private activeMenu: HTMLElement | null = null;
   private sliceElements: Map<number, HTMLElement> = new Map();
 
@@ -153,99 +156,93 @@ export class EditModeController {
   }
 
   /**
-   * Start inline editing of a slice
+   * Start inline editing of a slice using the WYSIWYG InlineEditor.
    */
   private startEdit(sliceIndex: number): void {
-    // Commit any previous edit
     this.commitActiveEdit();
 
-    const slice = this.slices.find(s => s.index === sliceIndex);
+    const slice = this.slices.find((s) => s.index === sliceIndex);
     const el = this.sliceElements.get(sliceIndex);
     if (!slice || !el) return;
+
+    const contentEl = el.querySelector<HTMLElement>('.slice-content');
+    if (!contentEl) return;
+
+    // Unsupported inline content is handled by the raw editor (Task 10).
+    if (!canSerialize(contentEl)) {
+      this.startRawEdit(sliceIndex);
+      return;
+    }
 
     this.activeEditIndex = sliceIndex;
     el.classList.add('slice-editing');
 
-    const contentEl = el.querySelector('.slice-content');
-    if (!contentEl) return;
-
-    // Replace rendered HTML with textarea
-    const textarea = document.createElement('textarea');
-    textarea.className = 'slice-editor';
-    textarea.value = slice.raw;
-    textarea.spellcheck = false;
-
-    // Auto-resize
-    const resize = (): void => {
-      textarea.style.height = 'auto';
-      textarea.style.height = textarea.scrollHeight + 'px';
-    };
-
-    textarea.addEventListener('input', resize);
-
-    // Handle keyboard shortcuts
-    textarea.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        this.commitActiveEdit();
-      }
+    this.activeInlineEditor = new InlineEditor(contentEl, {
+      onCommit: (inlineMarkdown) => {
+        this.applyInlineCommit(sliceIndex, inlineMarkdown);
+      },
     });
-
-    contentEl.innerHTML = '';
-    contentEl.appendChild(textarea);
-
-    // Focus and resize
-    textarea.focus();
-    resize();
+    this.activeInlineEditor.start();
   }
 
   /**
-   * Commit the active edit and re-render the slice
+   * Apply the markdown produced by an InlineEditor commit: re-attach the
+   * slice's block prefix, push it through the slicer, and re-render the slice.
    */
-  private commitActiveEdit(): void {
-    if (this.activeEditIndex === null) return;
-
-    const sliceIndex = this.activeEditIndex;
-    // Clear immediately to prevent race conditions with async postRender
-    this.activeEditIndex = null;
-
+  private applyInlineCommit(sliceIndex: number, inlineMarkdown: string): void {
+    const slice = this.slices.find((s) => s.index === sliceIndex);
     const el = this.sliceElements.get(sliceIndex);
-    if (!el) return;
+    if (!slice || !el) return;
 
-    const textarea = el.querySelector<HTMLTextAreaElement>('.slice-editor');
-    if (!textarea) return;
+    const blockType = this.detectBlockType(slice.raw);
+    const newRaw = this.applyBlockPrefix(inlineMarkdown, blockType);
 
-    const newRaw = textarea.value;
-    const slice = this.slices.find(s => s.index === sliceIndex);
-
-    if (slice && newRaw !== slice.raw) {
-      // Update the slice and recalculate
+    if (newRaw !== slice.raw) {
       const result = this.slicer.updateSlice(this.slices, sliceIndex, newRaw);
       this.rawMarkdown = result.markdown;
       this.slices = result.slices;
-
-      // Notify of content change
       this.callbacks.onContentChange?.(this.rawMarkdown);
     }
 
-    // Re-render just this slice's content
     el.classList.remove('slice-editing');
     const contentEl = el.querySelector('.slice-content');
-    if (contentEl && slice) {
-      const updatedSlice = this.slices.find(s => s.index === sliceIndex);
+    const updatedSlice = this.slices.find((s) => s.index === sliceIndex);
+    if (contentEl) {
       const html = this.pluginManager.render(updatedSlice?.raw ?? slice.raw);
-      contentEl.innerHTML = html;
-
-      // Re-attach click handler
+      contentEl.replaceChildren();
+      contentEl.insertAdjacentHTML('afterbegin', html);
       contentEl.addEventListener('click', (e) => {
         if ((e.target as HTMLElement).closest('a')) return;
         e.stopPropagation();
         this.startEdit(sliceIndex);
       });
-
-      // Run post-render asynchronously (non-blocking)
       void this.pluginManager.postRender(contentEl as HTMLElement);
     }
+  }
+
+  /**
+   * Placeholder for the slim raw-markdown editor wired up in Task 10. Today
+   * it falls back to leaving the slice untouched; Task 10 replaces the body.
+   */
+  private startRawEdit(_sliceIndex: number): void {
+    // Implemented in Task 10.
+  }
+
+  /**
+   * Commit the active edit. The InlineEditor's onCommit callback does the
+   * markdown reconciliation; this just triggers it and clears local state.
+   */
+  private commitActiveEdit(): void {
+    if (this.activeEditIndex === null) return;
+    this.activeEditIndex = null;
+    const editor = this.activeInlineEditor;
+    this.activeInlineEditor = null;
+    editor?.commit();
+  }
+
+  /** Test-only: deterministically commit the active edit. */
+  commitActiveEditForTest(): void {
+    this.commitActiveEdit();
   }
 
   /**

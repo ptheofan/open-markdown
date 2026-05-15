@@ -34,3 +34,35 @@ describe('serializeInline — text and flat marks', () => {
     expect(serializeInline(div('use <code>npm i</code> now'))).toBe('use `npm i` now');
   });
 });
+
+describe('serializeInline — links, breaks, nesting, escaping', () => {
+  it('serializes anchors to [text](href)', () => {
+    expect(serializeInline(div('see <a href="https://x.com">the site</a>')))
+      .toBe('see [the site](https://x.com)');
+  });
+
+  it('serializes br to a newline', () => {
+    expect(serializeInline(div('line one<br>line two'))).toBe('line one\nline two');
+  });
+
+  it('serializes nested marks', () => {
+    expect(serializeInline(div('<strong>bold <em>and italic</em></strong>')))
+      .toBe('**bold *and italic***');
+  });
+
+  it('escapes literal markdown characters in text nodes', () => {
+    expect(serializeInline(div('a literal * and _ and ` and ~ and [ and ]')))
+      .toBe('a literal \\* and \\_ and \\` and \\~ and \\[ and \\]');
+  });
+
+  it('does not escape inside inline code', () => {
+    expect(serializeInline(div('<code>a * b</code>'))).toBe('`a * b`');
+  });
+
+  it('round-trips: emphasis text survives markdown -> render -> serialize', () => {
+    // markdown-it would render "**only**" as <strong>only</strong>; serializing
+    // returns the original syntax.
+    expect(serializeInline(div('the <strong>only</strong> version')))
+      .toBe('the **only** version');
+  });
+});

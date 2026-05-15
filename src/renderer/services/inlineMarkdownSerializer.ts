@@ -19,9 +19,18 @@ export function serializeInline(root: HTMLElement): string {
   return out;
 }
 
+/** Characters that, appearing literally in rendered text, would be re-parsed
+ *  as markdown syntax. Block-level characters (#, -, etc.) are intentionally
+ *  not escaped — they are inert inside inline content. */
+const ESCAPE_RE = /([\\`*_~[\]])/g;
+
+function escapeText(text: string): string {
+  return text.replace(ESCAPE_RE, '\\$1');
+}
+
 function serializeNode(node: Node): string {
   if (node.nodeType === Node.TEXT_NODE) {
-    return node.textContent ?? '';
+    return escapeText(node.textContent ?? '');
   }
   if (node.nodeType !== Node.ELEMENT_NODE) {
     return '';
@@ -40,6 +49,12 @@ function serializeNode(node: Node): string {
       return `~~${inner}~~`;
     case 'CODE':
       return `\`${el.textContent ?? ''}\``;
+    case 'A': {
+      const href = el.getAttribute('href') ?? '';
+      return `[${inner}](${href})`;
+    }
+    case 'BR':
+      return '\n';
     default:
       return inner;
   }

@@ -1771,8 +1771,13 @@ button:focus:not(:focus-visible) {
 }
 
 .slice.slice-editing .slice-content {
-  box-shadow: 0 0 0 2px var(--link-color);
   background-color: var(--bg-color);
+  box-shadow: inset 2px 0 0 var(--link-color);
+}
+
+.slice-content[contenteditable='true'] {
+  outline: none;
+  cursor: text;
 }
 
 /* Reset margins on rendered content inside slices */
@@ -1784,13 +1789,13 @@ button:focus:not(:focus-visible) {
   margin-bottom: 0;
 }
 
-/* Slice editor textarea */
-.slice-editor {
+/* Slim raw-markdown editor (used by the "Edit as markdown" toggle) */
+.slice-raw-editor {
   width: 100%;
-  min-height: 40px;
-  padding: 8px;
+  min-height: 1.6em;
+  padding: 0;
   border: none;
-  border-radius: 4px;
+  border-radius: 0;
   background: transparent;
   color: var(--text-color);
   font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
@@ -1801,7 +1806,7 @@ button:focus:not(:focus-visible) {
   overflow: hidden;
 }
 
-.slice-editor:focus {
+.slice-raw-editor:focus {
   outline: none;
 }
 
@@ -1918,6 +1923,44 @@ button:focus:not(:focus-visible) {
   border-radius: 3px;
   color: var(--text-muted);
   flex-shrink: 0;
+}
+
+/* Floating inline-format toolbar */
+.inline-format-toolbar {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 6px;
+  background: var(--bg-color);
+  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.12));
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 200;
+}
+
+.inline-format-toolbar[hidden] {
+  display: none;
+}
+
+.inline-format-toolbar button {
+  min-width: 26px;
+  height: 26px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-color);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.inline-format-toolbar button:hover {
+  background: var(--hover-bg, rgba(0, 0, 0, 0.06));
+}
+
+.inline-format-toolbar button.is-active {
+  background: var(--link-color);
+  color: #fff;
 }
 
 /* Edit mode badge in status bar */

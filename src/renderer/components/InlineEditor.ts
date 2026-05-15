@@ -150,6 +150,45 @@ export class InlineEditor {
     sel.addRange(newRange);
   }
 
+  /**
+   * Wrap the current selection in an anchor pointing at `href`. An empty
+   * `href` unwraps an existing anchor over the selection instead.
+   */
+  applyLink(href: string): void {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    if (!this.el.contains(range.commonAncestorContainer)) return;
+
+    const existing = this.findAncestorTag(range, 'A') as HTMLAnchorElement | null;
+    if (existing) {
+      const parent = existing.parentNode!;
+      while (existing.firstChild) {
+        parent.insertBefore(existing.firstChild, existing);
+      }
+      parent.removeChild(existing);
+    }
+    if (!href) return;
+
+    const anchor = document.createElement('a');
+    anchor.setAttribute('href', href);
+    anchor.appendChild(range.extractContents());
+    range.insertNode(anchor);
+    this.el.focus();
+  }
+
+  private findAncestorTag(range: Range, tag: string): Element | null {
+    let node: Node | null = this.deepestStart(range);
+    while (node && node !== this.el) {
+      if (node.nodeType === Node.ELEMENT_NODE
+          && (node as Element).tagName === tag) {
+        return node as Element;
+      }
+      node = node.parentNode;
+    }
+    return null;
+  }
+
   private unwrapMark(range: Range, mark: InlineMark): void {
     const aliases = MARK_ALIASES[mark];
     let node: Node | null = this.deepestStart(range);

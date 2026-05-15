@@ -137,3 +137,35 @@ describe('InlineEditor keyboard shortcuts', () => {
     expect(el.querySelector('strong')).toBe(null);
   });
 });
+
+describe('InlineEditor link insertion', () => {
+  it('applyLink wraps the selection in an anchor with the given href', () => {
+    const el = contentEl('click here');
+    const editor = new InlineEditor(el, { onCommit: vi.fn() });
+    editor.start();
+    selectAll(el);
+    editor.applyLink('https://example.com');
+    const a = el.querySelector('a');
+    expect(a?.getAttribute('href')).toBe('https://example.com');
+    expect(a?.textContent).toBe('click here');
+  });
+
+  it('applyLink with an empty href unwraps an existing anchor over the selection', () => {
+    const el = contentEl('<a href="https://x.com">link</a>');
+    const editor = new InlineEditor(el, { onCommit: vi.fn() });
+    editor.start();
+    selectAll(el);
+    editor.applyLink('');
+    expect(el.querySelector('a')).toBe(null);
+    expect(el.textContent).toBe('link');
+  });
+
+  it('Cmd+K invokes the onRequestLink callback', () => {
+    const el = contentEl('hello');
+    const onRequestLink = vi.fn();
+    const editor = new InlineEditor(el, { onCommit: vi.fn(), onRequestLink });
+    editor.start();
+    keydown(el, 'k', { metaKey: true });
+    expect(onRequestLink).toHaveBeenCalledTimes(1);
+  });
+});

@@ -75,3 +75,35 @@ describe('EditModeController — raw markdown editing', () => {
     expect(onContentChange).toHaveBeenCalledWith('## Changed');
   });
 });
+
+describe('EditModeController — global shortcuts and menu', () => {
+  it('Cmd+/ toggles the active slice to raw editing', async () => {
+    const { container, controller } = setup();
+    await controller.enter('# Title');
+    container.querySelector<HTMLElement>('.slice-content')!.click();
+    document.dispatchEvent(new KeyboardEvent('keydown', {
+      key: '/', metaKey: true, bubbles: true, cancelable: true,
+    }));
+    expect(container.querySelector('textarea.slice-raw-editor')).not.toBe(null);
+  });
+
+  it('Cmd+Shift+F toggles the floating toolbar visibility flag', async () => {
+    const { controller } = setup();
+    await controller.enter('# Title');
+    expect(controller.isToolbarVisible()).toBe(false);
+    document.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'f', metaKey: true, shiftKey: true, bubbles: true, cancelable: true,
+    }));
+    expect(controller.isToolbarVisible()).toBe(true);
+  });
+
+  it('exit() removes the global key listener', async () => {
+    const { controller } = setup();
+    await controller.enter('# Title');
+    controller.exit();
+    document.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'f', metaKey: true, shiftKey: true, bubbles: true, cancelable: true,
+    }));
+    expect(controller.isToolbarVisible()).toBe(false);
+  });
+});

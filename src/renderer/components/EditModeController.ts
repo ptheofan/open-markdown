@@ -23,7 +23,9 @@ export interface EditModeCallbacks {
 /**
  * Actions available from the slice handle menu
  */
-export type SliceAction = 'delete' | 'duplicate' | 'move-up' | 'move-down' | 'add-above' | 'add-below';
+export type SliceAction =
+  | 'delete' | 'duplicate' | 'move-up' | 'move-down' | 'add-above' | 'add-below'
+  | 'edit-as-markdown' | 'toggle-toolbar';
 
 /**
  * Block types a slice can be converted to
@@ -43,6 +45,7 @@ export class EditModeController {
   private activeEditIndex: number | null = null;
   private activeInlineEditor: InlineEditor | null = null;
   private activeRawTextarea: HTMLTextAreaElement | null = null;
+  private toolbarVisible = false;
   private activeMenu: HTMLElement | null = null;
   private sliceElements: Map<number, HTMLElement> = new Map();
 
@@ -67,6 +70,7 @@ export class EditModeController {
     this.slices = this.slicer.slice(markdown);
     await this.renderSlices();
     document.addEventListener('click', this.handleDocumentClick);
+    document.addEventListener('keydown', this.onGlobalKeyDown);
   }
 
   /**
@@ -76,6 +80,8 @@ export class EditModeController {
     this.commitActiveEdit();
     this.closeMenu();
     document.removeEventListener('click', this.handleDocumentClick);
+    document.removeEventListener('keydown', this.onGlobalKeyDown);
+    this.toolbarVisible = false;
     this.sliceElements.clear();
     this.activeEditIndex = null;
     return this.rawMarkdown;
@@ -337,6 +343,28 @@ export class EditModeController {
     this.commitActiveEdit();
   }
 
+  private readonly onGlobalKeyDown = (e: KeyboardEvent): void => {
+    const mod = e.metaKey || e.ctrlKey;
+    if (!mod) return;
+    if (e.key === '/') {
+      e.preventDefault();
+      this.toggleRawForActiveSlice();
+    } else if (e.key.toLowerCase() === 'f' && e.shiftKey) {
+      e.preventDefault();
+      this.setToolbarVisible(!this.toolbarVisible);
+    }
+  };
+
+  /** Whether the floating toolbar is currently enabled (global state). */
+  isToolbarVisible(): boolean {
+    return this.toolbarVisible;
+  }
+
+  /** Enable/disable the floating toolbar. Toolbar UI wiring is Task 12. */
+  setToolbarVisible(visible: boolean): void {
+    this.toolbarVisible = visible;
+  }
+
   /**
    * Toggle the options menu for a slice handle
    */
@@ -416,6 +444,19 @@ export class EditModeController {
           <path d="M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2z"/>
         </svg>
         Add block below
+      </button>
+      <div class="slice-menu-divider"></div>
+      <button data-action="edit-as-markdown" class="slice-menu-item">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M0 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V4zm2-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1H2z"/>
+        </svg>
+        Edit as markdown
+      </button>
+      <button data-action="toggle-toolbar" class="slice-menu-item">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M2 4h12v2H2V4zm0 4h8v2H2V8z"/>
+        </svg>
+        Show/hide formatting toolbar
       </button>
       <div class="slice-menu-divider"></div>
       <button data-action="duplicate" class="slice-menu-item">
@@ -596,6 +637,19 @@ export class EditModeController {
    */
   private handleSliceAction(action: SliceAction, sliceIndex: number): void {
     this.commitActiveEdit();
+
+    if (action === 'edit-as-markdown') {
+      if (this.activeEditIndex === sliceIndex) {
+        this.toggleRawForActiveSlice();
+      } else {
+        this.startRawEdit(sliceIndex);
+      }
+      return;
+    }
+    if (action === 'toggle-toolbar') {
+      this.setToolbarVisible(!this.toolbarVisible);
+      return;
+    }
 
     const idx = this.slices.findIndex(s => s.index === sliceIndex);
     if (idx === -1) return;

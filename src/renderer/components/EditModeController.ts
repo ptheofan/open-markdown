@@ -8,6 +8,8 @@
 import { MarkdownSlicer, type MarkdownSlice } from '../services/MarkdownSlicer';
 import type { PluginManager } from '@plugins/core/PluginManager';
 import { InlineEditor } from './InlineEditor';
+import type { InlineMark } from './InlineEditor';
+import { FloatingFormatToolbar, type ToolbarAction } from './FloatingFormatToolbar';
 import { canSerialize } from '../services/inlineMarkdownSerializer';
 
 /**
@@ -46,6 +48,7 @@ export class EditModeController {
   private activeInlineEditor: InlineEditor | null = null;
   private activeRawTextarea: HTMLTextAreaElement | null = null;
   private toolbarVisible = false;
+  private toolbar: FloatingFormatToolbar | null = null;
   private activeMenu: HTMLElement | null = null;
   private sliceElements: Map<number, HTMLElement> = new Map();
 
@@ -81,6 +84,8 @@ export class EditModeController {
     this.closeMenu();
     document.removeEventListener('click', this.handleDocumentClick);
     document.removeEventListener('keydown', this.onGlobalKeyDown);
+    this.toolbar?.getElement().remove();
+    this.toolbar = null;
     this.toolbarVisible = false;
     this.sliceElements.clear();
     this.activeEditIndex = null;
@@ -188,8 +193,15 @@ export class EditModeController {
       onCommit: (inlineMarkdown) => {
         this.applyInlineCommit(sliceIndex, inlineMarkdown);
       },
+      onRequestLink: () => {
+        if (this.activeInlineEditor) this.promptAndApplyLink(this.activeInlineEditor);
+      },
     });
     this.activeInlineEditor.start();
+    if (this.toolbarVisible) {
+      this.getToolbar().show(contentEl);
+      this.refreshToolbarState();
+    }
   }
 
   /**
@@ -335,6 +347,7 @@ export class EditModeController {
     }
     const editor = this.activeInlineEditor;
     this.activeInlineEditor = null;
+    this.toolbar?.hide();
     editor?.commit();
   }
 
@@ -360,9 +373,65 @@ export class EditModeController {
     return this.toolbarVisible;
   }
 
-  /** Enable/disable the floating toolbar. Toolbar UI wiring is Task 12. */
+  /** Enable/disable the floating toolbar. Reflects immediately for the active slice. */
   setToolbarVisible(visible: boolean): void {
     this.toolbarVisible = visible;
+    if (!visible) {
+      this.toolbar?.hide();
+      return;
+    }
+    if (this.activeEditIndex !== null && this.activeInlineEditor) {
+      const el = this.sliceElements.get(this.activeEditIndex);
+      const contentEl = el?.querySelector<HTMLElement>('.slice-content');
+      if (contentEl) {
+        this.getToolbar().show(contentEl);
+        this.refreshToolbarState();
+      }
+    }
+  }
+
+  private getToolbar(): FloatingFormatToolbar {
+    if (!this.toolbar) {
+      this.toolbar = new FloatingFormatToolbar({
+        onAction: (action) => this.handleToolbarAction(action),
+      });
+      this.container.appendChild(this.toolbar.getElement());
+    }
+    return this.toolbar;
+  }
+
+  private handleToolbarAction(action: ToolbarAction): void {
+    const editor = this.activeInlineEditor;
+    if (!editor) return;
+    if (action === 'link') {
+      this.promptAndApplyLink(editor);
+      return;
+    }
+    if (action === 'clear') {
+      (['bold', 'italic', 'strikethrough', 'code'] as InlineMark[]).forEach((m) => {
+        if (editor.isMarkActive(m)) editor.toggleMark(m);
+      });
+      this.refreshToolbarState();
+      return;
+    }
+    editor.toggleMark(action as InlineMark);
+    this.refreshToolbarState();
+  }
+
+  /** Prompt for a URL and apply it as a link on the editor's selection. */
+  private promptAndApplyLink(editor: InlineEditor): void {
+    const href = window.prompt('Link URL') ?? '';
+    editor.applyLink(href.trim());
+  }
+
+  private refreshToolbarState(): void {
+    if (!this.toolbar || !this.activeInlineEditor) return;
+    const editor = this.activeInlineEditor;
+    const active: ToolbarAction[] = [];
+    (['bold', 'italic', 'strikethrough', 'code'] as InlineMark[]).forEach((m) => {
+      if (editor.isMarkActive(m)) active.push(m);
+    });
+    this.toolbar.setActiveMarks(active);
   }
 
   /**

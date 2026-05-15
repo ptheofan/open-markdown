@@ -107,3 +107,40 @@ describe('EditModeController — global shortcuts and menu', () => {
     expect(controller.isToolbarVisible()).toBe(false);
   });
 });
+
+describe('EditModeController — floating toolbar wiring', () => {
+  it('shows the toolbar above a slice being edited when toolbar is enabled', async () => {
+    const { container, controller } = setup();
+    await controller.enter('Hello world');
+    controller.setToolbarVisible(true);
+    container.querySelector<HTMLElement>('.slice-content')!.click();
+    const toolbar = container.querySelector('.inline-format-toolbar') as HTMLElement;
+    expect(toolbar).not.toBe(null);
+    expect(toolbar.hidden).toBe(false);
+  });
+
+  it('keeps the toolbar hidden when toolbar is disabled', async () => {
+    const { container, controller } = setup();
+    await controller.enter('Hello world');
+    container.querySelector<HTMLElement>('.slice-content')!.click();
+    const toolbar = container.querySelector('.inline-format-toolbar') as HTMLElement | null;
+    expect(toolbar === null || toolbar.hidden).toBe(true);
+  });
+
+  it('a toolbar bold action wraps the selection in the active editor', async () => {
+    const { container, controller } = setup();
+    await controller.enter('Hello world');
+    controller.setToolbarVisible(true);
+    const content = container.querySelector<HTMLElement>('.slice-content')!;
+    content.click();
+    const range = document.createRange();
+    range.selectNodeContents(content);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(range);
+    container
+      .querySelector<HTMLButtonElement>('.inline-format-toolbar [data-action="bold"]')!
+      .click();
+    expect(content.querySelector('strong')).not.toBe(null);
+  });
+});

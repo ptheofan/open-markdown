@@ -1727,7 +1727,7 @@ button:focus:not(:focus-visible) {
 .slice-handle {
   position: absolute;
   left: -32px;
-  top: var(--slice-handle-top, 4px);
+  top: var(--slice-handle-top, 0px);
   width: 32px;
   display: flex;
   align-items: flex-start;
@@ -1738,9 +1738,18 @@ button:focus:not(:focus-visible) {
   -webkit-user-select: none;
 }
 
-.slice-h1, .slice-h2, .slice-h3, .slice-h4, .slice-h5, .slice-h6 {
-  --slice-handle-top: 28px; /* heading margin-top (24px) + 4px gutter */
-}
+/* Per-block-type vertical offsets so the 24px handle button centers on the
+ * first text line. Default (0px) targets paragraphs, lists, blockquotes —
+ * their content sits at slice-top with body line-height (~21px); button
+ * center at y=12 ≈ text center at y=10.5. Heading values combine each
+ * heading's margin-top (24px) with the heading's line-height / 2 minus the
+ * button's half-height — i.e. 24 + (line-height-px − 24) / 2. */
+.slice-h1 { --slice-handle-top: 30px; } /* 2em * 1.25 = 35px line, center y=41.5 */
+.slice-h2 { --slice-handle-top: 25px; } /* 1.5em * 1.25 = 26.25, center y=37 */
+.slice-h3 { --slice-handle-top: 23px; } /* 1.25em * 1.25 = 21.9, center y=35 */
+.slice-h4 { --slice-handle-top: 21px; } /* 1em * 1.25 = 17.5, center y=32.75 */
+.slice-h5 { --slice-handle-top: 20px; } /* 0.875em * 1.25 = 15.3, center y=31.65 */
+.slice-h6 { --slice-handle-top: 19px; } /* 0.85em * 1.25 = 14.9, center y=31.45 */
 
 .slice-handle-btn {
   display: flex;

@@ -1788,7 +1788,21 @@ button:focus:not(:focus-visible) {
 
 .slice.slice-editing .slice-content {
   background-color: var(--bg-color);
-  box-shadow: inset 2px 0 0 var(--link-color);
+}
+
+/* Editing affordance: a 2px bar in the gutter, 6px away from the text. Drawn
+ * via a pseudo-element instead of inset box-shadow so it sits outside the
+ * content box and never overlaps the caret when it lands at the line start. */
+.slice.slice-editing .slice-content::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background-color: var(--link-color);
+  border-radius: 1px;
+  pointer-events: none;
 }
 
 .slice-content[contenteditable='true'] {

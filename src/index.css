@@ -1702,15 +1702,14 @@ button:focus:not(:focus-visible) {
   position: relative;
 }
 
-/* Slice wrapper */
+/* Slice wrapper. Block layout (not flex) so the rendered content inside
+ * behaves identically to view mode — adjacent slices' margins collapse and
+ * each slice's vertical rhythm matches its un-wrapped counterpart. The handle
+ * is positioned absolutely in the left gutter so it doesn't consume flow. */
 .slice {
   position: relative;
-  display: flex;
-  align-items: stretch;
   border-radius: 4px;
   transition: background-color 0.15s ease;
-  margin-left: -40px;
-  padding-left: 0;
 }
 
 .slice:hover {
@@ -1721,19 +1720,26 @@ button:focus:not(:focus-visible) {
   opacity: 1;
 }
 
-/* Slice handle (left side, Notion-style grip) */
+/* Slice handle — floats in the negative-x gutter so it sits outside the
+ * content box. Vertical offset depends on the slice's block type because
+ * headings push their content down by margin-top; the per-type overrides
+ * below align the handle with the first line of text. */
 .slice-handle {
-  position: relative;
-  flex-shrink: 0;
+  position: absolute;
+  left: -32px;
+  top: var(--slice-handle-top, 4px);
   width: 32px;
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding-top: 4px;
   opacity: 0;
   transition: opacity 0.15s ease;
   user-select: none;
   -webkit-user-select: none;
+}
+
+.slice-h1, .slice-h2, .slice-h3, .slice-h4, .slice-h5, .slice-h6 {
+  --slice-handle-top: 28px; /* heading margin-top (24px) + 4px gutter */
 }
 
 .slice-handle-btn {
@@ -1760,13 +1766,13 @@ button:focus:not(:focus-visible) {
   cursor: grabbing;
 }
 
-/* Slice content area */
+/* Slice content area. Zero-padding and no margin resets so the inner
+ * markdown layout is byte-identical to view mode — headings keep their
+ * top/bottom margins, paragraphs their bottom margin, lists their padding,
+ * etc. The slice wrapper adds no spacing of its own. */
 .slice-content {
-  flex: 1;
-  min-width: 0;
   cursor: text;
   border-radius: 4px;
-  padding: 2px 8px;
   transition: box-shadow 0.15s ease;
 }
 
@@ -1778,15 +1784,6 @@ button:focus:not(:focus-visible) {
 .slice-content[contenteditable='true'] {
   outline: none;
   cursor: text;
-}
-
-/* Reset margins on rendered content inside slices */
-.slice-content > :first-child {
-  margin-top: 0;
-}
-
-.slice-content > :last-child {
-  margin-bottom: 0;
 }
 
 /* Slim raw-markdown editor (used by the "Edit as markdown" toggle) */
@@ -1972,11 +1969,5 @@ button:focus:not(:focus-visible) {
   font-weight: 500;
 }
 
-/* Smooth transition between view and edit modes */
-.markdown-body {
-  transition: padding-left 0.2s ease;
-}
-
-.markdown-body.edit-mode {
-  padding-left: 8px;
-}
+/* Edit mode adds no padding of its own — the slice wrappers don't shift the
+ * content's horizontal position relative to view mode. */

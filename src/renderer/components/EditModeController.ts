@@ -7,6 +7,10 @@
  */
 import { MarkdownSlicer, type MarkdownSlice } from '../services/MarkdownSlicer';
 import type { PluginManager } from '@plugins/core/PluginManager';
+import { InlineEditor } from './InlineEditor';
+import type { InlineMark } from './InlineEditor';
+import { FloatingFormatToolbar, type ToolbarAction } from './FloatingFormatToolbar';
+import { canSerialize } from '../services/inlineMarkdownSerializer';
 
 /**
  * Callbacks for EditModeController events
@@ -21,7 +25,9 @@ export interface EditModeCallbacks {
 /**
  * Actions available from the slice handle menu
  */
-export type SliceAction = 'delete' | 'duplicate' | 'move-up' | 'move-down' | 'add-above' | 'add-below';
+export type SliceAction =
+  | 'delete' | 'duplicate' | 'move-up' | 'move-down' | 'add-above' | 'add-below'
+  | 'edit-as-markdown' | 'toggle-toolbar';
 
 /**
  * Block types a slice can be converted to
@@ -39,6 +45,10 @@ export class EditModeController {
   private rawMarkdown = '';
   private callbacks: EditModeCallbacks = {};
   private activeEditIndex: number | null = null;
+  private activeInlineEditor: InlineEditor | null = null;
+  private activeRawTextarea: HTMLTextAreaElement | null = null;
+  private toolbarVisible = false;
+  private toolbar: FloatingFormatToolbar | null = null;
   private activeMenu: HTMLElement | null = null;
   private sliceElements: Map<number, HTMLElement> = new Map();
 
@@ -63,6 +73,7 @@ export class EditModeController {
     this.slices = this.slicer.slice(markdown);
     await this.renderSlices();
     document.addEventListener('click', this.handleDocumentClick);
+    document.addEventListener('keydown', this.onGlobalKeyDown);
   }
 
   /**
@@ -72,6 +83,10 @@ export class EditModeController {
     this.commitActiveEdit();
     this.closeMenu();
     document.removeEventListener('click', this.handleDocumentClick);
+    document.removeEventListener('keydown', this.onGlobalKeyDown);
+    this.toolbar?.getElement().remove();
+    this.toolbar = null;
+    this.toolbarVisible = false;
     this.sliceElements.clear();
     this.activeEditIndex = null;
     return this.rawMarkdown;
@@ -85,10 +100,12 @@ export class EditModeController {
   }
 
   /**
-   * Render all slices into the container
+   * Synchronously rebuild the slice DOM. Post-render plugin hooks run after,
+   * so callers that need to interact with the DOM (e.g. startEdit on a newly
+   * inserted slice) can do so immediately and not wait for plugin async work.
    */
-  private async renderSlices(): Promise<void> {
-    this.container.innerHTML = '';
+  private renderSlicesSync(): void {
+    this.container.replaceChildren();
     this.container.classList.add('edit-mode');
     this.sliceElements.clear();
 
@@ -97,8 +114,13 @@ export class EditModeController {
       this.container.appendChild(el);
       this.sliceElements.set(slice.index, el);
     }
+  }
 
-    // Run post-render for plugins (e.g., Mermaid diagrams)
+  /**
+   * Render all slices into the container, then run plugin post-render hooks.
+   */
+  private async renderSlices(): Promise<void> {
+    this.renderSlicesSync();
     await this.pluginManager.postRender(this.container);
   }
 
@@ -153,37 +175,110 @@ export class EditModeController {
   }
 
   /**
-   * Start inline editing of a slice
+   * Start inline editing of a slice using the WYSIWYG InlineEditor.
    */
   private startEdit(sliceIndex: number): void {
-    // Commit any previous edit
     this.commitActiveEdit();
 
-    const slice = this.slices.find(s => s.index === sliceIndex);
+    const slice = this.slices.find((s) => s.index === sliceIndex);
     const el = this.sliceElements.get(sliceIndex);
     if (!slice || !el) return;
+
+    const contentEl = el.querySelector<HTMLElement>('.slice-content');
+    if (!contentEl) return;
+
+    // Unsupported inline content is handled by the raw editor (Task 10).
+    if (!canSerialize(contentEl)) {
+      this.startRawEdit(sliceIndex);
+      return;
+    }
 
     this.activeEditIndex = sliceIndex;
     el.classList.add('slice-editing');
 
+    this.activeInlineEditor = new InlineEditor(contentEl, {
+      onCommit: (inlineMarkdown) => {
+        this.applyInlineCommit(sliceIndex, inlineMarkdown);
+      },
+      onRequestLink: () => {
+        if (this.activeInlineEditor) this.promptAndApplyLink(this.activeInlineEditor);
+      },
+      onSplit: (beforeMd, afterMd) => {
+        this.splitActiveSlice(sliceIndex, beforeMd, afterMd);
+      },
+      onNavigate: (direction) => {
+        this.navigateFromSlice(sliceIndex, direction);
+      },
+    });
+    this.activeInlineEditor.start();
+    if (this.toolbarVisible) {
+      this.getToolbar().show(contentEl);
+      this.refreshToolbarState();
+    }
+  }
+
+  /**
+   * Apply the markdown produced by an InlineEditor commit: re-attach the
+   * slice's block prefix, push it through the slicer, and re-render the slice.
+   */
+  private applyInlineCommit(sliceIndex: number, inlineMarkdown: string): void {
+    const slice = this.slices.find((s) => s.index === sliceIndex);
+    const el = this.sliceElements.get(sliceIndex);
+    if (!slice || !el) return;
+
+    const blockType = this.detectBlockType(slice.raw);
+    const newRaw = this.applyBlockPrefix(inlineMarkdown, blockType);
+
+    if (newRaw !== slice.raw) {
+      const result = this.slicer.updateSlice(this.slices, sliceIndex, newRaw);
+      this.rawMarkdown = result.markdown;
+      this.slices = result.slices;
+      this.callbacks.onContentChange?.(this.rawMarkdown);
+    }
+
+    el.classList.remove('slice-editing');
     const contentEl = el.querySelector('.slice-content');
+    const updatedSlice = this.slices.find((s) => s.index === sliceIndex);
+    if (contentEl) {
+      const html = this.pluginManager.render(updatedSlice?.raw ?? slice.raw);
+      contentEl.replaceChildren();
+      contentEl.insertAdjacentHTML('afterbegin', html);
+      contentEl.addEventListener('click', (e) => {
+        if ((e.target as HTMLElement).closest('a')) return;
+        e.stopPropagation();
+        this.startEdit(sliceIndex);
+      });
+      void this.pluginManager.postRender(contentEl as HTMLElement);
+    }
+  }
+
+  /**
+   * Open a slice in the slim raw-markdown textarea. Used as the fallback for
+   * unsupported inline content and as the target of the Cmd+/ toggle.
+   */
+  private startRawEdit(sliceIndex: number): void {
+    this.commitActiveEdit();
+
+    const slice = this.slices.find((s) => s.index === sliceIndex);
+    const el = this.sliceElements.get(sliceIndex);
+    if (!slice || !el) return;
+
+    const contentEl = el.querySelector<HTMLElement>('.slice-content');
     if (!contentEl) return;
 
-    // Replace rendered HTML with textarea
+    this.activeEditIndex = sliceIndex;
+    el.classList.add('slice-editing');
+
     const textarea = document.createElement('textarea');
-    textarea.className = 'slice-editor';
+    textarea.className = 'slice-raw-editor';
     textarea.value = slice.raw;
     textarea.spellcheck = false;
 
-    // Auto-resize
     const resize = (): void => {
       textarea.style.height = 'auto';
-      textarea.style.height = textarea.scrollHeight + 'px';
+      textarea.style.height = `${textarea.scrollHeight}px`;
     };
-
     textarea.addEventListener('input', resize);
-
-    // Handle keyboard shortcuts
     textarea.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -191,61 +286,283 @@ export class EditModeController {
       }
     });
 
-    contentEl.innerHTML = '';
-    contentEl.appendChild(textarea);
-
-    // Focus and resize
+    contentEl.replaceChildren(textarea);
+    this.activeRawTextarea = textarea;
     textarea.focus();
     resize();
   }
 
   /**
-   * Commit the active edit and re-render the slice
+   * Commit a raw-textarea edit: the textarea value is the slice's markdown
+   * verbatim — no block-prefix reconciliation needed.
    */
-  private commitActiveEdit(): void {
-    if (this.activeEditIndex === null) return;
-
-    const sliceIndex = this.activeEditIndex;
-    // Clear immediately to prevent race conditions with async postRender
-    this.activeEditIndex = null;
-
-    const el = this.sliceElements.get(sliceIndex);
-    if (!el) return;
-
-    const textarea = el.querySelector<HTMLTextAreaElement>('.slice-editor');
+  private commitRawEdit(sliceIndex: number): void {
+    const textarea = this.activeRawTextarea;
+    this.activeRawTextarea = null;
     if (!textarea) return;
 
-    const newRaw = textarea.value;
-    const slice = this.slices.find(s => s.index === sliceIndex);
+    const slice = this.slices.find((s) => s.index === sliceIndex);
+    const el = this.sliceElements.get(sliceIndex);
+    if (!slice || !el) return;
 
-    if (slice && newRaw !== slice.raw) {
-      // Update the slice and recalculate
+    const newRaw = textarea.value;
+    if (newRaw !== slice.raw) {
       const result = this.slicer.updateSlice(this.slices, sliceIndex, newRaw);
       this.rawMarkdown = result.markdown;
       this.slices = result.slices;
-
-      // Notify of content change
       this.callbacks.onContentChange?.(this.rawMarkdown);
     }
 
-    // Re-render just this slice's content
     el.classList.remove('slice-editing');
     const contentEl = el.querySelector('.slice-content');
-    if (contentEl && slice) {
-      const updatedSlice = this.slices.find(s => s.index === sliceIndex);
+    const updatedSlice = this.slices.find((s) => s.index === sliceIndex);
+    if (contentEl) {
       const html = this.pluginManager.render(updatedSlice?.raw ?? slice.raw);
-      contentEl.innerHTML = html;
-
-      // Re-attach click handler
+      contentEl.replaceChildren();
+      contentEl.insertAdjacentHTML('afterbegin', html);
       contentEl.addEventListener('click', (e) => {
         if ((e.target as HTMLElement).closest('a')) return;
         e.stopPropagation();
         this.startEdit(sliceIndex);
       });
-
-      // Run post-render asynchronously (non-blocking)
       void this.pluginManager.postRender(contentEl as HTMLElement);
     }
+  }
+
+  /**
+   * Toggle the active slice between WYSIWYG and raw-markdown editing.
+   * Bound to Cmd+/ and the "Edit as markdown" handle-menu item.
+   */
+  toggleRawForActiveSlice(): void {
+    const sliceIndex = this.activeEditIndex;
+    if (sliceIndex === null) return;
+    const wasRaw = this.activeRawTextarea !== null;
+    this.commitActiveEdit();
+    if (wasRaw) {
+      this.startEdit(sliceIndex);
+    } else {
+      this.startRawEdit(sliceIndex);
+    }
+  }
+
+  /**
+   * Split the active slice at the caret. The InlineEditor produced before/after
+   * markdown; here we re-apply the slice's block prefix to the "before" half,
+   * insert a new paragraph slice with the "after" half, and open editing on it.
+   * Mirrors the Notion behaviour of Enter creating a new block below.
+   */
+  private splitActiveSlice(sliceIndex: number, beforeMd: string, afterMd: string): void {
+    const idx = this.slices.findIndex((s) => s.index === sliceIndex);
+    const slice = this.slices[idx];
+    const el = this.sliceElements.get(sliceIndex);
+    if (idx === -1 || !slice || !el) return;
+
+    // The InlineEditor has already torn down its session; clear our refs too.
+    this.activeEditIndex = null;
+    this.activeInlineEditor = null;
+    this.toolbar?.hide();
+    el.classList.remove('slice-editing');
+
+    // Enter at the start of a non-empty slice: insert an empty paragraph
+    // ABOVE without modifying the current slice. Without this branch, the
+    // generic split would rewrite the current slice's raw to '' (losing any
+    // block prefix like '#' for headings, '- ' for lists) and move the
+    // content into a new plain paragraph below.
+    if (beforeMd === '' && afterMd !== '') {
+      const empty: MarkdownSlice = {
+        index: Math.max(...this.slices.map((s) => s.index)) + 1,
+        type: 'paragraph',
+        raw: '',
+        startLine: slice.startLine,
+        endLine: slice.startLine,
+      };
+      this.slices.splice(idx, 0, empty);
+
+      this.rawMarkdown = this.slices.map((s) => s.raw).join('\n\n');
+      this.recomputeLineNumbers();
+      this.callbacks.onContentChange?.(this.rawMarkdown);
+
+      this.renderSlicesSync();
+      this.startEdit(slice.index);
+      void this.pluginManager.postRender(this.container);
+      return;
+    }
+
+    const blockType = this.detectBlockType(slice.raw);
+    slice.raw = this.applyBlockPrefix(beforeMd, blockType);
+
+    const newSlice: MarkdownSlice = {
+      index: Math.max(...this.slices.map((s) => s.index)) + 1,
+      type: 'paragraph',
+      raw: afterMd,
+      startLine: slice.endLine,
+      endLine: slice.endLine,
+    };
+    this.slices.splice(idx + 1, 0, newSlice);
+
+    // Skip slicer.slice() round-trip: an empty afterMd (Enter at end of slice)
+    // is a valid paragraph in our model but markdown can't express an empty
+    // paragraph, so slicer.slice() would collapse it away and startEdit would
+    // land on the next existing slice instead of the new empty one. We rebuild
+    // rawMarkdown with '\n\n' separators (paragraph break — single '\n' would
+    // soft-break) and recompute line numbers manually so reassemble's
+    // startLine-sort still works for later structural actions.
+    this.rawMarkdown = this.slices.map((s) => s.raw).join('\n\n');
+    this.recomputeLineNumbers();
+    this.callbacks.onContentChange?.(this.rawMarkdown);
+
+    this.renderSlicesSync();
+    this.startEdit(newSlice.index);
+    void this.pluginManager.postRender(this.container);
+  }
+
+  /**
+   * Cross-slice arrow navigation. Commits the current edit and opens the
+   * adjacent slice, placing the caret at the end (for 'up') or start (for
+   * 'down') so the cursor lands as close as possible to where it was visually.
+   */
+  private navigateFromSlice(sliceIndex: number, direction: 'up' | 'down'): void {
+    const idx = this.slices.findIndex((s) => s.index === sliceIndex);
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+    const target = this.slices[targetIdx];
+    if (!target) return;
+
+    this.commitActiveEdit();
+    this.startEdit(target.index);
+    this.placeCaretInActiveSlice(direction === 'up' ? 'end' : 'start');
+  }
+
+  /** Place the caret at the start or end of the active slice's contenteditable. */
+  private placeCaretInActiveSlice(at: 'start' | 'end'): void {
+    if (this.activeEditIndex === null) return;
+    const el = this.sliceElements.get(this.activeEditIndex);
+    const contentEl = el?.querySelector<HTMLElement>('.slice-content');
+    if (!contentEl) return;
+    const range = document.createRange();
+    range.selectNodeContents(contentEl);
+    range.collapse(at === 'start');
+    const sel = window.getSelection();
+    if (sel) {
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  }
+
+  /**
+   * Walk this.slices in order and assign startLine/endLine values consistent
+   * with a '\n\n'-joined reassembly. Each slice occupies its own line range
+   * plus one blank-line separator before the next.
+   */
+  private recomputeLineNumbers(): void {
+    let line = 0;
+    for (const s of this.slices) {
+      s.startLine = line;
+      const lineCount = s.raw === '' ? 1 : s.raw.split('\n').length;
+      s.endLine = line + lineCount;
+      line = s.endLine + 1; // +1 for the blank separator between slices
+    }
+  }
+
+  /**
+   * Commit the active edit. The InlineEditor's onCommit callback does the
+   * markdown reconciliation; this just triggers it and clears local state.
+   */
+  private commitActiveEdit(): void {
+    if (this.activeEditIndex === null) return;
+    const sliceIndex = this.activeEditIndex;
+    this.activeEditIndex = null;
+
+    if (this.activeRawTextarea) {
+      this.commitRawEdit(sliceIndex);
+      return;
+    }
+    const editor = this.activeInlineEditor;
+    this.activeInlineEditor = null;
+    this.toolbar?.hide();
+    editor?.commit();
+  }
+
+  /** Test-only: deterministically commit the active edit. */
+  commitActiveEditForTest(): void {
+    this.commitActiveEdit();
+  }
+
+  private readonly onGlobalKeyDown = (e: KeyboardEvent): void => {
+    const mod = e.metaKey || e.ctrlKey;
+    if (!mod) return;
+    if (e.key === '/') {
+      e.preventDefault();
+      this.toggleRawForActiveSlice();
+    } else if (e.key.toLowerCase() === 'f' && e.shiftKey) {
+      e.preventDefault();
+      this.setToolbarVisible(!this.toolbarVisible);
+    }
+  };
+
+  /** Whether the floating toolbar is currently enabled (global state). */
+  isToolbarVisible(): boolean {
+    return this.toolbarVisible;
+  }
+
+  /** Enable/disable the floating toolbar. Reflects immediately for the active slice. */
+  setToolbarVisible(visible: boolean): void {
+    this.toolbarVisible = visible;
+    if (!visible) {
+      this.toolbar?.hide();
+      return;
+    }
+    if (this.activeEditIndex !== null && this.activeInlineEditor) {
+      const el = this.sliceElements.get(this.activeEditIndex);
+      const contentEl = el?.querySelector<HTMLElement>('.slice-content');
+      if (contentEl) {
+        this.getToolbar().show(contentEl);
+        this.refreshToolbarState();
+      }
+    }
+  }
+
+  private getToolbar(): FloatingFormatToolbar {
+    if (!this.toolbar) {
+      this.toolbar = new FloatingFormatToolbar({
+        onAction: (action) => this.handleToolbarAction(action),
+      });
+      this.container.appendChild(this.toolbar.getElement());
+    }
+    return this.toolbar;
+  }
+
+  private handleToolbarAction(action: ToolbarAction): void {
+    const editor = this.activeInlineEditor;
+    if (!editor) return;
+    if (action === 'link') {
+      this.promptAndApplyLink(editor);
+      return;
+    }
+    if (action === 'clear') {
+      (['bold', 'italic', 'strikethrough', 'code'] as InlineMark[]).forEach((m) => {
+        if (editor.isMarkActive(m)) editor.toggleMark(m);
+      });
+      this.refreshToolbarState();
+      return;
+    }
+    editor.toggleMark(action as InlineMark);
+    this.refreshToolbarState();
+  }
+
+  /** Prompt for a URL and apply it as a link on the editor's selection. */
+  private promptAndApplyLink(editor: InlineEditor): void {
+    const href = window.prompt('Link URL') ?? '';
+    editor.applyLink(href.trim());
+  }
+
+  private refreshToolbarState(): void {
+    if (!this.toolbar || !this.activeInlineEditor) return;
+    const editor = this.activeInlineEditor;
+    const active: ToolbarAction[] = [];
+    (['bold', 'italic', 'strikethrough', 'code'] as InlineMark[]).forEach((m) => {
+      if (editor.isMarkActive(m)) active.push(m);
+    });
+    this.toolbar.setActiveMarks(active);
   }
 
   /**
@@ -327,6 +644,19 @@ export class EditModeController {
           <path d="M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2z"/>
         </svg>
         Add block below
+      </button>
+      <div class="slice-menu-divider"></div>
+      <button data-action="edit-as-markdown" class="slice-menu-item">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M0 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V4zm2-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1H2z"/>
+        </svg>
+        Edit as markdown
+      </button>
+      <button data-action="toggle-toolbar" class="slice-menu-item">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M2 4h12v2H2V4zm0 4h8v2H2V8z"/>
+        </svg>
+        Show/hide formatting toolbar
       </button>
       <div class="slice-menu-divider"></div>
       <button data-action="duplicate" class="slice-menu-item">
@@ -507,6 +837,19 @@ export class EditModeController {
    */
   private handleSliceAction(action: SliceAction, sliceIndex: number): void {
     this.commitActiveEdit();
+
+    if (action === 'edit-as-markdown') {
+      if (this.activeEditIndex === sliceIndex) {
+        this.toggleRawForActiveSlice();
+      } else {
+        this.startRawEdit(sliceIndex);
+      }
+      return;
+    }
+    if (action === 'toggle-toolbar') {
+      this.setToolbarVisible(!this.toolbarVisible);
+      return;
+    }
 
     const idx = this.slices.findIndex(s => s.index === sliceIndex);
     if (idx === -1) return;

@@ -1702,15 +1702,14 @@ button:focus:not(:focus-visible) {
   position: relative;
 }
 
-/* Slice wrapper */
+/* Slice wrapper. Block layout (not flex) so the rendered content inside
+ * behaves identically to view mode — adjacent slices' margins collapse and
+ * each slice's vertical rhythm matches its un-wrapped counterpart. The handle
+ * is positioned absolutely in the left gutter so it doesn't consume flow. */
 .slice {
   position: relative;
-  display: flex;
-  align-items: stretch;
   border-radius: 4px;
   transition: background-color 0.15s ease;
-  margin-left: -40px;
-  padding-left: 0;
 }
 
 .slice:hover {
@@ -1721,20 +1720,37 @@ button:focus:not(:focus-visible) {
   opacity: 1;
 }
 
-/* Slice handle (left side, Notion-style grip) */
+/* Slice handle — floats in the negative-x gutter so it sits outside the
+ * content box. Vertical offset depends on the slice's block type because
+ * headings push their content down by margin-top; the per-type overrides
+ * below align the handle with the first line of text. */
 .slice-handle {
-  position: relative;
-  flex-shrink: 0;
+  position: absolute;
+  left: -32px;
+  top: var(--slice-handle-top, -2px);
   width: 32px;
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding-top: 4px;
   opacity: 0;
   transition: opacity 0.15s ease;
   user-select: none;
   -webkit-user-select: none;
 }
+
+/* Per-block-type vertical offsets so the 24px handle button centers on the
+ * first text line. Default (0px) targets paragraphs, lists, blockquotes —
+ * their content sits at slice-top with body line-height (~21px); button
+ * center at y=12 ≈ text center at y=10.5. Heading values combine each
+ * heading's margin-top (24px) with the heading's line-height / 2 minus the
+ * button's half-height — i.e. 24 + (line-height-px − 24) / 2. */
+.slice-h1 { --slice-handle-top: 30px; } /* 2em * 1.25 = 35px line, center y=41.5 */
+.slice-h2 { --slice-handle-top: 25px; } /* 1.5em * 1.25 = 26.25, center y=37 */
+.slice-h3 { --slice-handle-top: 23px; } /* 1.25em * 1.25 = 21.9, center y=35 */
+.slice-h4 { --slice-handle-top: 21px; } /* 1em * 1.25 = 17.5, center y=32.75 */
+.slice-h5 { --slice-handle-top: 20px; } /* 0.875em * 1.25 = 15.3, center y=31.65 */
+.slice-h6 { --slice-handle-top: 19px; } /* 0.85em * 1.25 = 14.9, center y=31.45 */
+.slice-code { --slice-handle-top: 13px; } /* <pre> padding-top 16 + 85% * 1.45 ≈ 17, center y=24.5 */
 
 .slice-handle-btn {
   display: flex;
@@ -1760,37 +1776,47 @@ button:focus:not(:focus-visible) {
   cursor: grabbing;
 }
 
-/* Slice content area */
+/* Slice content area. Zero-padding and no margin resets so the inner
+ * markdown layout is byte-identical to view mode — headings keep their
+ * top/bottom margins, paragraphs their bottom margin, lists their padding,
+ * etc. The slice wrapper adds no spacing of its own. */
 .slice-content {
-  flex: 1;
-  min-width: 0;
   cursor: text;
   border-radius: 4px;
-  padding: 2px 8px;
   transition: box-shadow 0.15s ease;
 }
 
 .slice.slice-editing .slice-content {
-  box-shadow: 0 0 0 2px var(--link-color);
   background-color: var(--bg-color);
 }
 
-/* Reset margins on rendered content inside slices */
-.slice-content > :first-child {
-  margin-top: 0;
+/* Editing affordance: a 2px bar in the gutter, 6px away from the text. Drawn
+ * via a pseudo-element instead of inset box-shadow so it sits outside the
+ * content box and never overlaps the caret when it lands at the line start. */
+/* Editing indicator: a straight 2px bar in the gutter, 6px from the text. */
+.slice.slice-editing .slice-content::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background-color: var(--link-color);
+  pointer-events: none;
 }
 
-.slice-content > :last-child {
-  margin-bottom: 0;
+.slice-content[contenteditable='true'] {
+  outline: none;
+  cursor: text;
 }
 
-/* Slice editor textarea */
-.slice-editor {
+/* Slim raw-markdown editor (used by the "Edit as markdown" toggle) */
+.slice-raw-editor {
   width: 100%;
-  min-height: 40px;
-  padding: 8px;
+  min-height: 1.6em;
+  padding: 0;
   border: none;
-  border-radius: 4px;
+  border-radius: 0;
   background: transparent;
   color: var(--text-color);
   font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
@@ -1801,7 +1827,7 @@ button:focus:not(:focus-visible) {
   overflow: hidden;
 }
 
-.slice-editor:focus {
+.slice-raw-editor:focus {
   outline: none;
 }
 
@@ -1920,6 +1946,44 @@ button:focus:not(:focus-visible) {
   flex-shrink: 0;
 }
 
+/* Floating inline-format toolbar */
+.inline-format-toolbar {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 6px;
+  background: var(--bg-color);
+  border: 1px solid var(--border-color, rgba(0, 0, 0, 0.12));
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 200;
+}
+
+.inline-format-toolbar[hidden] {
+  display: none;
+}
+
+.inline-format-toolbar button {
+  min-width: 26px;
+  height: 26px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-color);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.inline-format-toolbar button:hover {
+  background: var(--hover-bg, rgba(0, 0, 0, 0.06));
+}
+
+.inline-format-toolbar button.is-active {
+  background: var(--link-color);
+  color: #fff;
+}
+
 /* Edit mode badge in status bar */
 .status-edit-mode {
   display: flex;
@@ -1929,11 +1993,5 @@ button:focus:not(:focus-visible) {
   font-weight: 500;
 }
 
-/* Smooth transition between view and edit modes */
-.markdown-body {
-  transition: padding-left 0.2s ease;
-}
-
-.markdown-body.edit-mode {
-  padding-left: 8px;
-}
+/* Edit mode adds no padding of its own — the slice wrappers don't shift the
+ * content's horizontal position relative to view mode. */

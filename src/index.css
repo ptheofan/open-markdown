@@ -1796,12 +1796,16 @@ button:focus:not(:focus-visible) {
 .slice.slice-editing .slice-content::before {
   content: '';
   position: absolute;
-  left: -9px;
-  top: 0;
-  bottom: 0;
-  width: 3px;
+  left: -8px;
+  top: 3px;
+  bottom: 3px;
+  width: 2px;
   background-color: var(--link-color);
-  border-radius: 3px;
+  /* border-radius is clamped to half the shorter dimension (1px on a 2px
+   * bar), so use a large value to opt into the maximum. Combined with the
+   * 3px top/bottom inset, the rounded caps are visible because they don't
+   * meet the slice edges flush. */
+  border-radius: 999px;
   pointer-events: none;
 }
 

@@ -100,10 +100,12 @@ export class EditModeController {
   }
 
   /**
-   * Render all slices into the container
+   * Synchronously rebuild the slice DOM. Post-render plugin hooks run after,
+   * so callers that need to interact with the DOM (e.g. startEdit on a newly
+   * inserted slice) can do so immediately and not wait for plugin async work.
    */
-  private async renderSlices(): Promise<void> {
-    this.container.innerHTML = '';
+  private renderSlicesSync(): void {
+    this.container.replaceChildren();
     this.container.classList.add('edit-mode');
     this.sliceElements.clear();
 
@@ -112,8 +114,13 @@ export class EditModeController {
       this.container.appendChild(el);
       this.sliceElements.set(slice.index, el);
     }
+  }
 
-    // Run post-render for plugins (e.g., Mermaid diagrams)
+  /**
+   * Render all slices into the container, then run plugin post-render hooks.
+   */
+  private async renderSlices(): Promise<void> {
+    this.renderSlicesSync();
     await this.pluginManager.postRender(this.container);
   }
 
@@ -195,6 +202,9 @@ export class EditModeController {
       },
       onRequestLink: () => {
         if (this.activeInlineEditor) this.promptAndApplyLink(this.activeInlineEditor);
+      },
+      onSplit: (beforeMd, afterMd) => {
+        this.splitActiveSlice(sliceIndex, beforeMd, afterMd);
       },
     });
     this.activeInlineEditor.start();
@@ -330,6 +340,50 @@ export class EditModeController {
     } else {
       this.startRawEdit(sliceIndex);
     }
+  }
+
+  /**
+   * Split the active slice at the caret. The InlineEditor produced before/after
+   * markdown; here we re-apply the slice's block prefix to the "before" half,
+   * insert a new paragraph slice with the "after" half, and open editing on it.
+   * Mirrors the Notion behaviour of Enter creating a new block below.
+   */
+  private splitActiveSlice(sliceIndex: number, beforeMd: string, afterMd: string): void {
+    const idx = this.slices.findIndex((s) => s.index === sliceIndex);
+    const slice = this.slices[idx];
+    const el = this.sliceElements.get(sliceIndex);
+    if (idx === -1 || !slice || !el) return;
+
+    // The InlineEditor has already torn down its session; clear our refs too.
+    this.activeEditIndex = null;
+    this.activeInlineEditor = null;
+    this.toolbar?.hide();
+    el.classList.remove('slice-editing');
+
+    const blockType = this.detectBlockType(slice.raw);
+    slice.raw = this.applyBlockPrefix(beforeMd, blockType);
+
+    const newSlice: MarkdownSlice = {
+      index: Math.max(...this.slices.map((s) => s.index)) + 1,
+      type: 'paragraph',
+      raw: afterMd,
+      startLine: slice.endLine,
+      endLine: slice.endLine,
+    };
+    this.slices.splice(idx + 1, 0, newSlice);
+
+    // MarkdownSlicer.reassemble joins slices with a single '\n', which would
+    // collapse two adjacent paragraphs into one soft-break paragraph on
+    // re-slice. Join with '\n\n' here so block boundaries survive the round
+    // trip. (Pre-existing reassemble bug; out of scope to fix globally.)
+    this.rawMarkdown = this.slices.map((s) => s.raw).join('\n\n');
+    this.callbacks.onContentChange?.(this.rawMarkdown);
+
+    this.slices = this.slicer.slice(this.rawMarkdown);
+    this.renderSlicesSync();
+    const newSliceAtPos = this.slices[idx + 1];
+    if (newSliceAtPos) this.startEdit(newSliceAtPos.index);
+    void this.pluginManager.postRender(this.container);
   }
 
   /**

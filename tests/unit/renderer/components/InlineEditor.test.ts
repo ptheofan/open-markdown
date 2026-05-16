@@ -169,3 +169,56 @@ describe('InlineEditor link insertion', () => {
     expect(onRequestLink).toHaveBeenCalledTimes(1);
   });
 });
+
+function caretAt(node: Node, offset: number): void {
+  const range = document.createRange();
+  range.setStart(node, offset);
+  range.collapse(true);
+  const sel = window.getSelection()!;
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+describe('InlineEditor Enter handling', () => {
+  it('Enter calls onSplit with the markdown before and after the caret', () => {
+    const el = contentEl('hello world');
+    const onSplit = vi.fn();
+    const editor = new InlineEditor(el, { onCommit: vi.fn(), onSplit });
+    editor.start();
+    caretAt(el.firstChild!, 5); // between "hello" and " world"
+    keydown(el, 'Enter');
+    expect(onSplit).toHaveBeenCalledWith('hello', ' world');
+  });
+
+  it('Enter at the very end calls onSplit with an empty after', () => {
+    const el = contentEl('hello');
+    const onSplit = vi.fn();
+    const editor = new InlineEditor(el, { onCommit: vi.fn(), onSplit });
+    editor.start();
+    caretAt(el.firstChild!, 5);
+    keydown(el, 'Enter');
+    expect(onSplit).toHaveBeenCalledWith('hello', '');
+  });
+
+  it('Enter does not fire onCommit after the split', () => {
+    const el = contentEl('hello world');
+    const onCommit = vi.fn();
+    const editor = new InlineEditor(el, { onCommit, onSplit: vi.fn() });
+    editor.start();
+    caretAt(el.firstChild!, 5);
+    keydown(el, 'Enter');
+    editor.commit(); // explicit follow-up commit should be a no-op
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+
+  it('Shift+Enter inserts a <br> at the caret without firing onSplit', () => {
+    const el = contentEl('hello world');
+    const onSplit = vi.fn();
+    const editor = new InlineEditor(el, { onCommit: vi.fn(), onSplit });
+    editor.start();
+    caretAt(el.firstChild!, 5);
+    keydown(el, 'Enter', { shiftKey: true });
+    expect(el.querySelector('br')).not.toBe(null);
+    expect(onSplit).not.toHaveBeenCalled();
+  });
+});

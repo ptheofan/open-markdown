@@ -127,6 +127,32 @@ describe('EditModeController — floating toolbar wiring', () => {
     expect(toolbar === null || toolbar.hidden).toBe(true);
   });
 
+  it('Enter inside a slice splits it and the new slice gets focus', async () => {
+    const { container, controller } = setup();
+    const onContentChange = vi.fn();
+    controller.setCallbacks({ onContentChange });
+    await controller.enter('Hello world');
+    const content = container.querySelector<HTMLElement>('.slice-content')!;
+    content.click();
+    // .slice-content > <p>Hello world</p> — caret between "Hello" and " world"
+    const textNode = content.firstChild!.firstChild!;
+    const range = document.createRange();
+    range.setStart(textNode, 5);
+    range.collapse(true);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(range);
+    content.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter', bubbles: true, cancelable: true,
+    }));
+    expect(controller.getMarkdown()).toBe('Hello\n\n world');
+    expect(onContentChange).toHaveBeenCalledWith('Hello\n\n world');
+    // The new slice should be the active edit.
+    const slices = container.querySelectorAll<HTMLElement>('.slice');
+    expect(slices.length).toBe(2);
+    expect(slices[1]!.classList.contains('slice-editing')).toBe(true);
+  });
+
   it('a toolbar bold action wraps the selection in the active editor', async () => {
     const { container, controller } = setup();
     await controller.enter('Hello world');

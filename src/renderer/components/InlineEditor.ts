@@ -14,6 +14,14 @@ export interface InlineEditorCallbacks {
   onCommit: (markdown: string) => void;
   /** Called when the user requests link insertion (Cmd+K). Optional. */
   onRequestLink?: () => void;
+  /**
+   * Called when Enter is pressed inside the editor. `beforeMd` is everything
+   * to the left of the caret, `afterMd` everything to the right. The editor
+   * has already torn down its session; the caller is responsible for splitting
+   * the slice and opening a new edit on the new content. If absent, Enter
+   * falls back to browser default behaviour.
+   */
+  onSplit?: (beforeMd: string, afterMd: string) => void;
 }
 
 /** The inline marks the editor can toggle. */
@@ -67,6 +75,16 @@ export class InlineEditor {
     if (e.key === 'Escape') {
       e.preventDefault();
       this.commit();
+      return;
+    }
+    if (e.key === 'Enter' && !e.shiftKey && this.callbacks.onSplit) {
+      e.preventDefault();
+      this.splitAtCaret();
+      return;
+    }
+    if (e.key === 'Enter' && e.shiftKey) {
+      e.preventDefault();
+      this.insertLineBreak();
       return;
     }
     const mod = e.metaKey || e.ctrlKey;
@@ -127,6 +145,53 @@ export class InlineEditor {
   // selection covers all of an element's contents (selectNodeContents). Descend
   // into the deepest node actually inside the selection so the ancestor walk
   // starts from somewhere the mark element can be reached upward.
+  /**
+   * Split the editor's DOM at the caret. Serializes the two halves to markdown
+   * and hands them to `onSplit`. Ends this editor session (without firing
+   * onCommit again) — the caller drives the slice split and re-opens editing.
+   */
+  private splitAtCaret(): void {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    if (!this.el.contains(range.commonAncestorContainer)) return;
+
+    range.deleteContents();
+
+    const afterRange = document.createRange();
+    afterRange.setStart(range.endContainer, range.endOffset);
+    afterRange.setEnd(this.el, this.el.childNodes.length);
+    const afterFrag = afterRange.extractContents();
+
+    const afterWrapper = document.createElement('div');
+    afterWrapper.appendChild(afterFrag);
+    const afterMd = serializeInline(afterWrapper);
+    const beforeMd = serializeInline(this.el);
+
+    this.committed = true;
+    this.el.removeEventListener('keydown', this.onKeyDown);
+    this.el.removeAttribute('contenteditable');
+
+    this.callbacks.onSplit?.(beforeMd, afterMd);
+  }
+
+  /** Insert a <br> at the caret (Shift+Enter — soft line break inside the slice). */
+  private insertLineBreak(): void {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    if (!this.el.contains(range.commonAncestorContainer)) return;
+
+    range.deleteContents();
+    const br = document.createElement('br');
+    range.insertNode(br);
+
+    range.setStartAfter(br);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
   private deepestStart(range: Range): Node {
     let node: Node = range.startContainer;
     let offset = range.startOffset;

@@ -54,7 +54,10 @@ function serializeNode(node: Node): string {
       return `[${inner}](${href})`;
     }
     case 'BR':
-      return '\n';
+      // markdown-it has breaks:false, so a bare '\n' renders as whitespace
+      // and would silently lose the line break on re-render. "  \n" is the
+      // markdown hard-break syntax that survives the round trip.
+      return '  \n';
     default:
       return inner;
   }

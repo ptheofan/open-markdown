@@ -41,8 +41,10 @@ describe('serializeInline — links, breaks, nesting, escaping', () => {
       .toBe('see [the site](https://x.com)');
   });
 
-  it('serializes br to a newline', () => {
-    expect(serializeInline(div('line one<br>line two'))).toBe('line one\nline two');
+  it('serializes br to a markdown hard line break (two spaces + newline)', () => {
+    // markdown-it has breaks:false, so a bare '\n' renders as whitespace.
+    // "  \n" is the markdown hard-break syntax that round-trips back to <br>.
+    expect(serializeInline(div('line one<br>line two'))).toBe('line one  \nline two');
   });
 
   it('serializes nested marks', () => {

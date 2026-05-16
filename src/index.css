@@ -1796,12 +1796,12 @@ button:focus:not(:focus-visible) {
 .slice.slice-editing .slice-content::before {
   content: '';
   position: absolute;
-  left: -8px;
+  left: -9px;
   top: 0;
   bottom: 0;
-  width: 2px;
+  width: 3px;
   background-color: var(--link-color);
-  border-radius: 2px;
+  border-radius: 3px;
   pointer-events: none;
 }
 

@@ -1727,7 +1727,7 @@ button:focus:not(:focus-visible) {
 .slice-handle {
   position: absolute;
   left: -32px;
-  top: var(--slice-handle-top, 0px);
+  top: var(--slice-handle-top, -2px);
   width: 32px;
   display: flex;
   align-items: flex-start;
@@ -1801,7 +1801,7 @@ button:focus:not(:focus-visible) {
   bottom: 0;
   width: 2px;
   background-color: var(--link-color);
-  border-radius: 1px;
+  border-radius: 2px;
   pointer-events: none;
 }
 

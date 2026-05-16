@@ -1793,19 +1793,28 @@ button:focus:not(:focus-visible) {
 /* Editing affordance: a 2px bar in the gutter, 6px away from the text. Drawn
  * via a pseudo-element instead of inset box-shadow so it sits outside the
  * content box and never overlaps the caret when it lands at the line start. */
+/* Editing indicator: a thin (2px) shaft with wider round caps. The caps are
+ * 5px-diameter half-circles drawn via SVG masks so they stay round at any
+ * slice height; the shaft is a centered 2px stripe between them. background-
+ * color paints the whole element in --link-color and the mask layers carve
+ * out the visible shape (top half-circle + middle stripe + bottom half-circle).
+ * Result: a clearly-curved "pill with neck" at the slice's left gutter. */
 .slice.slice-editing .slice-content::before {
   content: '';
   position: absolute;
-  left: -8px;
-  top: 3px;
-  bottom: 3px;
-  width: 2px;
+  left: -10px;
+  top: 0;
+  bottom: 0;
+  width: 5px;
   background-color: var(--link-color);
-  /* border-radius is clamped to half the shorter dimension (1px on a 2px
-   * bar), so use a large value to opt into the maximum. Combined with the
-   * 3px top/bottom inset, the rounded caps are visible because they don't
-   * meet the slice edges flush. */
-  border-radius: 999px;
+  -webkit-mask:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 5 2.5'><path d='M0 2.5 A2.5 2.5 0 0 1 5 2.5 Z' fill='black'/></svg>") top center / 5px 2.5px no-repeat,
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 5 2.5'><path d='M0 0 A2.5 2.5 0 0 0 5 0 Z' fill='black'/></svg>") bottom center / 5px 2.5px no-repeat,
+    linear-gradient(to right, transparent 1.5px, black 1.5px, black 3.5px, transparent 3.5px) center / 5px calc(100% - 5px) no-repeat;
+  mask:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 5 2.5'><path d='M0 2.5 A2.5 2.5 0 0 1 5 2.5 Z' fill='black'/></svg>") top center / 5px 2.5px no-repeat,
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 5 2.5'><path d='M0 0 A2.5 2.5 0 0 0 5 0 Z' fill='black'/></svg>") bottom center / 5px 2.5px no-repeat,
+    linear-gradient(to right, transparent 1.5px, black 1.5px, black 3.5px, transparent 3.5px) center / 5px calc(100% - 5px) no-repeat;
   pointer-events: none;
 }
 

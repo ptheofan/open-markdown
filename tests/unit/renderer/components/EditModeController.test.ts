@@ -127,6 +127,33 @@ describe('EditModeController — floating toolbar wiring', () => {
     expect(toolbar === null || toolbar.hidden).toBe(true);
   });
 
+  it('Enter at the start of a heading inserts an empty paragraph above and preserves the heading', async () => {
+    const { container, controller } = setup();
+    await controller.enter('# Title');
+    const content = container.querySelector<HTMLElement>('.slice-content')!;
+    content.click();
+    // Caret at offset 0 of "Title" (the inside of the <h1>).
+    const textNode = content.firstChild!.firstChild!;
+    const range = document.createRange();
+    range.setStart(textNode, 0);
+    range.collapse(true);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(range);
+    content.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter', bubbles: true, cancelable: true,
+    }));
+    // Two slices: empty paragraph + the original heading. The heading's raw
+    // must still start with '#' — the previous implementation rewrote the
+    // current slice's raw to '' (losing the heading prefix) and put the
+    // heading text in a new plain paragraph below.
+    expect(controller.getMarkdown()).toBe('\n\n# Title');
+    const slicesAfter = container.querySelectorAll<HTMLElement>('.slice');
+    expect(slicesAfter.length).toBe(2);
+    // Cursor returns to the (unchanged) heading slice.
+    expect(slicesAfter[1]!.classList.contains('slice-editing')).toBe(true);
+  });
+
   it('Enter at the end of a slice inserts a new empty slice — does not jump to the next existing one', async () => {
     const { container, controller } = setup();
     await controller.enter('First\n\nSecond');

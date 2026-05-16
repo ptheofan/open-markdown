@@ -360,6 +360,31 @@ export class EditModeController {
     this.toolbar?.hide();
     el.classList.remove('slice-editing');
 
+    // Enter at the start of a non-empty slice: insert an empty paragraph
+    // ABOVE without modifying the current slice. Without this branch, the
+    // generic split would rewrite the current slice's raw to '' (losing any
+    // block prefix like '#' for headings, '- ' for lists) and move the
+    // content into a new plain paragraph below.
+    if (beforeMd === '' && afterMd !== '') {
+      const empty: MarkdownSlice = {
+        index: Math.max(...this.slices.map((s) => s.index)) + 1,
+        type: 'paragraph',
+        raw: '',
+        startLine: slice.startLine,
+        endLine: slice.startLine,
+      };
+      this.slices.splice(idx, 0, empty);
+
+      this.rawMarkdown = this.slices.map((s) => s.raw).join('\n\n');
+      this.recomputeLineNumbers();
+      this.callbacks.onContentChange?.(this.rawMarkdown);
+
+      this.renderSlicesSync();
+      this.startEdit(slice.index);
+      void this.pluginManager.postRender(this.container);
+      return;
+    }
+
     const blockType = this.detectBlockType(slice.raw);
     slice.raw = this.applyBlockPrefix(beforeMd, blockType);
 

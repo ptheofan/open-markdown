@@ -372,18 +372,35 @@ export class EditModeController {
     };
     this.slices.splice(idx + 1, 0, newSlice);
 
-    // MarkdownSlicer.reassemble joins slices with a single '\n', which would
-    // collapse two adjacent paragraphs into one soft-break paragraph on
-    // re-slice. Join with '\n\n' here so block boundaries survive the round
-    // trip. (Pre-existing reassemble bug; out of scope to fix globally.)
+    // Skip slicer.slice() round-trip: an empty afterMd (Enter at end of slice)
+    // is a valid paragraph in our model but markdown can't express an empty
+    // paragraph, so slicer.slice() would collapse it away and startEdit would
+    // land on the next existing slice instead of the new empty one. We rebuild
+    // rawMarkdown with '\n\n' separators (paragraph break — single '\n' would
+    // soft-break) and recompute line numbers manually so reassemble's
+    // startLine-sort still works for later structural actions.
     this.rawMarkdown = this.slices.map((s) => s.raw).join('\n\n');
+    this.recomputeLineNumbers();
     this.callbacks.onContentChange?.(this.rawMarkdown);
 
-    this.slices = this.slicer.slice(this.rawMarkdown);
     this.renderSlicesSync();
-    const newSliceAtPos = this.slices[idx + 1];
-    if (newSliceAtPos) this.startEdit(newSliceAtPos.index);
+    this.startEdit(newSlice.index);
     void this.pluginManager.postRender(this.container);
+  }
+
+  /**
+   * Walk this.slices in order and assign startLine/endLine values consistent
+   * with a '\n\n'-joined reassembly. Each slice occupies its own line range
+   * plus one blank-line separator before the next.
+   */
+  private recomputeLineNumbers(): void {
+    let line = 0;
+    for (const s of this.slices) {
+      s.startLine = line;
+      const lineCount = s.raw === '' ? 1 : s.raw.split('\n').length;
+      s.endLine = line + lineCount;
+      line = s.endLine + 1; // +1 for the blank separator between slices
+    }
   }
 
   /**

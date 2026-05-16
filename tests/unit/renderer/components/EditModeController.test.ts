@@ -127,6 +127,33 @@ describe('EditModeController — floating toolbar wiring', () => {
     expect(toolbar === null || toolbar.hidden).toBe(true);
   });
 
+  it('Enter at the end of a slice inserts a new empty slice — does not jump to the next existing one', async () => {
+    const { container, controller } = setup();
+    await controller.enter('First\n\nSecond');
+    const slicesBefore = container.querySelectorAll<HTMLElement>('.slice');
+    expect(slicesBefore.length).toBe(2);
+    // Click into the FIRST slice and put caret at the end of "First".
+    const firstContent = slicesBefore[0]!.querySelector<HTMLElement>('.slice-content')!;
+    firstContent.click();
+    const textNode = firstContent.firstChild!.firstChild!;
+    const range = document.createRange();
+    range.setStart(textNode, 5); // end of "First"
+    range.collapse(true);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(range);
+    firstContent.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter', bubbles: true, cancelable: true,
+    }));
+    const slicesAfter = container.querySelectorAll<HTMLElement>('.slice');
+    expect(slicesAfter.length).toBe(3); // First, NEW EMPTY, Second
+    // The new empty slice (position 1) should be the active edit, not Second.
+    expect(slicesAfter[1]!.classList.contains('slice-editing')).toBe(true);
+    expect(slicesAfter[1]!.querySelector('.slice-content')!.textContent).toBe('');
+    // Second slice content untouched.
+    expect(slicesAfter[2]!.querySelector('.slice-content')!.textContent).toContain('Second');
+  });
+
   it('Enter inside a slice splits it and the new slice gets focus', async () => {
     const { container, controller } = setup();
     const onContentChange = vi.fn();

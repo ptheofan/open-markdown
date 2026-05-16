@@ -45,6 +45,59 @@
     <h2>Multi-Window</h2>
     <p>Press <code>Cmd+N</code> to open a new window and view multiple files side by side. Each window independently tracks and live-reloads its own file.</p>
 
+    <h2>Edit Mode</h2>
+    <p>Press <code>Cmd+E</code> (or the <strong>Edit</strong> button in the toolbar) to toggle edit mode. The rendered document becomes editable in place — no separate textarea, no syntax view.</p>
+    <p>Each block (paragraph, heading, list, quote, code block) shows a handle on hover. Click the handle to open a menu that lets you convert the block to a different type, duplicate it, move it up or down, or delete it.</p>
+    <p><strong>Formatting</strong> — with text selected:</p>
+    <table>
+      <thead>
+        <tr><th>Shortcut</th><th>Action</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>Cmd+B</code></td><td>Bold</td></tr>
+        <tr><td><code>Cmd+I</code></td><td>Italic</td></tr>
+        <tr><td><code>Cmd+Shift+X</code></td><td>Strikethrough</td></tr>
+        <tr><td><code>Cmd+E</code></td><td>Inline code</td></tr>
+        <tr><td><code>Cmd+K</code></td><td>Link</td></tr>
+      </tbody>
+    </table>
+    <p><strong>Navigation and structure:</strong></p>
+    <ul>
+      <li><code>Enter</code> splits the current block at the caret — the new block below gets focus</li>
+      <li><code>Shift+Enter</code> inserts a line break inside the current block</li>
+      <li><code>ArrowUp</code> / <code>ArrowDown</code> at the top or bottom of a block moves the caret to the adjacent block</li>
+      <li><code>Esc</code> commits the edit and exits the block</li>
+    </ul>
+    <p><strong>Toggles:</strong></p>
+    <ul>
+      <li><code>Cmd+/</code> drops the active block into a raw-markdown editor — useful for content the WYSIWYG editor can't represent (e.g. images, footnotes). The next click on the block returns to WYSIWYG.</li>
+      <li><code>Cmd+Shift+F</code> toggles a small floating toolbar with buttons for the formatting actions above. Starts hidden each session.</li>
+    </ul>
+    <p>Blocks containing inline content the editor can't faithfully round-trip (raw HTML, inline images, superscript, etc.) open in the raw-markdown editor automatically so the source is never silently changed.</p>
+
+    <h2>Images</h2>
+    <p>Inline images load directly in the rendered document:</p>
+    <ul>
+      <li><strong>Local paths</strong> — relative (<code>![](images/photo.png)</code>) or absolute (<code>![](/Users/you/Pictures/photo.png)</code>) filesystem paths, served via a dedicated <code>om-asset:</code> protocol restricted to image file types</li>
+      <li><strong>Remote URLs</strong> — <code>https://</code> URLs are loaded by the renderer</li>
+    </ul>
+    <p>Supported image formats: PNG, JPEG, GIF, SVG, WebP, AVIF, ICO, BMP.</p>
+
+    <h2>Links</h2>
+    <p>Links in rendered documents work the way you'd expect:</p>
+    <ul>
+      <li><strong>Hover</strong> a link to see its target URL in the status bar</li>
+      <li><strong>Click</strong> an HTTP/HTTPS link to open it in your default browser</li>
+      <li><strong>Right-click</strong> for a menu with options to copy the URL or open it explicitly</li>
+    </ul>
+
+    <h2>External Editor</h2>
+    <p>If you'd rather make heavier edits in your usual editor, configure an external editor command in <strong>Preferences &rarr; External Editor</strong> (for example, <code>code</code> for VS Code, <code>cursor</code> for Cursor, <code>subl</code> for Sublime). A button in the toolbar then opens the current file in that editor with one click.</p>
+    <p>Live reload picks up the changes as soon as you save in the external editor.</p>
+
+    <h2>Window State</h2>
+    <p>The app remembers each window's size, position, and fullscreen state. When you reopen Open Markdown, your windows come back exactly where they were.</p>
+
     <h2>Keyboard Shortcuts</h2>
     <table>
       <thead>

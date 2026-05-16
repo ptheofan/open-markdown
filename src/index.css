@@ -1750,6 +1750,7 @@ button:focus:not(:focus-visible) {
 .slice-h4 { --slice-handle-top: 21px; } /* 1em * 1.25 = 17.5, center y=32.75 */
 .slice-h5 { --slice-handle-top: 20px; } /* 0.875em * 1.25 = 15.3, center y=31.65 */
 .slice-h6 { --slice-handle-top: 19px; } /* 0.85em * 1.25 = 14.9, center y=31.45 */
+.slice-code { --slice-handle-top: 13px; } /* <pre> padding-top 16 + 85% * 1.45 ≈ 17, center y=24.5 */
 
 .slice-handle-btn {
   display: flex;

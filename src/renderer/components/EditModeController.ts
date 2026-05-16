@@ -206,6 +206,9 @@ export class EditModeController {
       onSplit: (beforeMd, afterMd) => {
         this.splitActiveSlice(sliceIndex, beforeMd, afterMd);
       },
+      onNavigate: (direction) => {
+        this.navigateFromSlice(sliceIndex, direction);
+      },
     });
     this.activeInlineEditor.start();
     if (this.toolbarVisible) {
@@ -411,6 +414,38 @@ export class EditModeController {
     this.renderSlicesSync();
     this.startEdit(newSlice.index);
     void this.pluginManager.postRender(this.container);
+  }
+
+  /**
+   * Cross-slice arrow navigation. Commits the current edit and opens the
+   * adjacent slice, placing the caret at the end (for 'up') or start (for
+   * 'down') so the cursor lands as close as possible to where it was visually.
+   */
+  private navigateFromSlice(sliceIndex: number, direction: 'up' | 'down'): void {
+    const idx = this.slices.findIndex((s) => s.index === sliceIndex);
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+    const target = this.slices[targetIdx];
+    if (!target) return;
+
+    this.commitActiveEdit();
+    this.startEdit(target.index);
+    this.placeCaretInActiveSlice(direction === 'up' ? 'end' : 'start');
+  }
+
+  /** Place the caret at the start or end of the active slice's contenteditable. */
+  private placeCaretInActiveSlice(at: 'start' | 'end'): void {
+    if (this.activeEditIndex === null) return;
+    const el = this.sliceElements.get(this.activeEditIndex);
+    const contentEl = el?.querySelector<HTMLElement>('.slice-content');
+    if (!contentEl) return;
+    const range = document.createRange();
+    range.selectNodeContents(contentEl);
+    range.collapse(at === 'start');
+    const sel = window.getSelection();
+    if (sel) {
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
   }
 
   /**

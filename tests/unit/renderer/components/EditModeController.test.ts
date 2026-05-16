@@ -127,6 +127,65 @@ describe('EditModeController — floating toolbar wiring', () => {
     expect(toolbar === null || toolbar.hidden).toBe(true);
   });
 
+  it('ArrowUp at the top of a slice moves edit focus to the previous slice', async () => {
+    const { container, controller } = setup();
+    await controller.enter('First\n\nSecond');
+    const slices = container.querySelectorAll<HTMLElement>('.slice');
+    const secondContent = slices[1]!.querySelector<HTMLElement>('.slice-content')!;
+    secondContent.click();
+    const textNode = secondContent.firstChild!.firstChild!;
+    const range = document.createRange();
+    range.setStart(textNode, 0);
+    range.collapse(true);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(range);
+    secondContent.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'ArrowUp', bubbles: true, cancelable: true,
+    }));
+    const slicesAfter = container.querySelectorAll<HTMLElement>('.slice');
+    expect(slicesAfter[0]!.classList.contains('slice-editing')).toBe(true);
+    expect(slicesAfter[1]!.classList.contains('slice-editing')).toBe(false);
+  });
+
+  it('ArrowDown at the bottom of a slice moves edit focus to the next slice', async () => {
+    const { container, controller } = setup();
+    await controller.enter('First\n\nSecond');
+    const slices = container.querySelectorAll<HTMLElement>('.slice');
+    const firstContent = slices[0]!.querySelector<HTMLElement>('.slice-content')!;
+    firstContent.click();
+    const textNode = firstContent.firstChild!.firstChild!;
+    const range = document.createRange();
+    range.setStart(textNode, 5);
+    range.collapse(true);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(range);
+    firstContent.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'ArrowDown', bubbles: true, cancelable: true,
+    }));
+    const slicesAfter = container.querySelectorAll<HTMLElement>('.slice');
+    expect(slicesAfter[0]!.classList.contains('slice-editing')).toBe(false);
+    expect(slicesAfter[1]!.classList.contains('slice-editing')).toBe(true);
+  });
+
+  it('ArrowUp on the first slice is a no-op', async () => {
+    const { container, controller } = setup();
+    await controller.enter('Only');
+    const content = container.querySelector<HTMLElement>('.slice-content')!;
+    content.click();
+    const range = document.createRange();
+    range.setStart(content.firstChild!.firstChild!, 0);
+    range.collapse(true);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(range);
+    content.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'ArrowUp', bubbles: true, cancelable: true,
+    }));
+    expect(container.querySelector('.slice')!.classList.contains('slice-editing')).toBe(true);
+  });
+
   it('Enter at the start of a heading inserts an empty paragraph above and preserves the heading', async () => {
     const { container, controller } = setup();
     await controller.enter('# Title');

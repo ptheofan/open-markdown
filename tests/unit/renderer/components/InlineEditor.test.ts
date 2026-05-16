@@ -179,6 +179,38 @@ function caretAt(node: Node, offset: number): void {
   sel.addRange(range);
 }
 
+describe('InlineEditor arrow navigation', () => {
+  it('ArrowUp fires onNavigate("up") when caret is on the first line', () => {
+    const el = contentEl('hello');
+    const onNavigate = vi.fn();
+    const editor = new InlineEditor(el, { onCommit: vi.fn(), onNavigate });
+    editor.start();
+    caretAt(el.firstChild!, 0);
+    keydown(el, 'ArrowUp');
+    expect(onNavigate).toHaveBeenCalledWith('up');
+  });
+
+  it('ArrowDown fires onNavigate("down") when caret is on the last line', () => {
+    const el = contentEl('hello');
+    const onNavigate = vi.fn();
+    const editor = new InlineEditor(el, { onCommit: vi.fn(), onNavigate });
+    editor.start();
+    caretAt(el.firstChild!, 5);
+    keydown(el, 'ArrowDown');
+    expect(onNavigate).toHaveBeenCalledWith('down');
+  });
+
+  it('does not preventDefault for arrows when onNavigate is absent', () => {
+    const el = contentEl('hello');
+    const editor = new InlineEditor(el, { onCommit: vi.fn() });
+    editor.start();
+    caretAt(el.firstChild!, 0);
+    const e = new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true });
+    el.dispatchEvent(e);
+    expect(e.defaultPrevented).toBe(false);
+  });
+});
+
 describe('InlineEditor Enter handling', () => {
   it('Enter calls onSplit with the markdown before and after the caret', () => {
     const el = contentEl('hello world');

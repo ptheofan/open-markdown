@@ -22,6 +22,14 @@ export interface InlineEditorCallbacks {
    * falls back to browser default behaviour.
    */
   onSplit?: (beforeMd: string, afterMd: string) => void;
+  /**
+   * Called when the user presses ArrowUp on the first visual line, or
+   * ArrowDown on the last visual line — i.e. would otherwise have nowhere
+   * to go inside this slice. The caller commits the current session and
+   * opens editing on the adjacent slice. If absent, falls back to browser
+   * default (caret stays put or scrolls).
+   */
+  onNavigate?: (direction: 'up' | 'down') => void;
 }
 
 /** The inline marks the editor can toggle. */
@@ -86,6 +94,14 @@ export class InlineEditor {
       e.preventDefault();
       this.insertLineBreak();
       return;
+    }
+    if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && this.callbacks.onNavigate) {
+      const dir = e.key === 'ArrowUp' ? 'up' : 'down';
+      if (this.isCaretOnEdgeLine(dir)) {
+        e.preventDefault();
+        this.callbacks.onNavigate(dir);
+        return;
+      }
     }
     const mod = e.metaKey || e.ctrlKey;
     if (!mod) return;
@@ -173,6 +189,35 @@ export class InlineEditor {
     this.el.removeAttribute('contenteditable');
 
     this.callbacks.onSplit?.(beforeMd, afterMd);
+  }
+
+  /**
+   * Is the caret on the first (for 'up') or last (for 'down') visual line of
+   * the editor? Used to decide whether ArrowUp/Down should stay inside the
+   * slice or cross the boundary to an adjacent slice.
+   *
+   * In jsdom all bounding rects are zero, so both checks return true — that's
+   * fine for unit tests that exercise the cross-slice path; the geometric
+   * branching matters only in a real layout engine.
+   */
+  private isCaretOnEdgeLine(dir: 'up' | 'down'): boolean {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return false;
+    const range = sel.getRangeAt(0);
+    if (!this.el.contains(range.commonAncestorContainer)) return false;
+
+    // Range.getBoundingClientRect is on the DOM spec but missing from older
+    // jsdom builds — fall back to a zero-rect (which makes both edge checks
+    // pass, the behaviour we want under jsdom-driven tests anyway).
+    const caretRect = typeof range.getBoundingClientRect === 'function'
+      ? range.getBoundingClientRect()
+      : { top: 0, bottom: 0 } as DOMRect;
+    const elRect = this.el.getBoundingClientRect();
+    const threshold = 4;
+
+    return dir === 'up'
+      ? caretRect.top - elRect.top < threshold
+      : elRect.bottom - caretRect.bottom < threshold;
   }
 
   /** Insert a <br> at the caret (Shift+Enter — soft line break inside the slice). */

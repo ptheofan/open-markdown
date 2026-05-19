@@ -298,7 +298,7 @@ function makePreviewableManager(): PluginManager {
       const lines = s.raw.split('\n');
       return lines.slice(1, -1).join('\n');
     },
-    renderPreview: async () => ({ ok: true as const }),
+    renderPreview: () => Promise.resolve({ ok: true as const }),
     applySourceToRaw: (_s: MarkdownSlice, source: string) => '```mermaid\n' + source + '\n```',
   };
   (pm as unknown as { getPreviewablePlugins: () => (MarkdownPlugin & PreviewablePlugin)[] })

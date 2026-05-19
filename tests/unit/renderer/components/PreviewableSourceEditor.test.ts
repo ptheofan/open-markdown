@@ -25,7 +25,7 @@ function fakePlugin(overrides: Partial<PreviewablePlugin> = {}): MarkdownPlugin 
     apply: () => {},
     matchesSlice: () => true,
     extractSource: () => 'A --> B',
-    renderPreview: vi.fn(async () => ({ ok: true as const })),
+    renderPreview: vi.fn(() => Promise.resolve({ ok: true as const })),
     applySourceToRaw: (_s, source) => '```mermaid\n' + source + '\n```',
     ...overrides,
   };
@@ -129,10 +129,10 @@ describe('PreviewableSourceEditor debounced render', () => {
     try {
       const el = contentEl('<div class="mermaid-container"><svg>old</svg></div>');
       const plugin = fakePlugin({
-        renderPreview: vi.fn(async (_src, target) => {
+        renderPreview: vi.fn((_src, target) => {
           target.replaceChildren();
           target.insertAdjacentHTML('afterbegin', '<svg>new</svg>');
-          return { ok: true as const };
+          return Promise.resolve({ ok: true as const });
         }),
       });
       const editor = new PreviewableSourceEditor(el, slice(), plugin, { onCommit: vi.fn() });
@@ -220,7 +220,7 @@ describe('PreviewableSourceEditor error handling', () => {
     try {
       const el = contentEl('<div class="mermaid-container"><svg>good</svg></div>');
       const plugin = fakePlugin({
-        renderPreview: vi.fn(async () => ({ ok: false as const, error: 'Syntax error: foo' })),
+        renderPreview: vi.fn(() => Promise.resolve({ ok: false as const, error: 'Syntax error: foo' })),
       });
       const editor = new PreviewableSourceEditor(el, slice(), plugin, { onCommit: vi.fn() });
       editor.start();
@@ -248,12 +248,12 @@ describe('PreviewableSourceEditor error handling', () => {
       const el = contentEl('<div class="mermaid-container"><svg>good</svg></div>');
       let next: { ok: true } | { ok: false; error: string } = { ok: false, error: 'oops' };
       const plugin = fakePlugin({
-        renderPreview: vi.fn(async (_src, target) => {
+        renderPreview: vi.fn((_src, target) => {
           if (next.ok) {
             target.replaceChildren();
             target.insertAdjacentHTML('afterbegin', '<svg>new</svg>');
           }
-          return next;
+          return Promise.resolve(next);
         }),
       });
       const editor = new PreviewableSourceEditor(el, slice(), plugin, { onCommit: vi.fn() });

@@ -62,7 +62,7 @@ function fakePreviewablePlugin(id: string): MarkdownPlugin & PreviewablePlugin {
     apply: () => {},
     matchesSlice: () => false,
     extractSource: () => '',
-    renderPreview: async () => ({ ok: true }),
+    renderPreview: () => Promise.resolve({ ok: true }),
     applySourceToRaw: (_s, source) => source,
   };
 }

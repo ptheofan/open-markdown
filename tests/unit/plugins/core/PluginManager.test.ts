@@ -374,3 +374,37 @@ describe('PluginManager', () => {
     });
   });
 });
+
+import {
+  isPreviewablePlugin,
+  type PreviewablePlugin,
+} from '@plugins/types/preview';
+
+function fakePreviewablePlugin(id: string): MarkdownPlugin & PreviewablePlugin {
+  return {
+    metadata: { id, name: id, version: '1.0.0', description: '' },
+    apply: () => {},
+    matchesSlice: () => false,
+    extractSource: () => '',
+    renderPreview: async () => ({ ok: true }),
+    applySourceToRaw: (_s, source) => source,
+  };
+}
+
+describe('getPreviewablePlugins', () => {
+  it('returns only enabled plugins that implement the previewable capability', async () => {
+    const pm = new PluginManager();
+    pm.registerPluginFactory('mermaid-like', () => fakePreviewablePlugin('mermaid-like'));
+    pm.registerPluginFactory('plain', () => ({
+      metadata: { id: 'plain', name: 'plain', version: '1.0.0', description: '' },
+      apply: () => {},
+    }));
+    await pm.enablePlugin('mermaid-like');
+    await pm.enablePlugin('plain');
+
+    const previewable = pm.getPreviewablePlugins();
+    expect(previewable).toHaveLength(1);
+    expect(isPreviewablePlugin(previewable[0]!)).toBe(true);
+    expect(previewable[0]!.metadata.id).toBe('mermaid-like');
+  });
+});

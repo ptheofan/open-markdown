@@ -4,6 +4,7 @@
 import { PluginAlreadyRegisteredError } from '@shared/errors';
 
 import { MarkdownRenderer, createMarkdownRenderer } from './MarkdownRenderer';
+import { isPreviewablePlugin, type PreviewablePlugin } from '../types/preview';
 
 import type { MarkdownRendererOptions } from './MarkdownRenderer';
 import type {
@@ -204,6 +205,21 @@ export class PluginManager {
    */
   getPlugin<T extends MarkdownPlugin = MarkdownPlugin>(pluginId: string): T | undefined {
     return this.renderer.getPlugin<T>(pluginId);
+  }
+
+  /**
+   * Return all enabled plugins that implement the PreviewablePlugin
+   * capability. Order matches the order plugins were enabled.
+   */
+  getPreviewablePlugins(): (MarkdownPlugin & PreviewablePlugin)[] {
+    const result: (MarkdownPlugin & PreviewablePlugin)[] = [];
+    for (const id of this.enabledPlugins) {
+      const plugin = this.renderer.getPlugin(id);
+      if (plugin && isPreviewablePlugin(plugin)) {
+        result.push(plugin);
+      }
+    }
+    return result;
   }
 
   /**

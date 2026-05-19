@@ -1751,6 +1751,10 @@ button:focus:not(:focus-visible) {
 .slice-h5 { --slice-handle-top: 20px; } /* 0.875em * 1.25 = 15.3, center y=31.65 */
 .slice-h6 { --slice-handle-top: 19px; } /* 0.85em * 1.25 = 14.9, center y=31.45 */
 .slice-code { --slice-handle-top: 13px; } /* <pre> padding-top 16 + 85% * 1.45 ≈ 17, center y=24.5 */
+/* Mermaid blocks share the 'code' slice type but render as <div.mermaid-container>
+ * (no <pre>, no padding). Their content starts flush with the slice top, so the
+ * 13px offset tuned for <pre> would push the handle into the diagram. */
+.slice-code:has(.mermaid-container) { --slice-handle-top: 0px; }
 
 .slice-handle-btn {
   display: flex;

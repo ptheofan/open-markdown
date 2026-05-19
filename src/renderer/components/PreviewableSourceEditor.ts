@@ -12,8 +12,9 @@
  *       <span class="preview-source-error-text"></span>
  *     <textarea class="slice-raw-editor">    ← editor (bottom)
  *
- * Subsequent tasks add: debounced re-render on input (Task 8), race control
- * (Task 9), error chip toggling (Task 10), Esc-commits (Task 11).
+ * Features: debounced 250ms re-render on input, race control via monotonic
+ * requestId + scratch container (last keystroke wins), inline error chip
+ * for {ok:false} renders, and idempotent commit on Esc/external trigger.
  */
 import type { MarkdownSlice } from '../services/MarkdownSlicer';
 import type { PreviewablePlugin } from '../../plugins/types/preview';

@@ -1815,11 +1815,8 @@ button:focus:not(:focus-visible) {
 }
 
 /* Live-preview editor: preview area + error chip + textarea. */
-.preview-source-preview {
-  /* The preview's natural sizing is whatever the plugin renders (mermaid SVG
-   * is `max-width: 100%; height: auto;`). No extra constraints. */
-}
-
+/* .preview-source-preview has no rules: the preview's natural sizing is
+ * whatever the plugin renders (mermaid SVG is `max-width: 100%; height: auto;`). */
 .preview-source-error {
   margin: 4px 0 0;
   padding: 6px 10px;

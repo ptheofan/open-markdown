@@ -608,8 +608,20 @@ export class MermaidPlugin implements MarkdownPlugin, PreviewablePlugin {
     return /^(?:```|~~~)mermaid\b/.test(firstLine);
   }
 
-  extractSource(_slice: MarkdownSlice): string {
-    throw new Error('not implemented');
+  extractSource(slice: MarkdownSlice): string {
+    const lines = slice.raw.split('\n');
+    let start = 0;
+    let end = lines.length;
+    // Strip opening fence (``` or ~~~ followed by "mermaid").
+    if (lines[0] && /^(?:```|~~~)mermaid\b/.test(lines[0].trimStart())) {
+      start = 1;
+    }
+    // Strip closing fence (``` or ~~~ on its own).
+    const lastLine = lines[lines.length - 1]?.trim();
+    if (lastLine === '```' || lastLine === '~~~') {
+      end = lines.length - 1;
+    }
+    return lines.slice(start, end).join('\n');
   }
 
   async renderPreview(

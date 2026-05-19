@@ -19,6 +19,17 @@ vi.mock('mermaid', () => ({
 }));
 
 describe('MermaidPlugin', () => {
+  function slice(partial: Partial<MarkdownSlice>): MarkdownSlice {
+    return {
+      index: 0,
+      type: 'code',
+      raw: '',
+      startLine: 0,
+      endLine: 0,
+      ...partial,
+    };
+  }
+
   let plugin: MermaidPlugin;
   let renderer: MarkdownRenderer;
 
@@ -303,17 +314,6 @@ Some text below.
   });
 
   describe('matchesSlice', () => {
-    function slice(partial: Partial<MarkdownSlice>): MarkdownSlice {
-      return {
-        index: 0,
-        type: 'code',
-        raw: '',
-        startLine: 0,
-        endLine: 0,
-        ...partial,
-      };
-    }
-
     it('returns true for a code slice with a ```mermaid opening fence', () => {
       expect(plugin.matchesSlice(slice({ raw: '```mermaid\nA --> B\n```' }))).toBe(true);
     });
@@ -336,6 +336,28 @@ Some text below.
 
     it('returns true for tilde-fenced mermaid blocks', () => {
       expect(plugin.matchesSlice(slice({ raw: '~~~mermaid\nA --> B\n~~~' }))).toBe(true);
+    });
+  });
+
+  describe('extractSource', () => {
+    it('strips opening ```mermaid fence and closing ``` fence', () => {
+      const s = slice({ raw: '```mermaid\ngraph TD\nA --> B\n```' });
+      expect(plugin.extractSource(s)).toBe('graph TD\nA --> B');
+    });
+
+    it('strips opening fence with info-string suffix', () => {
+      const s = slice({ raw: '```mermaid theme=dark\ngraph TD\nA --> B\n```' });
+      expect(plugin.extractSource(s)).toBe('graph TD\nA --> B');
+    });
+
+    it('strips tilde fences (opening and closing)', () => {
+      const s = slice({ raw: '~~~mermaid\ngraph TD\nA --> B\n~~~' });
+      expect(plugin.extractSource(s)).toBe('graph TD\nA --> B');
+    });
+
+    it('preserves blank lines and trailing whitespace inside the content', () => {
+      const s = slice({ raw: '```mermaid\ngraph TD\n\n  A --> B\n```' });
+      expect(plugin.extractSource(s)).toBe('graph TD\n\n  A --> B');
     });
   });
 });

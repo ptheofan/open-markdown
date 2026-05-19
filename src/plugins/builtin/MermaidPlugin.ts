@@ -617,7 +617,7 @@ export class MermaidPlugin implements MarkdownPlugin, PreviewablePlugin {
       start = 1;
     }
     // Strip closing fence (``` or ~~~ on its own).
-    const lastLine = lines[lines.length - 1]?.trim();
+    const lastLine = lines[lines.length - 1]?.trimEnd();
     if (lastLine === '```' || lastLine === '~~~') {
       end = lines.length - 1;
     }

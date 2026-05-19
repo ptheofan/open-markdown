@@ -359,5 +359,15 @@ Some text below.
       const s = slice({ raw: '```mermaid\ngraph TD\n\n  A --> B\n```' });
       expect(plugin.extractSource(s)).toBe('graph TD\n\n  A --> B');
     });
+
+    it('returns the raw unchanged when there are no fences', () => {
+      const s = slice({ raw: 'graph TD\nA --> B' });
+      expect(plugin.extractSource(s)).toBe('graph TD\nA --> B');
+    });
+
+    it('strips only the opening fence when the closing fence is missing', () => {
+      const s = slice({ raw: '```mermaid\ngraph TD\nA --> B' });
+      expect(plugin.extractSource(s)).toBe('graph TD\nA --> B');
+    });
   });
 });

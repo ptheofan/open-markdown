@@ -1,0 +1,83 @@
+/**
+ * @vitest-environment jsdom
+ */
+import { describe, it, expect, vi } from 'vitest';
+import { PreviewableSourceEditor } from '../../../../src/renderer/components/PreviewableSourceEditor';
+import type { PreviewablePlugin } from '../../../../src/plugins/types/preview';
+import type { MarkdownSlice } from '../../../../src/renderer/services/MarkdownSlicer';
+import type { MarkdownPlugin } from '../../../../src/shared/types';
+
+function contentEl(html: string): HTMLElement {
+  const el = document.createElement('div');
+  el.className = 'slice-content';
+  el.insertAdjacentHTML('afterbegin', html);
+  document.body.appendChild(el);
+  return el;
+}
+
+function slice(partial: Partial<MarkdownSlice> = {}): MarkdownSlice {
+  return { index: 0, type: 'code', raw: '```mermaid\nA --> B\n```', startLine: 0, endLine: 2, ...partial };
+}
+
+function fakePlugin(overrides: Partial<PreviewablePlugin> = {}): MarkdownPlugin & PreviewablePlugin {
+  return {
+    metadata: { id: 'fake', name: 'fake', version: '1.0.0', description: '' },
+    apply: () => {},
+    matchesSlice: () => true,
+    extractSource: () => 'A --> B',
+    renderPreview: vi.fn(async () => ({ ok: true as const })),
+    applySourceToRaw: (_s, source) => '```mermaid\n' + source + '\n```',
+    ...overrides,
+  };
+}
+
+describe('PreviewableSourceEditor lifecycle', () => {
+  it('start() builds preview/error-chip/textarea structure inside contentEl', () => {
+    const el = contentEl('<div class="mermaid-container"><svg>old</svg></div>');
+    const editor = new PreviewableSourceEditor(el, slice(), fakePlugin(), { onCommit: vi.fn() });
+    editor.start();
+    expect(el.querySelector('.preview-source-preview')).not.toBe(null);
+    expect(el.querySelector('.preview-source-error')).not.toBe(null);
+    expect(el.querySelector('textarea.slice-raw-editor')).not.toBe(null);
+    // existing rendered SVG was moved into the preview area
+    const movedSvg = el.querySelector('.preview-source-preview .mermaid-container svg');
+    expect(movedSvg).not.toBe(null);
+    expect(movedSvg!.textContent).toBe('old');
+  });
+
+  it('start() seeds textarea with plugin.extractSource and focuses it', () => {
+    const el = contentEl('<div class="mermaid-container"></div>');
+    const editor = new PreviewableSourceEditor(el, slice(), fakePlugin(), { onCommit: vi.fn() });
+    editor.start();
+    const ta = el.querySelector<HTMLTextAreaElement>('textarea')!;
+    expect(ta.value).toBe('A --> B');
+    expect(document.activeElement).toBe(ta);
+  });
+
+  it('start() hides the error chip initially', () => {
+    const el = contentEl('<div class="mermaid-container"></div>');
+    const editor = new PreviewableSourceEditor(el, slice(), fakePlugin(), { onCommit: vi.fn() });
+    editor.start();
+    expect(el.querySelector<HTMLElement>('.preview-source-error')!.hidden).toBe(true);
+  });
+
+  it('commit() calls plugin.applySourceToRaw with the textarea value and forwards to onCommit', () => {
+    const el = contentEl('<div class="mermaid-container"></div>');
+    const onCommit = vi.fn();
+    const editor = new PreviewableSourceEditor(el, slice(), fakePlugin(), { onCommit });
+    editor.start();
+    el.querySelector<HTMLTextAreaElement>('textarea')!.value = 'C --> D';
+    editor.commit();
+    expect(onCommit).toHaveBeenCalledWith('```mermaid\nC --> D\n```');
+  });
+
+  it('commit() is idempotent — a second call is a no-op', () => {
+    const el = contentEl('<div class="mermaid-container"></div>');
+    const onCommit = vi.fn();
+    const editor = new PreviewableSourceEditor(el, slice(), fakePlugin(), { onCommit });
+    editor.start();
+    editor.commit();
+    editor.commit();
+    expect(onCommit).toHaveBeenCalledTimes(1);
+  });
+});

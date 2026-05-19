@@ -1814,6 +1814,35 @@ button:focus:not(:focus-visible) {
   cursor: text;
 }
 
+/* Live-preview editor: preview area + error chip + textarea. */
+.preview-source-preview {
+  /* The preview's natural sizing is whatever the plugin renders (mermaid SVG
+   * is `max-width: 100%; height: auto;`). No extra constraints. */
+}
+
+.preview-source-error {
+  margin: 4px 0 0;
+  padding: 6px 10px;
+  border-radius: 4px;
+  background: var(--error-bg, rgba(220, 38, 38, 0.12));
+  color: var(--error-text, #b91c1c);
+  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.preview-source-error[hidden] {
+  display: none;
+}
+
+.preview-source-preview + .preview-source-error + .slice-raw-editor,
+.preview-source-preview + .slice-raw-editor {
+  /* Small gap between preview/error and the editor textarea. */
+  margin-top: 6px;
+}
+
 /* Slim raw-markdown editor (used by the "Edit as markdown" toggle) */
 .slice-raw-editor {
   width: 100%;

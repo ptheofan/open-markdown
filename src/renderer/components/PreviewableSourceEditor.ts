@@ -105,7 +105,10 @@ export class PreviewableSourceEditor {
     if (this.committed || myId !== this.latestRenderId) return;
     if (result.ok) {
       this.previewEl.replaceChildren(...Array.from(scratch.childNodes));
+      this.errorEl.hidden = true;
+    } else {
+      this.errorTextEl.textContent = result.error;
+      this.errorEl.hidden = false;
     }
-    // {ok: false} handling is added in Task 10.
   }
 }

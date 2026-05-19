@@ -213,3 +213,67 @@ describe('PreviewableSourceEditor race control', () => {
     }
   });
 });
+
+describe('PreviewableSourceEditor error handling', () => {
+  it('keeps the previous preview and shows the error chip on { ok: false }', async () => {
+    vi.useFakeTimers();
+    try {
+      const el = contentEl('<div class="mermaid-container"><svg>good</svg></div>');
+      const plugin = fakePlugin({
+        renderPreview: vi.fn(async () => ({ ok: false as const, error: 'Syntax error: foo' })),
+      });
+      const editor = new PreviewableSourceEditor(el, slice(), plugin, { onCommit: vi.fn() });
+      editor.start();
+      const ta = el.querySelector<HTMLTextAreaElement>('textarea')!;
+      ta.value = 'bad';
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(250);
+      await vi.runAllTimersAsync();
+
+      // Previous preview untouched
+      const previewSvg = el.querySelector('.preview-source-preview .mermaid-container svg');
+      expect(previewSvg!.textContent).toBe('good');
+      // Error chip visible with the message
+      const errorChip = el.querySelector<HTMLElement>('.preview-source-error')!;
+      expect(errorChip.hidden).toBe(false);
+      expect(errorChip.querySelector('.preview-source-error-text')!.textContent).toBe('Syntax error: foo');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('hides the error chip again on the next successful render', async () => {
+    vi.useFakeTimers();
+    try {
+      const el = contentEl('<div class="mermaid-container"><svg>good</svg></div>');
+      let next: { ok: true } | { ok: false; error: string } = { ok: false, error: 'oops' };
+      const plugin = fakePlugin({
+        renderPreview: vi.fn(async (_src, target) => {
+          if (next.ok) {
+            target.replaceChildren();
+            target.insertAdjacentHTML('afterbegin', '<svg>new</svg>');
+          }
+          return next;
+        }),
+      });
+      const editor = new PreviewableSourceEditor(el, slice(), plugin, { onCommit: vi.fn() });
+      editor.start();
+      const ta = el.querySelector<HTMLTextAreaElement>('textarea')!;
+
+      ta.value = 'bad';
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(250);
+      await vi.runAllTimersAsync();
+      expect(el.querySelector<HTMLElement>('.preview-source-error')!.hidden).toBe(false);
+
+      next = { ok: true };
+      ta.value = 'good';
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(250);
+      await vi.runAllTimersAsync();
+      expect(el.querySelector<HTMLElement>('.preview-source-error')!.hidden).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

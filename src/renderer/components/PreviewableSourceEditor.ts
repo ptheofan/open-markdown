@@ -18,6 +18,8 @@
 import type { MarkdownSlice } from '../services/MarkdownSlicer';
 import type { PreviewablePlugin } from '../../plugins/types/preview';
 
+const DEBOUNCE_MS = 250;
+
 export interface PreviewableSourceEditorCallbacks {
   /** Called once when the session commits, with the slice's new raw markdown. */
   onCommit: (newRaw: string) => void;
@@ -29,6 +31,7 @@ export class PreviewableSourceEditor {
   private plugin: PreviewablePlugin;
   private callbacks: PreviewableSourceEditorCallbacks;
   private committed = false;
+  private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private previewEl!: HTMLElement;
   private errorEl!: HTMLElement;
   private errorTextEl!: HTMLElement;
@@ -70,12 +73,31 @@ export class PreviewableSourceEditor {
 
     this.el.replaceChildren(this.previewEl, this.errorEl, this.textarea);
     this.textarea.focus();
+    this.textarea.addEventListener('input', this.onInput);
   }
 
   commit(): void {
     if (this.committed) return;
     this.committed = true;
+    if (this.debounceTimer !== null) {
+      clearTimeout(this.debounceTimer);
+      this.debounceTimer = null;
+    }
+    this.textarea.removeEventListener('input', this.onInput);
     const newRaw = this.plugin.applySourceToRaw(this.slice, this.textarea.value);
     this.callbacks.onCommit(newRaw);
+  }
+
+  private readonly onInput = (): void => {
+    if (this.debounceTimer !== null) clearTimeout(this.debounceTimer);
+    this.debounceTimer = setTimeout(() => {
+      this.debounceTimer = null;
+      void this.runRender();
+    }, DEBOUNCE_MS);
+  };
+
+  private async runRender(): Promise<void> {
+    const source = this.textarea.value;
+    await this.plugin.renderPreview(source, this.previewEl);
   }
 }

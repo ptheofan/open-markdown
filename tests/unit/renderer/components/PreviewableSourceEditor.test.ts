@@ -81,3 +81,90 @@ describe('PreviewableSourceEditor lifecycle', () => {
     expect(onCommit).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('PreviewableSourceEditor debounced render', () => {
+  it('calls plugin.renderPreview after a 250ms pause in typing', async () => {
+    vi.useFakeTimers();
+    try {
+      const el = contentEl('<div class="mermaid-container"></div>');
+      const plugin = fakePlugin();
+      const editor = new PreviewableSourceEditor(el, slice(), plugin, { onCommit: vi.fn() });
+      editor.start();
+      const ta = el.querySelector<HTMLTextAreaElement>('textarea')!;
+      ta.value = 'X --> Y';
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+      expect(plugin.renderPreview).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(250);
+      expect(plugin.renderPreview).toHaveBeenCalledTimes(1);
+      expect(plugin.renderPreview).toHaveBeenCalledWith('X --> Y', expect.any(HTMLElement));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('coalesces rapid keystrokes into one render after the pause', async () => {
+    vi.useFakeTimers();
+    try {
+      const el = contentEl('<div class="mermaid-container"></div>');
+      const plugin = fakePlugin();
+      const editor = new PreviewableSourceEditor(el, slice(), plugin, { onCommit: vi.fn() });
+      editor.start();
+      const ta = el.querySelector<HTMLTextAreaElement>('textarea')!;
+      for (const v of ['a', 'ab', 'abc', 'abcd']) {
+        ta.value = v;
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+        await vi.advanceTimersByTimeAsync(100); // less than 250ms
+      }
+      expect(plugin.renderPreview).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(250);
+      expect(plugin.renderPreview).toHaveBeenCalledTimes(1);
+      expect(plugin.renderPreview).toHaveBeenCalledWith('abcd', expect.any(HTMLElement));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('replaces preview contents on { ok: true }', async () => {
+    vi.useFakeTimers();
+    try {
+      const el = contentEl('<div class="mermaid-container"><svg>old</svg></div>');
+      const plugin = fakePlugin({
+        renderPreview: vi.fn(async (_src, target) => {
+          target.replaceChildren();
+          target.insertAdjacentHTML('afterbegin', '<svg>new</svg>');
+          return { ok: true as const };
+        }),
+      });
+      const editor = new PreviewableSourceEditor(el, slice(), plugin, { onCommit: vi.fn() });
+      editor.start();
+      const ta = el.querySelector<HTMLTextAreaElement>('textarea')!;
+      ta.value = 'X --> Y';
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(250);
+      await vi.runAllTimersAsync();
+      const previewSvg = el.querySelector('.preview-source-preview > svg');
+      expect(previewSvg).not.toBe(null);
+      expect(previewSvg!.textContent).toBe('new');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('cancels a pending debounced render when commit is called', async () => {
+    vi.useFakeTimers();
+    try {
+      const el = contentEl('<div class="mermaid-container"></div>');
+      const plugin = fakePlugin();
+      const editor = new PreviewableSourceEditor(el, slice(), plugin, { onCommit: vi.fn() });
+      editor.start();
+      const ta = el.querySelector<HTMLTextAreaElement>('textarea')!;
+      ta.value = 'X --> Y';
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+      editor.commit();
+      await vi.advanceTimersByTimeAsync(500);
+      expect(plugin.renderPreview).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

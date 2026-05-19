@@ -285,21 +285,24 @@ describe('EditModeController — floating toolbar wiring', () => {
 });
 
 import type { PreviewablePlugin } from '../../../../src/plugins/types/preview';
+import type { MarkdownSlice } from '../../../../src/renderer/services/MarkdownSlicer';
+import type { MarkdownPlugin } from '../../../../src/shared/types';
 
 function makePreviewableManager(): PluginManager {
-  const pm = makePluginManager() as unknown as PluginManager & {
-    getPreviewablePlugins: () => (PreviewablePlugin & { metadata: unknown })[];
-  };
-  pm.getPreviewablePlugins = () => [{
+  const pm = makePluginManager();
+  const plugin: MarkdownPlugin & PreviewablePlugin = {
     metadata: { id: 'mermaid', name: 'mermaid', version: '1.0.0', description: '' },
-    matchesSlice: (s) => s.type === 'code' && /^```mermaid\b/.test(s.raw.trimStart()),
-    extractSource: (s) => {
+    apply: () => {},
+    matchesSlice: (s: MarkdownSlice) => s.type === 'code' && /^```mermaid\b/.test(s.raw.trimStart()),
+    extractSource: (s: MarkdownSlice) => {
       const lines = s.raw.split('\n');
       return lines.slice(1, -1).join('\n');
     },
     renderPreview: async () => ({ ok: true as const }),
-    applySourceToRaw: (_s, source) => '```mermaid\n' + source + '\n```',
-  } as unknown as PreviewablePlugin & { metadata: unknown }];
+    applySourceToRaw: (_s: MarkdownSlice, source: string) => '```mermaid\n' + source + '\n```',
+  };
+  (pm as unknown as { getPreviewablePlugins: () => (MarkdownPlugin & PreviewablePlugin)[] })
+    .getPreviewablePlugins = () => [plugin];
   return pm;
 }
 

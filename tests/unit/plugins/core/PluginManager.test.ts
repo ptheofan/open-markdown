@@ -7,6 +7,10 @@ import {
   createPluginManager,
   type PluginFactory,
 } from '@plugins/core/PluginManager';
+import {
+  isPreviewablePlugin,
+  type PreviewablePlugin,
+} from '@plugins/types/preview';
 import { PluginAlreadyRegisteredError } from '@shared/errors';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -49,6 +53,17 @@ function createMockPluginFactory(
     }
 
     return plugin;
+  };
+}
+
+function fakePreviewablePlugin(id: string): MarkdownPlugin & PreviewablePlugin {
+  return {
+    metadata: { id, name: id, version: '1.0.0', description: '' },
+    apply: () => {},
+    matchesSlice: () => false,
+    extractSource: () => '',
+    renderPreview: async () => ({ ok: true }),
+    applySourceToRaw: (_s, source) => source,
   };
 }
 
@@ -373,38 +388,33 @@ describe('PluginManager', () => {
       expect(renderer).toBeInstanceOf(MarkdownRenderer);
     });
   });
-});
 
-import {
-  isPreviewablePlugin,
-  type PreviewablePlugin,
-} from '@plugins/types/preview';
+  describe('getPreviewablePlugins', () => {
+    it('returns only enabled plugins that implement the previewable capability', async () => {
+      const pm = new PluginManager();
+      pm.registerPluginFactory('mermaid-like', () => fakePreviewablePlugin('mermaid-like'));
+      pm.registerPluginFactory('plain', () => ({
+        metadata: { id: 'plain', name: 'plain', version: '1.0.0', description: '' },
+        apply: () => {},
+      }));
+      await pm.enablePlugin('mermaid-like');
+      await pm.enablePlugin('plain');
 
-function fakePreviewablePlugin(id: string): MarkdownPlugin & PreviewablePlugin {
-  return {
-    metadata: { id, name: id, version: '1.0.0', description: '' },
-    apply: () => {},
-    matchesSlice: () => false,
-    extractSource: () => '',
-    renderPreview: async () => ({ ok: true }),
-    applySourceToRaw: (_s, source) => source,
-  };
-}
+      const previewable = pm.getPreviewablePlugins();
+      expect(previewable).toHaveLength(1);
+      expect(isPreviewablePlugin(previewable[0]!)).toBe(true);
+      expect(previewable[0]!.metadata.id).toBe('mermaid-like');
+    });
 
-describe('getPreviewablePlugins', () => {
-  it('returns only enabled plugins that implement the previewable capability', async () => {
-    const pm = new PluginManager();
-    pm.registerPluginFactory('mermaid-like', () => fakePreviewablePlugin('mermaid-like'));
-    pm.registerPluginFactory('plain', () => ({
-      metadata: { id: 'plain', name: 'plain', version: '1.0.0', description: '' },
-      apply: () => {},
-    }));
-    await pm.enablePlugin('mermaid-like');
-    await pm.enablePlugin('plain');
-
-    const previewable = pm.getPreviewablePlugins();
-    expect(previewable).toHaveLength(1);
-    expect(isPreviewablePlugin(previewable[0]!)).toBe(true);
-    expect(previewable[0]!.metadata.id).toBe('mermaid-like');
+    it('excludes a previewable plugin that is registered but not enabled', async () => {
+      const pm = new PluginManager();
+      pm.registerPluginFactory('mermaid-like', () => fakePreviewablePlugin('mermaid-like'));
+      pm.registerPluginFactory('disabled', () => fakePreviewablePlugin('disabled'));
+      await pm.enablePlugin('mermaid-like');
+      // 'disabled' is registered but never enabled.
+      const previewable = pm.getPreviewablePlugins();
+      expect(previewable).toHaveLength(1);
+      expect(previewable[0]!.metadata.id).toBe('mermaid-like');
+    });
   });
 });

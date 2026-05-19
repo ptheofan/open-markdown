@@ -277,3 +277,16 @@ describe('PreviewableSourceEditor error handling', () => {
     }
   });
 });
+
+describe('PreviewableSourceEditor Esc', () => {
+  it('Escape on the textarea commits the session', () => {
+    const el = contentEl('<div class="mermaid-container"></div>');
+    const onCommit = vi.fn();
+    const editor = new PreviewableSourceEditor(el, slice(), fakePlugin(), { onCommit });
+    editor.start();
+    const ta = el.querySelector<HTMLTextAreaElement>('textarea')!;
+    ta.value = 'C --> D';
+    ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    expect(onCommit).toHaveBeenCalledWith('```mermaid\nC --> D\n```');
+  });
+});

@@ -75,6 +75,7 @@ export class PreviewableSourceEditor {
     this.el.replaceChildren(this.previewEl, this.errorEl, this.textarea);
     this.textarea.focus();
     this.textarea.addEventListener('input', this.onInput);
+    this.textarea.addEventListener('keydown', this.onKeyDown);
   }
 
   commit(): void {
@@ -85,9 +86,17 @@ export class PreviewableSourceEditor {
       this.debounceTimer = null;
     }
     this.textarea.removeEventListener('input', this.onInput);
+    this.textarea.removeEventListener('keydown', this.onKeyDown);
     const newRaw = this.plugin.applySourceToRaw(this.slice, this.textarea.value);
     this.callbacks.onCommit(newRaw);
   }
+
+  private readonly onKeyDown = (e: KeyboardEvent): void => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      this.commit();
+    }
+  };
 
   private readonly onInput = (): void => {
     if (this.debounceTimer !== null) clearTimeout(this.debounceTimer);

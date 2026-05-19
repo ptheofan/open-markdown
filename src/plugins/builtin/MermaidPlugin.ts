@@ -631,8 +631,12 @@ export class MermaidPlugin implements MarkdownPlugin, PreviewablePlugin {
     throw new Error('not implemented');
   }
 
-  applySourceToRaw(_slice: MarkdownSlice, _source: string): string {
-    throw new Error('not implemented');
+  applySourceToRaw(slice: MarkdownSlice, source: string): string {
+    const firstLine = slice.raw.trimStart().split('\n', 1)[0] ?? '';
+    const match = firstLine.match(/^(```|~~~)(.*)$/);
+    const fence = match?.[1] ?? '```';
+    const info = match?.[2] ?? 'mermaid';
+    return fence + info + '\n' + source + '\n' + fence;
   }
 
   destroy(): void {

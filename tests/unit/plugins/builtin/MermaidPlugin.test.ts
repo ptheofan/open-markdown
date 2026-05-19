@@ -370,4 +370,32 @@ Some text below.
       expect(plugin.extractSource(s)).toBe('graph TD\nA --> B');
     });
   });
+
+  describe('applySourceToRaw', () => {
+    it("re-wraps source with the slice's original opening info-string", () => {
+      const s = slice({ raw: '```mermaid\nold\n```' });
+      expect(plugin.applySourceToRaw(s, 'graph TD\nA --> B')).toBe(
+        '```mermaid\ngraph TD\nA --> B\n```',
+      );
+    });
+
+    it('preserves an info-string suffix on the opening fence', () => {
+      const s = slice({ raw: '```mermaid theme=dark\nold\n```' });
+      expect(plugin.applySourceToRaw(s, 'graph TD\nA --> B')).toBe(
+        '```mermaid theme=dark\ngraph TD\nA --> B\n```',
+      );
+    });
+
+    it('preserves tilde fences', () => {
+      const s = slice({ raw: '~~~mermaid\nold\n~~~' });
+      expect(plugin.applySourceToRaw(s, 'graph TD\nA --> B')).toBe(
+        '~~~mermaid\ngraph TD\nA --> B\n~~~',
+      );
+    });
+
+    it('falls back to ```mermaid when slice.raw has no recognisable opening fence', () => {
+      const s = slice({ raw: 'no fence' });
+      expect(plugin.applySourceToRaw(s, 'graph TD')).toBe('```mermaid\ngraph TD\n```');
+    });
+  });
 });

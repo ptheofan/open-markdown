@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * MermaidPlugin unit tests
  */
@@ -396,6 +397,36 @@ Some text below.
     it('falls back to ```mermaid when slice.raw has no recognisable opening fence', () => {
       const s = slice({ raw: 'no fence' });
       expect(plugin.applySourceToRaw(s, 'graph TD')).toBe('```mermaid\ngraph TD\n```');
+    });
+  });
+
+  describe('renderPreview', () => {
+    it('replaces target contents with rendered SVG on success', async () => {
+      const target = document.createElement('div');
+      target.textContent = 'placeholder';
+      const result = await plugin.renderPreview('graph TD\nA --> B', target);
+      expect(result).toEqual({ ok: true });
+      expect(target.children.length).toBe(1);
+      expect(target.children[0]!.tagName.toLowerCase()).toBe('svg');
+      expect(target.textContent).toBe('Mock SVG');
+    });
+
+    it('leaves target untouched and returns the error on failure', async () => {
+      const mermaid = (await import('mermaid')).default;
+      vi.mocked(mermaid.render).mockRejectedValueOnce(new Error('Parse error'));
+      const target = document.createElement('div');
+      target.textContent = 'previous good preview';
+      const result = await plugin.renderPreview('bogus', target);
+      expect(result).toEqual({ ok: false, error: 'Parse error' });
+      expect(target.textContent).toBe('previous good preview');
+    });
+
+    it('returns an error when the mermaid library is not initialised', async () => {
+      const uninit = new MermaidPlugin();
+      const target = document.createElement('div');
+      const result = await uninit.renderPreview('graph TD', target);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/not initialised/i);
     });
   });
 });

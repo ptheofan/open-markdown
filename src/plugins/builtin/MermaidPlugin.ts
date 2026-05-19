@@ -625,10 +625,19 @@ export class MermaidPlugin implements MarkdownPlugin, PreviewablePlugin {
   }
 
   async renderPreview(
-    _source: string,
-    _target: HTMLElement,
+    source: string,
+    target: HTMLElement,
   ): Promise<{ ok: true } | { ok: false; error: string }> {
-    throw new Error('not implemented');
+    if (!this.mermaid) return { ok: false, error: 'Mermaid not initialised' };
+    try {
+      const id = `mermaid-preview-${this.diagramCounter++}`;
+      const { svg } = await this.mermaid.render(id, source);
+      target.replaceChildren();
+      target.insertAdjacentHTML('afterbegin', svg);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
   }
 
   applySourceToRaw(slice: MarkdownSlice, source: string): string {

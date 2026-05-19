@@ -283,3 +283,72 @@ describe('EditModeController — floating toolbar wiring', () => {
     expect(content.querySelector('strong')).not.toBe(null);
   });
 });
+
+import type { PreviewablePlugin } from '../../../../src/plugins/types/preview';
+
+function makePreviewableManager(): PluginManager {
+  const pm = makePluginManager() as unknown as PluginManager & {
+    getPreviewablePlugins: () => (PreviewablePlugin & { metadata: unknown })[];
+  };
+  pm.getPreviewablePlugins = () => [{
+    metadata: { id: 'mermaid', name: 'mermaid', version: '1.0.0', description: '' },
+    matchesSlice: (s) => s.type === 'code' && /^```mermaid\b/.test(s.raw.trimStart()),
+    extractSource: (s) => {
+      const lines = s.raw.split('\n');
+      return lines.slice(1, -1).join('\n');
+    },
+    renderPreview: async () => ({ ok: true as const }),
+    applySourceToRaw: (_s, source) => '```mermaid\n' + source + '\n```',
+  } as unknown as PreviewablePlugin & { metadata: unknown }];
+  return pm;
+}
+
+function setupPreviewable(): { container: HTMLElement; controller: EditModeController } {
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const controller = new EditModeController(container, makePreviewableManager());
+  return { container, controller };
+}
+
+describe('EditModeController — previewable mermaid editing', () => {
+  it('clicking a ```mermaid slice opens the PreviewableSourceEditor (preview + textarea coexist)', async () => {
+    const { container, controller } = setupPreviewable();
+    await controller.enter('```mermaid\nA --> B\n```');
+    const content = container.querySelector<HTMLElement>('.slice-content')!;
+    content.click();
+    expect(content.querySelector('.preview-source-preview')).not.toBe(null);
+    expect(content.querySelector('textarea.slice-raw-editor')).not.toBe(null);
+    expect(content.querySelector<HTMLTextAreaElement>('textarea')!.value).toBe('A --> B');
+  });
+
+  it('clicking a non-mermaid code slice still opens the regular raw editor (no preview area)', async () => {
+    const { container, controller } = setupPreviewable();
+    await controller.enter('```js\nconsole.log(1);\n```');
+    const content = container.querySelector<HTMLElement>('.slice-content')!;
+    content.click();
+    expect(content.querySelector('.preview-source-preview')).toBe(null);
+    expect(content.querySelector('textarea.slice-raw-editor')).not.toBe(null);
+  });
+
+  it('clicking a paragraph still opens the WYSIWYG inline editor', async () => {
+    const { container, controller } = setupPreviewable();
+    await controller.enter('Hello world');
+    const content = container.querySelector<HTMLElement>('.slice-content')!;
+    content.click();
+    expect(content.getAttribute('contenteditable')).toBe('true');
+    expect(content.querySelector('.preview-source-preview')).toBe(null);
+  });
+
+  it('committing a previewable edit updates the slice raw with the new fenced content', async () => {
+    const { container, controller } = setupPreviewable();
+    const onContentChange = vi.fn();
+    controller.setCallbacks({ onContentChange });
+    await controller.enter('```mermaid\nA --> B\n```');
+    container.querySelector<HTMLElement>('.slice-content')!.click();
+    const ta = container.querySelector<HTMLTextAreaElement>('textarea.slice-raw-editor')!;
+    ta.value = 'C --> D';
+    controller.commitActiveEditForTest();
+    expect(controller.getMarkdown()).toBe('```mermaid\nC --> D\n```');
+    expect(onContentChange).toHaveBeenCalledWith('```mermaid\nC --> D\n```');
+  });
+});

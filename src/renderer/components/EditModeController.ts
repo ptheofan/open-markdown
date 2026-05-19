@@ -11,6 +11,8 @@ import { InlineEditor } from './InlineEditor';
 import type { InlineMark } from './InlineEditor';
 import { FloatingFormatToolbar, type ToolbarAction } from './FloatingFormatToolbar';
 import { canSerialize } from '../services/inlineMarkdownSerializer';
+import { PreviewableSourceEditor } from './PreviewableSourceEditor';
+import type { PreviewablePlugin } from '../../plugins/types/preview';
 
 /**
  * Callbacks for EditModeController events
@@ -47,6 +49,7 @@ export class EditModeController {
   private activeEditIndex: number | null = null;
   private activeInlineEditor: InlineEditor | null = null;
   private activeRawTextarea: HTMLTextAreaElement | null = null;
+  private activePreviewableEditor: PreviewableSourceEditor | null = null;
   private toolbarVisible = false;
   private toolbar: FloatingFormatToolbar | null = null;
   private activeMenu: HTMLElement | null = null;
@@ -187,7 +190,27 @@ export class EditModeController {
     const contentEl = el.querySelector<HTMLElement>('.slice-content');
     if (!contentEl) return;
 
-    // Unsupported inline content is handled by the raw editor (Task 10).
+    // Previewable plugin opt-in (e.g. mermaid live preview).
+    const previewable = this.findPreviewablePluginFor(slice);
+    if (previewable) {
+      this.activeEditIndex = sliceIndex;
+      el.classList.add('slice-editing');
+      this.activePreviewableEditor = new PreviewableSourceEditor(
+        contentEl, slice, previewable,
+        { onCommit: (newRaw) => this.applyRawCommit(sliceIndex, newRaw) },
+      );
+      this.activePreviewableEditor.start();
+      return;
+    }
+
+    // Code slices without a previewable plugin fall back to raw editing —
+    // WYSIWYG round-tripping of fenced code blocks is not supported.
+    if (slice.type === 'code') {
+      this.startRawEdit(sliceIndex);
+      return;
+    }
+
+    // Unsupported inline content is handled by the raw editor.
     if (!canSerialize(contentEl)) {
       this.startRawEdit(sliceIndex);
       return;
@@ -293,19 +316,26 @@ export class EditModeController {
   }
 
   /**
-   * Commit a raw-textarea edit: the textarea value is the slice's markdown
-   * verbatim — no block-prefix reconciliation needed.
+   * Commit a raw-textarea edit: reads the textarea value then delegates to
+   * applyRawCommit for the shared re-render path.
    */
   private commitRawEdit(sliceIndex: number): void {
     const textarea = this.activeRawTextarea;
     this.activeRawTextarea = null;
     if (!textarea) return;
+    this.applyRawCommit(sliceIndex, textarea.value);
+  }
 
+  /**
+   * Shared "raw commit" path used by both the slim raw textarea and the
+   * PreviewableSourceEditor. Updates the slice via the slicer, fires
+   * onContentChange, and re-renders the slice.
+   */
+  private applyRawCommit(sliceIndex: number, newRaw: string): void {
     const slice = this.slices.find((s) => s.index === sliceIndex);
     const el = this.sliceElements.get(sliceIndex);
     if (!slice || !el) return;
 
-    const newRaw = textarea.value;
     if (newRaw !== slice.raw) {
       const result = this.slicer.updateSlice(this.slices, sliceIndex, newRaw);
       this.rawMarkdown = result.markdown;
@@ -327,6 +357,20 @@ export class EditModeController {
       });
       void this.pluginManager.postRender(contentEl as HTMLElement);
     }
+  }
+
+  /**
+   * Find the first previewable plugin that claims the given slice, or null.
+   */
+  private findPreviewablePluginFor(slice: MarkdownSlice): PreviewablePlugin | null {
+    const pm = this.pluginManager as PluginManager & {
+      getPreviewablePlugins?: () => (PreviewablePlugin & { metadata: unknown })[];
+    };
+    if (typeof pm.getPreviewablePlugins !== 'function') return null;
+    for (const plugin of pm.getPreviewablePlugins()) {
+      if (plugin.matchesSlice(slice)) return plugin;
+    }
+    return null;
   }
 
   /**
@@ -472,6 +516,12 @@ export class EditModeController {
     const sliceIndex = this.activeEditIndex;
     this.activeEditIndex = null;
 
+    if (this.activePreviewableEditor) {
+      const editor = this.activePreviewableEditor;
+      this.activePreviewableEditor = null;
+      editor.commit();
+      return;
+    }
     if (this.activeRawTextarea) {
       this.commitRawEdit(sliceIndex);
       return;

@@ -8,6 +8,7 @@ import {
 import { MarkdownRenderer } from '@plugins/core/MarkdownRenderer';
 import { BUILTIN_PLUGINS } from '@shared/constants';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import type { MarkdownSlice } from '@renderer/services/MarkdownSlicer';
 
 // Mock mermaid module
 vi.mock('mermaid', () => ({
@@ -298,6 +299,39 @@ Some text below.
       expect(result).toContain('Diagram</h1>');
       expect(result).toContain('mermaid-container');
       expect(result).toContain('Some text below');
+    });
+  });
+
+  describe('matchesSlice', () => {
+    function slice(partial: Partial<MarkdownSlice>): MarkdownSlice {
+      return {
+        index: 0,
+        type: 'code',
+        raw: '',
+        startLine: 0,
+        endLine: 0,
+        ...partial,
+      };
+    }
+
+    it('returns true for a code slice with a ```mermaid opening fence', () => {
+      expect(plugin.matchesSlice(slice({ raw: '```mermaid\nA --> B\n```' }))).toBe(true);
+    });
+
+    it('returns true when the mermaid fence has an info-string suffix', () => {
+      expect(plugin.matchesSlice(slice({ raw: '```mermaid theme=dark\nA --> B\n```' }))).toBe(true);
+    });
+
+    it('returns false for a code slice in another language', () => {
+      expect(plugin.matchesSlice(slice({ raw: '```js\nconsole.log(1);\n```' }))).toBe(false);
+    });
+
+    it('returns false for non-code slice types', () => {
+      expect(plugin.matchesSlice(slice({ type: 'paragraph', raw: 'mermaid' }))).toBe(false);
+    });
+
+    it('returns false when the slice has no opening fence', () => {
+      expect(plugin.matchesSlice(slice({ raw: 'graph TD\nA --> B' }))).toBe(false);
     });
   });
 });

@@ -20,6 +20,8 @@ import type {
 } from '@shared/types';
 import type { PluginThemeDeclaration } from '../../themes/types';
 import type MarkdownIt from 'markdown-it';
+import type { PreviewablePlugin } from '../types/preview';
+import type { MarkdownSlice } from '../../renderer/services/MarkdownSlicer';
 
 /**
  * Options for the MermaidPlugin
@@ -34,7 +36,7 @@ export interface MermaidOptions extends PluginOptions {
 /**
  * Mermaid diagram rendering plugin
  */
-export class MermaidPlugin implements MarkdownPlugin {
+export class MermaidPlugin implements MarkdownPlugin, PreviewablePlugin {
   metadata: PluginMetadata = {
     id: BUILTIN_PLUGINS.MERMAID,
     name: 'Mermaid Diagrams',
@@ -598,6 +600,27 @@ export class MermaidPlugin implements MarkdownPlugin {
     const base64 = btoa(String.fromCharCode(...compressed));
 
     return `https://mermaid.live/edit#pako:${base64}`;
+  }
+
+  matchesSlice(slice: MarkdownSlice): boolean {
+    if (slice.type !== 'code') return false;
+    const firstLine = slice.raw.trimStart().split('\n', 1)[0] ?? '';
+    return /^```mermaid\b/.test(firstLine);
+  }
+
+  extractSource(_slice: MarkdownSlice): string {
+    throw new Error('not implemented');
+  }
+
+  async renderPreview(
+    _source: string,
+    _target: HTMLElement,
+  ): Promise<{ ok: true } | { ok: false; error: string }> {
+    throw new Error('not implemented');
+  }
+
+  applySourceToRaw(_slice: MarkdownSlice, _source: string): string {
+    throw new Error('not implemented');
   }
 
   destroy(): void {

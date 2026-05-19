@@ -605,7 +605,7 @@ export class MermaidPlugin implements MarkdownPlugin, PreviewablePlugin {
   matchesSlice(slice: MarkdownSlice): boolean {
     if (slice.type !== 'code') return false;
     const firstLine = slice.raw.trimStart().split('\n', 1)[0] ?? '';
-    return /^```mermaid\b/.test(firstLine);
+    return /^(?:```|~~~)mermaid\b/.test(firstLine);
   }
 
   extractSource(_slice: MarkdownSlice): string {

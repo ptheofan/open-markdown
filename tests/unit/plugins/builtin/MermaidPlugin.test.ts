@@ -333,5 +333,9 @@ Some text below.
     it('returns false when the slice has no opening fence', () => {
       expect(plugin.matchesSlice(slice({ raw: 'graph TD\nA --> B' }))).toBe(false);
     });
+
+    it('returns true for tilde-fenced mermaid blocks', () => {
+      expect(plugin.matchesSlice(slice({ raw: '~~~mermaid\nA --> B\n~~~' }))).toBe(true);
+    });
   });
 });

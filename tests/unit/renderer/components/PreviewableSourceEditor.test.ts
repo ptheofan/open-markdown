@@ -168,3 +168,48 @@ describe('PreviewableSourceEditor debounced render', () => {
     }
   });
 });
+
+describe('PreviewableSourceEditor race control', () => {
+  it('drops a slow earlier render result when a newer render has fired', async () => {
+    vi.useFakeTimers();
+    try {
+      const el = contentEl('<div class="mermaid-container">initial</div>');
+      let resolveFirst!: () => void;
+      const firstPromise = new Promise<void>((r) => { resolveFirst = r; });
+      const renderPreview = vi.fn(async (source: string, target: HTMLElement) => {
+        if (source === 'slow') {
+          await firstPromise;
+          target.replaceChildren();
+          target.insertAdjacentHTML('afterbegin', '<svg>slow</svg>');
+          return { ok: true as const };
+        }
+        target.replaceChildren();
+        target.insertAdjacentHTML('afterbegin', '<svg>fast</svg>');
+        return { ok: true as const };
+      });
+      const plugin = fakePlugin({ renderPreview });
+      const editor = new PreviewableSourceEditor(el, slice(), plugin, { onCommit: vi.fn() });
+      editor.start();
+      const ta = el.querySelector<HTMLTextAreaElement>('textarea')!;
+
+      ta.value = 'slow';
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(250); // first render starts but awaits
+
+      ta.value = 'fast';
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(250); // second render starts and completes
+      await vi.runAllTimersAsync();
+
+      // Now release the slow first render — it should NOT overwrite "fast".
+      resolveFirst();
+      await vi.runAllTimersAsync();
+
+      const previewSvg = el.querySelector('.preview-source-preview > svg');
+      expect(previewSvg).not.toBe(null);
+      expect(previewSvg!.textContent).toBe('fast');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

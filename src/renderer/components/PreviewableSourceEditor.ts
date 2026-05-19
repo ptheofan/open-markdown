@@ -32,6 +32,7 @@ export class PreviewableSourceEditor {
   private callbacks: PreviewableSourceEditorCallbacks;
   private committed = false;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private latestRenderId = 0;
   private previewEl!: HTMLElement;
   private errorEl!: HTMLElement;
   private errorTextEl!: HTMLElement;
@@ -97,7 +98,14 @@ export class PreviewableSourceEditor {
   };
 
   private async runRender(): Promise<void> {
+    const myId = ++this.latestRenderId;
     const source = this.textarea.value;
-    await this.plugin.renderPreview(source, this.previewEl);
+    const scratch = document.createElement('div');
+    const result = await this.plugin.renderPreview(source, scratch);
+    if (this.committed || myId !== this.latestRenderId) return;
+    if (result.ok) {
+      this.previewEl.replaceChildren(...Array.from(scratch.childNodes));
+    }
+    // {ok: false} handling is added in Task 10.
   }
 }

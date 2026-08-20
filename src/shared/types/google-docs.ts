@@ -103,6 +103,8 @@ export interface GoogleDocsSyncResult {
   success: boolean;
   error?: string;
   externalEditsDetected?: boolean;
+  /** HTTP status when the failure came from a Google API call. */
+  status?: number;
 }
 
 /** Auth state exposed to renderer */

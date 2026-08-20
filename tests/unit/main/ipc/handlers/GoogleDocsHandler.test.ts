@@ -129,6 +129,23 @@ describe('GoogleDocsHandler', () => {
       expect(result.error).toMatch(/link|pick/i);
     });
 
+    it('should drop the stale link when sync REPORTS the document is gone', async () => {
+      // The sync service catches API errors and resolves with a failure
+      // result -- it does not throw -- so the returned result is the only
+      // place the 404 is visible.
+      mocks.linkStore.getLink.mockReturnValue({ docId: 'GONE_DOC', lastSyncedAt: null });
+      mocks.syncService.sync.mockResolvedValue({
+        success: false,
+        error: 'Requested entity was not found.',
+        status: 404,
+      });
+
+      const result = (await invokeSync('/notes/a.md')) as { success: boolean; error: string };
+
+      expect(mocks.linkStore.removeLink).toHaveBeenCalledWith('/notes/a.md');
+      expect(result.error).toMatch(/link|pick/i);
+    });
+
     it('should keep the link when the failure is not a missing document', async () => {
       mocks.linkStore.getLink.mockReturnValue({ docId: 'FINE_DOC', lastSyncedAt: null });
       mocks.syncService.sync.mockRejectedValue(

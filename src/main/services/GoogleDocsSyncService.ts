@@ -521,7 +521,7 @@ export class GoogleDocsSyncService {
       const message = err instanceof Error ? err.message : String(err);
       const stack = err instanceof Error ? err.stack : '';
       console.error('[SyncService] ERROR:', message, '\n', stack);
-      return { success: false, error: message };
+      return { success: false, error: message, status: (err as { status?: number }).status };
     }
   }
 

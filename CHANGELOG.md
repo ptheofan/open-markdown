@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Saving straight from an open editor no longer loses the edit.** Text being typed only reaches the document when the editor commits, and committing is also what marks the document as changed. Save checked "is there anything to change?" before that happened, so an edit the user never clicked away from looked like no change at all: nothing was written to disk, exiting edit mode committed it into the view anyway, and the change was gone the next time the file was opened. Pending edits are now committed before the document is read or judged unchanged.
 - **Bolding a word mid-sentence no longer leaves literal asterisks.** Selecting a word by double-click takes its trailing space with it, so the editor wrapped `Testt2 ` rather than `Testt2` and wrote `**Testt2 **`. A closing `**` preceded by a space is not a valid CommonMark closer, so the markers survived as text instead of becoming bold. Emphasis markers are now placed inside any surrounding whitespace, for bold, italic and strikethrough alike.
 
 ### Changed

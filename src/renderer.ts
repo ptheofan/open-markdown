@@ -894,7 +894,14 @@ class App {
   private async handleSaveAndExitEditMode(): Promise<void> {
     if (!this.markdownViewer) return;
 
-    // Save before exiting
+    // Commit whatever is still being typed BEFORE asking whether there is
+    // anything to save. The commit is what both updates the markdown and
+    // marks the document dirty, so checking first meant an edit the user
+    // never clicked away from looked like no change at all: nothing was
+    // written, exiting committed it into the view regardless, and the edit
+    // was gone the next time the file was opened.
+    this.markdownViewer.flushPendingEdits();
+
     if (this.state.hasUnsavedChanges) {
       await this.saveFile();
     }

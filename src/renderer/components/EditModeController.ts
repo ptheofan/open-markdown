@@ -536,9 +536,20 @@ export class EditModeController {
     editor?.commit();
   }
 
+  /**
+   * Commit whatever the user is currently typing into the markdown model.
+   *
+   * Call before reading the document or deciding whether it is dirty: the
+   * commit is what both updates the markdown and fires onContentChange.
+   * Safe to call when nothing is being edited.
+   */
+  flushPendingEdits(): void {
+    this.commitActiveEdit();
+  }
+
   /** Test-only: deterministically commit the active edit. */
   commitActiveEditForTest(): void {
-    this.commitActiveEdit();
+    this.flushPendingEdits();
   }
 
   private readonly onGlobalKeyDown = (e: KeyboardEvent): void => {

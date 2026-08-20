@@ -51,6 +51,39 @@ describe('EditModeController — WYSIWYG editing', () => {
   });
 });
 
+describe('EditModeController — reading markdown mid-edit', () => {
+  // Saving happens while an inline editor is still focused: the user types and
+  // hits Save without clicking away first. If reading the markdown misses that
+  // uncommitted text, the file is written as it was BEFORE the last edit, the
+  // view then shows the edit anyway once the editor closes, and the change is
+  // silently gone on reopen.
+  it('flushing makes the open editor\'s text readable', async () => {
+    const { container, controller } = setup();
+    await controller.enter('# Title');
+    const content = container.querySelector<HTMLElement>('.slice-content')!;
+    content.click();
+    content.textContent = 'New Title';
+
+    expect(controller.getMarkdown()).toBe('# Title'); // not yet committed
+    controller.flushPendingEdits();
+    expect(controller.getMarkdown()).toBe('# New Title');
+  });
+
+  it('marks the document dirty for an edit that was never explicitly committed', async () => {
+    const { container, controller } = setup();
+    const onContentChange = vi.fn();
+    controller.setCallbacks({ onContentChange });
+    await controller.enter('# Title');
+    const content = container.querySelector<HTMLElement>('.slice-content')!;
+    content.click();
+    content.textContent = 'New Title';
+
+    // Whoever is about to save needs to learn there is something to save.
+    controller.flushPendingEdits();
+    expect(onContentChange).toHaveBeenCalledWith('# New Title');
+  });
+});
+
 describe('EditModeController — raw markdown editing', () => {
   it('startRawEdit puts a slim textarea in the slice with the raw markdown', async () => {
     const { container, controller } = setup();

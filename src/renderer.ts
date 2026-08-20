@@ -18,7 +18,7 @@ import {
   createOpenExternalDropdown,
   createGoogleDocsButton,
   createSyncProgressBar,
-  createGoogleDocsConfirmDialog,
+  createSyncConflictDialog,
   Toast,
   type MarkdownViewer,
   type DropZone,
@@ -33,7 +33,7 @@ import {
   type OpenExternalDropdown,
   type GoogleDocsButton,
   type SyncProgressBar,
-  type GoogleDocsConfirmDialog,
+  type SyncConflictDialog,
 } from './renderer/components';
 import type { EditModeCallbacks } from './renderer/components/EditModeController';
 import {
@@ -61,7 +61,13 @@ import type {
   MermaidDiagramData,
   TableColumnWidths,
 } from '@shared/types';
-import type { GoogleAuthState } from '@shared/types/google-docs';
+import type {
+  GoogleAuthState,
+  GoogleDocsResolveResult,
+  SyncConflictChoice,
+  SyncConflictKind,
+  SyncResolveMode,
+} from '@shared/types/google-docs';
 import type { MermaidPlugin } from '@plugins/builtin/MermaidPlugin';
 import type { ResolvedTheme } from './themes/types';
 
@@ -99,7 +105,7 @@ class App {
   private openExternalDropdown: OpenExternalDropdown | null = null;
   private googleDocsButton: GoogleDocsButton | null = null;
   private syncProgressBar: SyncProgressBar | null = null;
-  private googleDocsConfirmDialog: GoogleDocsConfirmDialog | null = null;
+  private syncConflictDialog: SyncConflictDialog | null = null;
 
   private state: AppState = {
     currentFilePath: null,
@@ -268,12 +274,8 @@ class App {
       });
     }
 
-    // Create Google Docs link dialog
-    // Create Google Docs confirm dialog
-    const gdocsConfirmEl = document.getElementById('gdocs-confirm-dialog');
-    if (gdocsConfirmEl) {
-      this.googleDocsConfirmDialog = createGoogleDocsConfirmDialog(gdocsConfirmEl);
-    }
+    // Asks how to reconcile when the file and the Doc have both changed.
+    this.syncConflictDialog = createSyncConflictDialog();
 
     // Create zoom controller for the markdown content
     // Target: markdown-content (the element to scale)
@@ -1258,13 +1260,7 @@ class App {
 
       if (result.conflict) {
         this.googleDocsButton?.setState('ready');
-
-        // Show confirmation dialog and wait for user response
-        this.googleDocsConfirmDialog?.setCallbacks({
-          onConfirm: () => { void this.handleGoogleDocsSyncOverwrite(content, mermaidData, tableWidths); },
-          onCancel: () => { /* do nothing, button already set to ready */ },
-        });
-        this.googleDocsConfirmDialog?.show();
+        await this.handleSyncConflict(result.conflict, content, mermaidData, tableWidths);
         return;
       } else if (result.success) {
         this.toast?.success('Synced to Google Docs');
@@ -1312,36 +1308,101 @@ class App {
   }
 
   /**
-   * Handle Google Docs sync overwrite after confirmation
+   * Ask the user how to reconcile, then carry it out.
+   *
+   * A merge takes two trips to the main process: the first reports the blocks
+   * it could not settle, the second carries the user's answers back.
    */
-  private async handleGoogleDocsSyncOverwrite(
+  private async handleSyncConflict(
+    kind: SyncConflictKind,
     content: string,
     mermaidData?: MermaidDiagramData[],
     tableWidths?: TableColumnWidths[],
   ): Promise<void> {
-    if (!this.state.currentFilePath) return;
+    let mode: SyncResolveMode | null;
+    if (kind === 'remote-only') {
+      // Nothing of the user's is at stake, so a full three-way choice would be
+      // noise -- there is only one sensible direction.
+      mode = (await this.syncConflictDialog?.confirmPull()) === true ? 'pull' : null;
+    } else {
+      mode = (await this.syncConflictDialog?.chooseMode()) ?? null;
+    }
+    if (mode === null) return;
 
-    this.googleDocsButton?.setState('syncing');
+    let resolutions: SyncConflictChoice[] | undefined;
+    for (;;) {
+      this.googleDocsButton?.setState('syncing');
+      const result = await this.resolveSync(mode, content, mermaidData, tableWidths, resolutions);
+      if (result === null) return;
 
+      if (result.conflicts != null && result.conflicts.length > 0) {
+        this.googleDocsButton?.setState('ready');
+        const answers = await this.syncConflictDialog?.resolveConflicts(result.conflicts);
+        if (answers == null) return;
+        resolutions = answers;
+        continue;
+      }
+
+      if (!result.success) {
+        this.toast?.error(result.error ?? 'Sync failed');
+        await this.updateGoogleDocsButtonState();
+        return;
+      }
+
+      // pull and merge hand back new file content; push does not.
+      if (result.markdown != null) {
+        await this.applyPulledMarkdown(result.markdown);
+      }
+      this.toast?.success(mode === 'pull' ? 'Updated from Google Docs' : 'Synced to Google Docs');
+      await this.updateGoogleDocsButtonState();
+      return;
+    }
+  }
+
+  private async resolveSync(
+    mode: SyncResolveMode,
+    content: string,
+    mermaidData?: MermaidDiagramData[],
+    tableWidths?: TableColumnWidths[],
+    resolutions?: SyncConflictChoice[],
+  ): Promise<GoogleDocsResolveResult | null> {
+    if (!this.state.currentFilePath) return null;
     try {
-      const result = await window.electronAPI.googleDocs.syncConfirmOverwrite(
+      return await window.electronAPI.googleDocs.syncResolve(
         this.state.currentFilePath,
+        mode,
         content,
         mermaidData && mermaidData.length > 0 ? mermaidData : undefined,
         tableWidths && tableWidths.length > 0 ? tableWidths : undefined,
+        resolutions,
       );
-      if (result.success) {
-        this.toast?.success('Synced to Google Docs (overwritten)');
-      } else {
-        this.toast?.error(result.error ?? 'Sync failed');
-      }
     } catch (error) {
-      console.error('Google Docs overwrite sync failed:', error);
-      this.toast?.error('Sync failed');
-    } finally {
-      this.googleDocsButton?.setState('ready');
+      console.error('Google Docs resolve failed:', error);
+      this.toast?.error(error instanceof Error ? error.message : 'Sync failed');
       await this.updateGoogleDocsButtonState();
+      return null;
     }
+  }
+
+  /**
+   * Write markdown pulled from the Doc to disk and show it.
+   *
+   * The file watcher will also see this write, but its handler ignores changes
+   * while edit mode is open, so the viewer is re-rendered here directly.
+   */
+  private async applyPulledMarkdown(markdown: string): Promise<void> {
+    const filePath = this.state.currentFilePath;
+    if (!filePath) return;
+
+    const written = await window.electronAPI.file.write(filePath, markdown);
+    if (!written.success) {
+      this.toast?.error(written.error ?? 'Could not write the file');
+      return;
+    }
+
+    await this.markdownViewer?.render(markdown, filePath);
+    this.state.hasUnsavedChanges = false;
+    this.statusBar?.setModifiedTime(new Date());
   }
 
   /**
@@ -1430,7 +1491,7 @@ class App {
     this.openExternalDropdown?.destroy();
     this.googleDocsButton?.destroy();
     this.syncProgressBar?.destroy();
-    this.googleDocsConfirmDialog?.destroy();
+    this.syncConflictDialog?.destroy();
   }
 }
 

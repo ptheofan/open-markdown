@@ -13,7 +13,7 @@ import type {
   ExternalFileOpenEvent,
 } from './fileAssociation';
 import type { RecentFileEntry } from './recentFiles';
-import type { GoogleDocLink, GoogleDocsSyncResult, GoogleAuthState, MermaidDiagramData, TableColumnWidths, SyncProgressUpdate } from './google-docs';
+import type { GoogleDocLink, GoogleDocsSyncResult, GoogleDocsResolveResult, GoogleAuthState, MermaidDiagramData, TableColumnWidths, SyncProgressUpdate, SyncResolveMode, SyncConflictChoice } from './google-docs';
 
 /**
  * IPC Channel names for type-safe communication
@@ -89,7 +89,7 @@ export const IPC_CHANNELS = {
     UNLINK: 'google-docs:unlink',
     GET_LINK: 'google-docs:get-link',
     SYNC: 'google-docs:sync',
-    SYNC_CONFIRM_OVERWRITE: 'google-docs:sync-confirm-overwrite',
+    SYNC_RESOLVE: 'google-docs:sync-resolve',
     ON_AUTH_CHANGE: 'google-docs:on-auth-change',
     ON_SYNC_STATUS: 'google-docs:on-sync-status',
     ON_SYNC_PROGRESS: 'google-docs:on-sync-progress',
@@ -304,7 +304,9 @@ export interface GoogleDocsAPI {
   unlink: (filePath: string) => Promise<void>;
   getLink: (filePath: string) => Promise<GoogleDocLink | null>;
   sync: (filePath: string, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[], tableWidths?: TableColumnWidths[]) => Promise<GoogleDocsSyncResult>;
-  syncConfirmOverwrite: (filePath: string, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[], tableWidths?: TableColumnWidths[]) => Promise<GoogleDocsSyncResult>;
+  /** Reconcile a two-sided change. Merge is called twice: once to learn the
+   *  conflicts, once with the user's answers. */
+  syncResolve: (filePath: string, mode: SyncResolveMode, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[], tableWidths?: TableColumnWidths[], resolutions?: SyncConflictChoice[]) => Promise<GoogleDocsResolveResult>;
   onAuthChange: (callback: (state: GoogleAuthState) => void) => () => void;
   onSyncProgress: (callback: (update: SyncProgressUpdate) => void) => () => void;
   onSyncStatus: (callback: (status: { syncing: boolean; error?: string }) => void) => () => void;

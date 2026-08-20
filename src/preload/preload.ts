@@ -30,7 +30,10 @@ import type {
   GoogleAuthState,
   GoogleDocLink,
   GoogleDocsSyncResult,
+  GoogleDocsResolveResult,
   SyncProgressUpdate,
+  SyncResolveMode,
+  SyncConflictChoice,
   TableColumnWidths,
   MermaidDiagramData,
 } from '@shared/types';
@@ -380,14 +383,16 @@ const electronAPI: ElectronAPI = {
       return ipcRenderer.invoke(IPC_CHANNELS.GOOGLE_DOCS.SYNC, filePath, markdownContent, mermaidDiagrams, tableWidths);
     },
 
-    syncConfirmOverwrite: (filePath: string, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[], tableWidths?: TableColumnWidths[]): Promise<GoogleDocsSyncResult> => {
+    syncResolve: (filePath: string, mode: SyncResolveMode, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[], tableWidths?: TableColumnWidths[], resolutions?: SyncConflictChoice[]): Promise<GoogleDocsResolveResult> => {
       return ipcRenderer.invoke(
-        IPC_CHANNELS.GOOGLE_DOCS.SYNC_CONFIRM_OVERWRITE,
+        IPC_CHANNELS.GOOGLE_DOCS.SYNC_RESOLVE,
         filePath,
+        mode,
         markdownContent,
         mermaidDiagrams,
-        tableWidths
-      );
+        tableWidths,
+        resolutions,
+      ) as Promise<GoogleDocsResolveResult>;
     },
 
     onAuthChange: (callback: (state: GoogleAuthState) => void): (() => void) => {

@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   syncService: {
     sync: vi.fn(),
     syncForceOverwrite: vi.fn(),
+    resolve: vi.fn(),
   },
   linkStore: {
     getLink: vi.fn(),
@@ -86,7 +87,7 @@ describe('GoogleDocsHandler', () => {
     expect(handleCalls).toContain('google-docs:unlink');
     expect(handleCalls).toContain('google-docs:get-link');
     expect(handleCalls).toContain('google-docs:sync');
-    expect(handleCalls).toContain('google-docs:sync-confirm-overwrite');
+    expect(handleCalls).toContain('google-docs:sync-resolve');
   });
 
   it('should register exactly 8 handlers', () => {
@@ -214,6 +215,6 @@ describe('GoogleDocsHandler', () => {
     expect(removeCalls).toContain('google-docs:unlink');
     expect(removeCalls).toContain('google-docs:get-link');
     expect(removeCalls).toContain('google-docs:sync');
-    expect(removeCalls).toContain('google-docs:sync-confirm-overwrite');
+    expect(removeCalls).toContain('google-docs:sync-resolve');
   });
 });

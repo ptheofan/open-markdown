@@ -190,9 +190,19 @@ function generateParagraphDiffOperations(
   // mandatory document-ending newline.
   const maxDeleteEnd = docBodyEndIndex != null ? docBodyEndIndex - 1 : undefined;
 
+  return diffOpsToRequests(allOps, maxDeleteEnd);
+}
+
+/**
+ * Turn diff operations into batchUpdate requests.
+ *
+ * Emitted in reverse order so that every index an earlier request refers to is
+ * still valid when it runs.
+ */
+function diffOpsToRequests(ops: DiffOp[], maxDeleteEnd?: number): DocsBatchUpdateRequest[] {
   const requests: DocsBatchUpdateRequest[] = [];
-  for (let i = allOps.length - 1; i >= 0; i--) {
-    const op = allOps[i]!;
+  for (let i = ops.length - 1; i >= 0; i--) {
+    const op = ops[i]!;
     if (op.type === 'delete') {
       let endIdx = op.endIndex ?? op.index;
       // Exclude the trailing newline from paragraph-level deletes only. A
@@ -225,6 +235,11 @@ interface ApiTable {
   startIndex: number;
   endIndex: number;
   cellTexts: string; // concatenated cell text for comparison
+  /** Each cell's first paragraph, carrying the real Docs indices, so a cell
+   *  can be edited in place instead of the table being rebuilt. */
+  cells: ApiParagraph[][];
+  rowCount: number;
+  columnCount: number;
 }
 
 interface ApiImageBlock {
@@ -244,27 +259,90 @@ function extractApiTables(apiDoc: GDocsApiDocument): ApiTable[] {
   for (const el of content) {
     if (el.table) {
       let cellTexts = '';
+      const cells: ApiParagraph[][] = [];
       for (const row of el.table.tableRows ?? []) {
+        const rowCells: ApiParagraph[] = [];
         for (const cell of row.tableCells ?? []) {
+          let text = '';
+          let startIndex = 0;
+          let endIndex = 0;
+          let textStartIndex = 0;
+          let found = false;
           for (const cellContent of cell.content ?? []) {
             if (cellContent.paragraph) {
               for (const pe of cellContent.paragraph.elements ?? []) {
-                if (pe.textRun?.content) {
+                if (pe.textRun?.content != null) {
+                  if (!found) {
+                    startIndex = cellContent.startIndex ?? pe.startIndex ?? 0;
+                    textStartIndex = pe.startIndex ?? startIndex;
+                    found = true;
+                  }
+                  text += pe.textRun.content;
+                  endIndex = pe.endIndex ?? cellContent.endIndex ?? endIndex;
                   cellTexts += pe.textRun.content;
                 }
               }
             }
           }
+          rowCells.push({ text, startIndex, endIndex, textStartIndex });
         }
+        cells.push(rowCells);
       }
       result.push({
         startIndex: el.startIndex ?? 0,
         endIndex: el.endIndex ?? 0,
         cellTexts,
+        cells,
+        rowCount: cells.length,
+        columnCount: cells[0]?.length ?? 0,
       });
     }
   }
   return result;
+}
+
+/**
+ * Edit a table's changed cells in place.
+ *
+ * Rebuilding the table would be far simpler, but comments anchor to text
+ * ranges: deleting a table detaches every comment in it, and tables are
+ * exactly where review comments tend to live. Cells whose text is unchanged
+ * emit nothing at all, and within a changed cell only the differing characters
+ * move, so a comment on an untouched word survives too.
+ *
+ * Returns null when the shapes disagree -- adding a column cannot be expressed
+ * as a text edit, so the caller falls back to rebuilding.
+ */
+/** The document index a request acts on, for ordering a mixed batch. */
+function requestIndex(request: DocsBatchUpdateRequest): number {
+  if ('deleteContentRange' in request) return request.deleteContentRange.range.startIndex;
+  if ('insertText' in request) return request.insertText.location.index;
+  return 0;
+}
+
+function tableCellDiffRequests(
+  apiTable: ApiTable,
+  modelTable: DocsElement,
+): DocsBatchUpdateRequest[] | null {
+  const modelRows = modelTable.rows ?? [];
+  if (modelRows.length !== apiTable.rowCount) return null;
+  if (modelRows.some((row) => row.length !== apiTable.columnCount)) return null;
+
+  const ops: DiffOp[] = [];
+  for (let r = 0; r < modelRows.length; r++) {
+    const modelRow = modelRows[r] ?? [];
+    const apiRow = apiTable.cells[r] ?? [];
+    for (let c = 0; c < modelRow.length; c++) {
+      const apiCell = apiRow[c];
+      if (apiCell == null) return null;
+      const newText = (modelRow[c] ?? []).map((run) => run.text).join('');
+      if (apiCell.text.replace(/\n$/, '') === newText) continue;
+      ops.push(...charDiffWithinParagraph(apiCell, newText));
+    }
+  }
+  // Sorted so the reverse emit keeps every index valid.
+  ops.sort((a, b) => a.index - b.index);
+  return diffOpsToRequests(ops);
 }
 
 function extractApiImageBlocks(apiDoc: GDocsApiDocument): ApiImageBlock[] {
@@ -549,7 +627,7 @@ export function syncProgressPercent(at: {
  * Anything beyond that is real content -- which may carry comments, and so must
  * be diffed rather than replaced.
  */
-export function isBodyEmpty(apiDoc: GDocsApiDocument | null | undefined): boolean {
+function isBodyEmpty(apiDoc: GDocsApiDocument | null | undefined): boolean {
   const endIndex = apiDoc?.body?.content?.at(-1)?.endIndex;
   return endIndex == null || endIndex <= 2;
 }
@@ -1144,14 +1222,37 @@ export class GoogleDocsSyncService {
     // Track tables that need replacement (process in reverse for index stability)
     const tablesToReplace: Array<{ apiTable: ApiTable; modelTable: DocsElement }> = [];
 
+    // Cell-level edits for every table whose shape still matches. Collected
+    // across all tables and sent as one batch; emitted in reverse index order,
+    // so earlier tables' indices stay valid.
+    // Tables whose row count changed but whose columns still line up. Adding
+    // or removing a row is an ordinary edit and must not cost the table its
+    // comments, so the rows are inserted or deleted in place and the text is
+    // filled in afterwards.
+    const tablesToResize: Array<{ apiTable: ApiTable; rowDelta: number }> = [];
+    let anyCellChanged = false;
+
     for (let i = 0; i < tableCount; i++) {
       const apiTable = apiTables[i]!;
       const modelTable = modelTables[i]!;
-      const modelCellTexts = modelTableCellTexts(modelTable);
 
-      if (apiTable.cellTexts !== modelCellTexts) {
+      if (apiTable.cellTexts === modelTableCellTexts(modelTable)) continue;
+      anyCellChanged = true;
+
+      const modelRows = modelTable.rows ?? [];
+      const modelColumns = modelRows[0]?.length ?? 0;
+      const sameColumns = modelRows.every((row) => row.length === apiTable.columnCount)
+        && modelColumns === apiTable.columnCount;
+
+      if (!sameColumns) {
+        // A column added or removed cannot be expressed as a text edit, and
+        // the Docs API gives no way to reshape one without rebuilding. This
+        // is the only path that still loses a table's comments.
         tablesToReplace.push({ apiTable, modelTable });
+      } else if (modelRows.length !== apiTable.rowCount) {
+        tablesToResize.push({ apiTable, rowDelta: modelRows.length - apiTable.rowCount });
       }
+      // Same shape: nothing structural to do; the cell pass below handles it.
     }
 
     // Tables removed from markdown (more API tables than model tables)
@@ -1188,6 +1289,17 @@ export class GoogleDocsSyncService {
     // Insert new tables (added in markdown)
     if (tablesToAdd.length > 0) {
       await this.insertNewTables(docId, tablesToAdd);
+    }
+
+    // Resize in reverse document order so earlier tables keep their indices.
+    for (const op of [...tablesToResize].sort((a, b) => b.apiTable.startIndex - a.apiTable.startIndex)) {
+      await this.resizeTableRows(docId, op.apiTable, op.rowDelta);
+    }
+
+    // Finally, fill in the text. Re-read first: anything above did move
+    // indices, and the cell diff addresses real positions.
+    if (anyCellChanged) {
+      await this.applyTableCellEdits(docId, modelTables);
     }
 
     // ── Images (mermaid diagrams) ────────────���──────────────────
@@ -1242,6 +1354,79 @@ export class GoogleDocsSyncService {
       const endIdx = currentDoc?.body?.content?.at(-1)?.endIndex ?? 2;
       await this.insertImageAtIndex(docId, endIdx - 1, modelImage);
     }
+  }
+
+  /**
+   * Add or remove rows at the end of a table, keeping the rest of it intact.
+   *
+   * Rows are appended below the last one, or removed from the bottom up, which
+   * leaves every surviving row -- and the comments anchored in it -- exactly
+   * where it was.
+   */
+  private async resizeTableRows(
+    docId: string,
+    apiTable: ApiTable,
+    rowDelta: number,
+  ): Promise<void> {
+    const tableStartLocation = { index: apiTable.startIndex };
+    const requests: DocsBatchUpdateRequest[] = [];
+
+    if (rowDelta > 0) {
+      for (let n = 0; n < rowDelta; n++) {
+        requests.push({
+          insertTableRow: {
+            // Each insert goes below what is by then the last row.
+            tableCellLocation: {
+              tableStartLocation,
+              rowIndex: apiTable.rowCount - 1 + n,
+              columnIndex: 0,
+            },
+            insertBelow: true,
+          },
+        });
+      }
+    } else {
+      // Delete from the bottom so the indices of the rows above hold still.
+      for (let n = 0; n < -rowDelta; n++) {
+        requests.push({
+          deleteTableRow: {
+            tableCellLocation: {
+              tableStartLocation,
+              rowIndex: apiTable.rowCount - 1 - n,
+              columnIndex: 0,
+            },
+          },
+        });
+      }
+    }
+
+    if (requests.length > 0) {
+      console.warn('[SyncService] table resize: %d row op(s)', requests.length);
+      await this.docsService.batchUpdate(docId, requests);
+    }
+  }
+
+  /**
+   * Bring every table's text up to date, editing cells in place.
+   *
+   * Runs from a fresh read so the indices are the ones that exist now, after
+   * any rows were added or removed.
+   */
+  private async applyTableCellEdits(docId: string, modelTables: DocsElement[]): Promise<void> {
+    const apiTables = extractApiTables(await this.docsService.getDocument(docId));
+    const requests: DocsBatchUpdateRequest[] = [];
+
+    for (let i = 0; i < Math.min(apiTables.length, modelTables.length); i++) {
+      const edits = tableCellDiffRequests(apiTables[i]!, modelTables[i]!);
+      if (edits !== null) requests.push(...edits);
+    }
+
+    if (requests.length === 0) return;
+    console.warn('[SyncService] table cell edits: %d request(s)', requests.length);
+    // Descending by the index each request touches, so nothing shifts beneath
+    // a request that has not run yet.
+    requests.sort((a, b) => requestIndex(b) - requestIndex(a));
+    await this.docsService.batchUpdate(docId, requests);
   }
 
   /**

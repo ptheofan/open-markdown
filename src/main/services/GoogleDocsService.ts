@@ -43,6 +43,13 @@ export interface DocsRange {
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /** A single batch update request (various Google Docs API request types) */
+/** Where a table operation applies, per the Docs API TableCellLocation. */
+export interface DocsTableCellLocation {
+  tableStartLocation: { index: number };
+  rowIndex: number;
+  columnIndex: number;
+}
+
 export type DocsBatchUpdateRequest =
   | { insertText: { text: string; location: { index: number } } }
   | { updateTextStyle: { range: DocsRange; textStyle: Record<string, any>; fields: string } }
@@ -51,6 +58,8 @@ export type DocsBatchUpdateRequest =
   | { insertInlineImage: { uri: string; location: { index: number }; objectSize: Record<string, any> } }
   | { deleteContentRange: { range: DocsRange } }
   | { insertTable: { rows: number; columns: number; location: { index: number } } }
+  | { insertTableRow: { tableCellLocation: DocsTableCellLocation; insertBelow: boolean } }
+  | { deleteTableRow: { tableCellLocation: DocsTableCellLocation } }
   | {
       updateTableColumnProperties: {
         tableStartLocation: { index: number };

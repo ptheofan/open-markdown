@@ -49,7 +49,7 @@ interface GDocsParagraph {
   bullet?: GDocsBullet;
 }
 
-interface GDocsTableCell {
+export interface GDocsTableCell {
   content?: GDocsStructuralElement[];
 }
 

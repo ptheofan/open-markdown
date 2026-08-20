@@ -2,9 +2,10 @@
  * Tests for structural element sync (tables and mermaid images)
  * during incremental diff.
  *
- * Verifies that syncStructuralElements correctly detects changed tables
- * and images, deletes old ones, and re-inserts new ones at the correct
- * positions — all while leaving unchanged structural elements alone.
+ * Verifies that syncStructuralElements correctly detects changed tables and
+ * images and updates them in place where it can — editing cells and resizing
+ * rows rather than rebuilding, so comments anchored in a table survive — while
+ * leaving unchanged structural elements alone.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createGoogleDocsSyncService } from '@main/services/GoogleDocsSyncService';
@@ -43,7 +44,7 @@ describe('Structural element sync', () => {
   });
 
   describe('table sync', () => {
-    it('should detect and replace a table whose content changed', async () => {
+    it('should grow a table in place rather than rebuilding it', async () => {
       const syncService = createGoogleDocsSyncService(
         mockDocsService as unknown as GoogleDocsService,
         linkStore,
@@ -110,23 +111,19 @@ describe('Structural element sync', () => {
       const result = await syncService.sync('/test/file.md', 'doc-123', markdown);
       expect(result.success).toBe(true);
 
-      // Should have called batchUpdate with deleteContentRange for the old table
+      // A row was added and the columns still line up, so the table is resized
+      // in place. It must NOT be deleted and rebuilt: comments anchor to text
+      // ranges, and rebuilding detaches every one of them.
       const allCalls = mockDocsService.batchUpdate.mock.calls;
-      const hasTableDelete = allCalls.some((call: any) => {
-        const requests = call[1] as any[];
-        return requests.some((r: any) =>
-          r.deleteContentRange?.range?.startIndex === 7 &&
-          r.deleteContentRange?.range?.endIndex === 30
-        );
-      });
-      expect(hasTableDelete).toBe(true);
+      const requests = allCalls.flatMap((call: any) => (call[1] ?? []) as any[]);
 
-      // Should have called batchUpdate with insertTable
-      const hasInsertTable = allCalls.some((call: any) => {
-        const requests = call[1] as any[];
-        return requests.some((r: any) => r.insertTable);
-      });
-      expect(hasInsertTable).toBe(true);
+      const hasTableDelete = requests.some((r: any) =>
+        r.deleteContentRange?.range?.startIndex === 7 &&
+        r.deleteContentRange?.range?.endIndex === 30
+      );
+      expect(hasTableDelete).toBe(false);
+      expect(requests.some((r: any) => r.insertTable)).toBe(false);
+      expect(requests.some((r: any) => r.insertTableRow)).toBe(true);
     });
 
     it('should skip unchanged tables', async () => {

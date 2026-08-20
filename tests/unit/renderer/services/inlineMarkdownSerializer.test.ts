@@ -3,6 +3,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { serializeInline, canSerialize } from '../../../../src/renderer/services/inlineMarkdownSerializer';
+import { convertMarkdownToDocs } from '../../../../src/main/services/MarkdownToDocsConverter';
 
 function div(html: string): HTMLElement {
   const el = document.createElement('div');
@@ -83,5 +84,43 @@ describe('canSerialize', () => {
   it('rejects content with unsupported elements', () => {
     expect(canSerialize(div('text <sup>2</sup>'))).toBe(false);
     expect(canSerialize(div('text <span style="color:red">x</span>'))).toBe(false);
+  });
+});
+
+describe('emphasis spanning trailing whitespace', () => {
+  // Selecting a word by double-click takes the trailing space with it, so the
+  // browser wraps "Testt2 " rather than "Testt2". Emitting that verbatim gives
+  // `**Testt2 **`, whose closing delimiter is preceded by a space -- not a
+  // valid CommonMark closer, so the asterisks survive into the output as text.
+  it('keeps a trailing space outside bold markers', () => {
+    expect(serializeInline(div('attribute <strong>Testt2 </strong>schema'))).toBe(
+      'attribute **Testt2** schema'
+    );
+  });
+
+  it('keeps a leading space outside bold markers', () => {
+    expect(serializeInline(div('attribute<strong> Testt2</strong> schema'))).toBe(
+      'attribute **Testt2** schema'
+    );
+  });
+
+  it('applies the same rule to italic and strikethrough', () => {
+    expect(serializeInline(div('a <em>b </em>c'))).toBe('a *b* c');
+    expect(serializeInline(div('a <del>b </del>c'))).toBe('a ~~b~~ c');
+  });
+
+  it('emits no markers at all around whitespace-only emphasis', () => {
+    // `** **` is not valid emphasis either; there is nothing to embolden.
+    expect(serializeInline(div('a<strong> </strong>b'))).toBe('a b');
+  });
+
+  it('survives the round trip into actual bold formatting', () => {
+    // The property that matters: not the intermediate markdown, but that the
+    // synced document ends up with a bold run and no stray asterisks.
+    const markdown = serializeInline(div('attribute <strong>Testt2 </strong>schema'));
+    const runs = convertMarkdownToDocs(markdown).elements[0]?.runs ?? [];
+
+    expect(runs.some((r) => r.text === 'Testt2' && r.bold)).toBe(true);
+    expect(runs.map((r) => r.text).join('')).not.toContain('*');
   });
 });

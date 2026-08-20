@@ -89,6 +89,33 @@ function docWithThreeRowTable(): GDocsApiDocument {
   };
 }
 
+/** The same table after a third column was inserted: the new cells are empty. */
+function docWithThreeColumnTable(): GDocsApiDocument {
+  return {
+    body: {
+      content: [
+        {
+          startIndex: 1,
+          endIndex: 7,
+          paragraph: { elements: [{ startIndex: 1, endIndex: 7, textRun: { content: 'Title\n' } }] },
+        },
+        {
+          startIndex: TABLE_START,
+          endIndex: 52,
+          table: {
+            rows: 2,
+            columns: 3,
+            tableRows: [
+              { tableCells: [cell('H1\n', 9), cell('H2\n', 13), cell('\n', 17)] },
+              { tableCells: [cell('a\n', 20), cell('b\n', 23), cell('\n', 26)] },
+            ],
+          },
+        },
+      ],
+    },
+  };
+}
+
 describe('editing text inside a table', () => {
   let linkStore: GoogleDocsLinkStore;
   let tempDir: string;
@@ -320,5 +347,123 @@ describe('the cost of an unchanged table', () => {
     const changed = await readsFor('# Title\n\n| H1 | H2 |\n| --- | --- |\n| a | B EDITED |\n');
 
     expect(changed).toBeGreaterThan(unchanged);
+  });
+});
+
+describe('changing a table\'s column count', () => {
+  let linkStore: GoogleDocsLinkStore;
+  let tempDir: string;
+
+  const mockDocsService = {
+    getDocument: vi.fn(),
+    batchUpdate: vi.fn(),
+    uploadImage: vi.fn(),
+    extractPlainText: vi.fn(),
+  };
+
+  const PLAIN = 'Title\nH1\nH2\na\nb\n';
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'gdocs-col-test-'));
+    linkStore = createGoogleDocsLinkStore(tempDir);
+    await linkStore.initialize();
+    mockDocsService.extractPlainText.mockReturnValue(PLAIN);
+    await linkStore.saveBaseline('doc-1', PLAIN);
+    await linkStore.setLink('/test/file.md', 'doc-1');
+  });
+
+  afterEach(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  function requests(): Array<Record<string, { range?: { startIndex: number; endIndex: number } }>> {
+    return mockDocsService.batchUpdate.mock.calls.flatMap(
+      ([, reqs]) => (reqs ?? []) as Array<Record<string, { range?: { startIndex: number; endIndex: number } }>>,
+    );
+  }
+
+  function service(): ReturnType<typeof createGoogleDocsSyncService> {
+    return createGoogleDocsSyncService(
+      mockDocsService as unknown as GoogleDocsService,
+      linkStore,
+    );
+  }
+
+  /** Model the Doc actually growing a column when one is inserted. */
+  function wireGrowingTable(): void {
+    let columns = 2;
+    mockDocsService.getDocument.mockImplementation(() =>
+      Promise.resolve(columns === 2 ? docWithTable() : docWithThreeColumnTable()));
+    mockDocsService.batchUpdate.mockImplementation((_id: string, reqs: unknown[]) => {
+      if ((reqs ?? []).some((r) => r != null && 'insertTableColumn' in (r as object))) columns = 3;
+      return Promise.resolve({ replies: [] });
+    });
+  }
+
+  const MARKDOWN_EXTRA_COLUMN =
+    '# Title\n\n| H1 | H2 | H3 |\n| --- | --- | --- |\n| a | b | c |\n';
+
+  it('adds a column instead of rebuilding the table', async () => {
+    wireGrowingTable();
+    await service().sync('/test/file.md', 'doc-1', MARKDOWN_EXTRA_COLUMN);
+
+    expect(requests().filter((r) => 'insertTableColumn' in r).length).toBeGreaterThan(0);
+    expect(requests().filter((r) => 'insertTable' in r)).toEqual([]);
+  });
+
+  it('keeps the existing cells and their comments when adding a column', async () => {
+    wireGrowingTable();
+    await service().sync('/test/file.md', 'doc-1', MARKDOWN_EXTRA_COLUMN);
+
+    const wipes = requests().flatMap((r) => {
+      const range = r['deleteContentRange']?.range;
+      return range && range.startIndex <= TABLE_START ? [range] : [];
+    });
+    expect(wipes).toEqual([]);
+  });
+
+  it('fills the new column with its text', async () => {
+    wireGrowingTable();
+    await service().sync('/test/file.md', 'doc-1', MARKDOWN_EXTRA_COLUMN);
+
+    const inserted = requests().flatMap((r) =>
+      'insertText' in r ? [(r as unknown as { insertText: { text: string } }).insertText.text] : []);
+    expect(inserted).toContain('H3');
+    expect(inserted).toContain('c');
+  });
+
+  it('adds the column at the far edge, not inside the existing ones', async () => {
+    // insertRight:false against the last column would put the new column
+    // second-from-right, silently shifting every cell after it.
+    wireGrowingTable();
+    await service().sync('/test/file.md', 'doc-1', MARKDOWN_EXTRA_COLUMN);
+
+    const inserts = requests().flatMap((r) =>
+      'insertTableColumn' in r
+        ? [(r as unknown as {
+            insertTableColumn: { tableCellLocation: { columnIndex: number }; insertRight: boolean };
+          }).insertTableColumn]
+        : []);
+
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]?.insertRight).toBe(true);
+    // The table had 2 columns, so the last one is index 1.
+    expect(inserts[0]?.tableCellLocation.columnIndex).toBe(1);
+  });
+
+  it('removes a column instead of rebuilding the table', async () => {
+    let columns = 3;
+    mockDocsService.getDocument.mockImplementation(() =>
+      Promise.resolve(columns === 3 ? docWithThreeColumnTable() : docWithTable()));
+    mockDocsService.batchUpdate.mockImplementation((_id: string, reqs: unknown[]) => {
+      if ((reqs ?? []).some((r) => r != null && 'deleteTableColumn' in (r as object))) columns = 2;
+      return Promise.resolve({ replies: [] });
+    });
+
+    await service().sync('/test/file.md', 'doc-1', '# Title\n\n| H1 | H2 |\n| --- | --- |\n| a | b |\n');
+
+    expect(requests().filter((r) => 'deleteTableColumn' in r).length).toBeGreaterThan(0);
+    expect(requests().filter((r) => 'insertTable' in r)).toEqual([]);
   });
 });

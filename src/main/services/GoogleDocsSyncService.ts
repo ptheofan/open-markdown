@@ -1229,7 +1229,7 @@ export class GoogleDocsSyncService {
     // or removing a row is an ordinary edit and must not cost the table its
     // comments, so the rows are inserted or deleted in place and the text is
     // filled in afterwards.
-    const tablesToResize: Array<{ apiTable: ApiTable; rowDelta: number }> = [];
+    const tablesToResize: Array<{ apiTable: ApiTable; rowDelta: number; columnDelta: number }> = [];
     let anyCellChanged = false;
 
     for (let i = 0; i < tableCount; i++) {
@@ -1241,16 +1241,19 @@ export class GoogleDocsSyncService {
 
       const modelRows = modelTable.rows ?? [];
       const modelColumns = modelRows[0]?.length ?? 0;
-      const sameColumns = modelRows.every((row) => row.length === apiTable.columnCount)
-        && modelColumns === apiTable.columnCount;
+      // A ragged table has no single column count to reshape towards. Markdown
+      // cannot express one, so this is a converter fault rather than an edit.
+      const ragged = modelColumns === 0 || modelRows.some((row) => row.length !== modelColumns);
 
-      if (!sameColumns) {
-        // A column added or removed cannot be expressed as a text edit, and
-        // the Docs API gives no way to reshape one without rebuilding. This
-        // is the only path that still loses a table's comments.
+      if (ragged) {
         tablesToReplace.push({ apiTable, modelTable });
-      } else if (modelRows.length !== apiTable.rowCount) {
-        tablesToResize.push({ apiTable, rowDelta: modelRows.length - apiTable.rowCount });
+        continue;
+      }
+
+      const rowDelta = modelRows.length - apiTable.rowCount;
+      const columnDelta = modelColumns - apiTable.columnCount;
+      if (rowDelta !== 0 || columnDelta !== 0) {
+        tablesToResize.push({ apiTable, rowDelta, columnDelta });
       }
       // Same shape: nothing structural to do; the cell pass below handles it.
     }
@@ -1293,7 +1296,7 @@ export class GoogleDocsSyncService {
 
     // Resize in reverse document order so earlier tables keep their indices.
     for (const op of [...tablesToResize].sort((a, b) => b.apiTable.startIndex - a.apiTable.startIndex)) {
-      await this.resizeTableRows(docId, op.apiTable, op.rowDelta);
+      await this.resizeTable(docId, op.apiTable, op.rowDelta, op.columnDelta);
     }
 
     // Finally, fill in the text. Re-read first: anything above did move
@@ -1357,51 +1360,81 @@ export class GoogleDocsSyncService {
   }
 
   /**
-   * Add or remove rows at the end of a table, keeping the rest of it intact.
+   * Reshape a table to the markdown's dimensions, keeping the rest of it intact.
    *
-   * Rows are appended below the last one, or removed from the bottom up, which
-   * leaves every surviving row -- and the comments anchored in it -- exactly
-   * where it was.
+   * Rows and columns are added at the far edge, or removed from the far edge
+   * inwards, so every surviving cell -- and the comments anchored in it --
+   * stays exactly where it was. Rebuilding the table would be simpler and
+   * would detach all of them.
+   *
+   * Row operations address column 0 and column operations address row 0, both
+   * of which survive any resize, so the two can share one batch.
    */
-  private async resizeTableRows(
+  private async resizeTable(
     docId: string,
     apiTable: ApiTable,
     rowDelta: number,
+    columnDelta: number,
   ): Promise<void> {
     const tableStartLocation = { index: apiTable.startIndex };
     const requests: DocsBatchUpdateRequest[] = [];
 
-    if (rowDelta > 0) {
-      for (let n = 0; n < rowDelta; n++) {
-        requests.push({
-          insertTableRow: {
-            // Each insert goes below what is by then the last row.
-            tableCellLocation: {
-              tableStartLocation,
-              rowIndex: apiTable.rowCount - 1 + n,
-              columnIndex: 0,
-            },
-            insertBelow: true,
+    for (let n = 0; n < rowDelta; n++) {
+      requests.push({
+        insertTableRow: {
+          // Each insert goes below what is by then the last row.
+          tableCellLocation: {
+            tableStartLocation,
+            rowIndex: apiTable.rowCount - 1 + n,
+            columnIndex: 0,
           },
-        });
-      }
-    } else {
-      // Delete from the bottom so the indices of the rows above hold still.
-      for (let n = 0; n < -rowDelta; n++) {
-        requests.push({
-          deleteTableRow: {
-            tableCellLocation: {
-              tableStartLocation,
-              rowIndex: apiTable.rowCount - 1 - n,
-              columnIndex: 0,
-            },
+          insertBelow: true,
+        },
+      });
+    }
+    // Delete from the bottom up so the rows above keep their indices.
+    for (let n = 0; n < -rowDelta; n++) {
+      requests.push({
+        deleteTableRow: {
+          tableCellLocation: {
+            tableStartLocation,
+            rowIndex: apiTable.rowCount - 1 - n,
+            columnIndex: 0,
           },
-        });
-      }
+        },
+      });
+    }
+
+    for (let n = 0; n < columnDelta; n++) {
+      requests.push({
+        insertTableColumn: {
+          tableCellLocation: {
+            tableStartLocation,
+            rowIndex: 0,
+            columnIndex: apiTable.columnCount - 1 + n,
+          },
+          insertRight: true,
+        },
+      });
+    }
+    // Likewise right to left, so the columns to the left are unaffected.
+    for (let n = 0; n < -columnDelta; n++) {
+      requests.push({
+        deleteTableColumn: {
+          tableCellLocation: {
+            tableStartLocation,
+            rowIndex: 0,
+            columnIndex: apiTable.columnCount - 1 - n,
+          },
+        },
+      });
     }
 
     if (requests.length > 0) {
-      console.warn('[SyncService] table resize: %d row op(s)', requests.length);
+      console.warn(
+        '[SyncService] table resize: %d row / %d column op(s)',
+        Math.abs(rowDelta), Math.abs(columnDelta),
+      );
       await this.docsService.batchUpdate(docId, requests);
     }
   }

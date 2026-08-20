@@ -60,6 +60,8 @@ export type DocsBatchUpdateRequest =
   | { insertTable: { rows: number; columns: number; location: { index: number } } }
   | { insertTableRow: { tableCellLocation: DocsTableCellLocation; insertBelow: boolean } }
   | { deleteTableRow: { tableCellLocation: DocsTableCellLocation } }
+  | { insertTableColumn: { tableCellLocation: DocsTableCellLocation; insertRight: boolean } }
+  | { deleteTableColumn: { tableCellLocation: DocsTableCellLocation } }
   | {
       updateTableColumnProperties: {
         tableStartLocation: { index: number };

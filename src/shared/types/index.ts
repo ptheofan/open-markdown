@@ -103,6 +103,10 @@ export type {
   TableColumnWidths,
   SyncPhase,
   SyncProgressUpdate,
+  SyncConflictKind,
+  SyncResolveMode,
+  SyncConflict,
+  SyncConflictChoice,
 } from './google-docs';
 
 // Diff types

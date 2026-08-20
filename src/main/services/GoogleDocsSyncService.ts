@@ -537,6 +537,18 @@ export function syncProgressPercent(at: {
  * API work -- rebuilding formatting for a large document costs seconds even
  * when every request is a no-op.
  */
+/**
+ * True when the Doc holds nothing worth preserving.
+ *
+ * A brand-new Doc still has one empty paragraph, so its body ends at index 2.
+ * Anything beyond that is real content -- which may carry comments, and so must
+ * be diffed rather than replaced.
+ */
+export function isBodyEmpty(apiDoc: GDocsApiDocument | null | undefined): boolean {
+  const endIndex = apiDoc?.body?.content?.at(-1)?.endIndex;
+  return endIndex == null || endIndex <= 2;
+}
+
 export function modelFingerprint(docsDoc: DocsDocument): string {
   return crypto.createHash('sha256').update(JSON.stringify(docsDoc)).digest('hex');
 }
@@ -598,16 +610,28 @@ export class GoogleDocsSyncService {
       await this.processMermaidDiagrams(docId, docsDoc, mermaidDiagrams);
       this.applyTableColumnWidths(docsDoc, tableWidths);
 
+      // Reaching here means at least one side moved, so both flags matter.
+      const localChanged = lastFingerprint !== fingerprint;
+
       if (baseline === null) {
-        console.warn('[SyncService] First sync -> fullPopulate');
-        const populated = await this.fullPopulate(docId, filePath, docsDoc);
-        if (populated.success) await this.linkStore.saveModelFingerprint(docId, fingerprint);
-        return populated;
+        // Never synced to this Doc. An empty one is ours to fill; one that
+        // already holds content may hold comments with it, and wiping those
+        // is exactly what this feature exists to avoid.
+        if (isBodyEmpty(currentDoc)) {
+          console.warn('[SyncService] First sync into an empty doc -> fullPopulate');
+          const populated = await this.fullPopulate(docId, filePath, docsDoc);
+          if (populated.success) await this.linkStore.saveModelFingerprint(docId, fingerprint);
+          return populated;
+        }
+        console.warn('[SyncService] First sync into a doc that already has content -> ask');
+        return { success: false, conflict: 'both' };
       }
 
       if (baseline !== theirs) {
-        console.warn('[SyncService] External edits detected');
-        return { success: false, externalEditsDetected: true };
+        console.warn('[SyncService] Doc changed since last sync; local changed: %s', localChanged);
+        // With no local change there is nothing to reconcile -- the user only
+        // has to say whether to take the Doc's version.
+        return { success: false, conflict: localChanged ? 'both' : 'remote-only' };
       }
 
       this.report('Applying changes', 'applying');
@@ -627,7 +651,14 @@ export class GoogleDocsSyncService {
   }
 
   /**
-   * Force overwrite — same as sync but skips external edit detection.
+   * Push the local markdown over a Doc that has also changed, making the Doc
+   * match the file.
+   *
+   * Deliberately routes through `applyDiff`, never `fullPopulate`. Clearing the
+   * body and reinserting it would be far simpler, but Google Docs comments
+   * anchor to text ranges -- deleting the range detaches every comment in the
+   * document, which defeats the point of syncing into a Doc at all. The diff
+   * touches only the paragraphs that actually differ.
    */
   async syncForceOverwrite(
     filePath: string,
@@ -637,13 +668,22 @@ export class GoogleDocsSyncService {
     tableWidths?: TableColumnWidths[],
   ): Promise<GoogleDocsSyncResult> {
     try {
-      console.warn('[SyncService] Force overwrite -- clearing doc and repopulating');
+      console.warn('[SyncService] Push -- making the Doc match the file');
+      const currentDoc = await this.docsService.getDocument(docId);
       const docsDoc = convertMarkdownToDocs(markdown);
+      // Taken before the diagrams run, which mutate the model with Drive URLs.
+      // sync() fingerprints at the same point, so the two agree.
+      const fingerprint = modelFingerprint(docsDoc);
       await this.processMermaidDiagrams(docId, docsDoc, mermaidDiagrams);
       this.applyTableColumnWidths(docsDoc, tableWidths);
 
-      // Full clear + repopulate (same as first sync)
-      return await this.fullPopulate(docId, filePath, docsDoc);
+      // An empty doc has no comments to keep and no indices to diff against.
+      const result = isBodyEmpty(currentDoc)
+        ? await this.fullPopulate(docId, filePath, docsDoc)
+        : await this.applyDiff(docId, filePath, currentDoc, docsDoc);
+      // Without this the next sync always redoes the full diff and reformat.
+      if (result.success) await this.linkStore.saveModelFingerprint(docId, fingerprint);
+      return result;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return { success: false, error: message };

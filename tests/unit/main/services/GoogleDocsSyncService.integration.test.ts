@@ -368,7 +368,7 @@ describe('GoogleDocsSyncService Integration', () => {
       const result = await syncService.sync('/test/file.md', 'doc-123', 'my new content');
 
       expect(result.success).toBe(false);
-      expect(result.externalEditsDetected).toBe(true);
+      expect(result.conflict).toBe('both');
       expect(mockDocsService.batchUpdate).not.toHaveBeenCalled();
     });
   });

@@ -98,11 +98,35 @@ export interface GoogleDocLink {
   lastSyncedAt: string | null;
 }
 
+/** Why a sync stopped to ask the user. */
+export type SyncConflictKind = 'both' | 'remote-only';
+
+/** How the user chose to reconcile a two-sided change. */
+export type SyncResolveMode = 'push' | 'pull' | 'merge';
+
+/** One block both sides edited, which no algorithm can settle on its own. */
+export interface SyncConflict {
+  /** Position in the merged block list, used to apply the resolution. */
+  index: number;
+  /** The block as it stands in the local markdown file. */
+  local: string;
+  /** The block as it stands in the Google Doc. */
+  remote: string;
+}
+
+/** What the user picked for a single conflicting block. */
+export type SyncConflictChoice = 'local' | 'remote' | 'both';
+
 /** Result of a sync operation */
 export interface GoogleDocsSyncResult {
   success: boolean;
   error?: string;
-  externalEditsDetected?: boolean;
+  /**
+   * Set when the sync stopped to ask the user how to reconcile.
+   * 'both' -- the file and the Doc each changed since the last sync.
+   * 'remote-only' -- only the Doc changed, so there is nothing to resolve.
+   */
+  conflict?: SyncConflictKind;
   /** HTTP status when the failure came from a Google API call. */
   status?: number;
   /** Nothing had changed on either side; no API work was done. */

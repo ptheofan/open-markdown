@@ -1256,7 +1256,7 @@ class App {
         tableWidths.length > 0 ? tableWidths : undefined,
       );
 
-      if (result.externalEditsDetected) {
+      if (result.conflict) {
         this.googleDocsButton?.setState('ready');
 
         // Show confirmation dialog and wait for user response

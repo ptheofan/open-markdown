@@ -3,6 +3,10 @@ name: Release MAS
 on:
   push:
     tags: ['v*']
+  # Ship the current branch (main by default) to TestFlight without moving a
+  # tag. GitHub requires write access to trigger this, so it is maintainer-only
+  # by construction — no actor allowlist needed.
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}

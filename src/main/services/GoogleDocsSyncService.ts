@@ -313,6 +313,56 @@ function extractApiTables(apiDoc: GDocsApiDocument): ApiTable[] {
  * Returns null when the shapes disagree -- adding a column cannot be expressed
  * as a text edit, so the caller falls back to rebuilding.
  */
+/**
+ * Where a newly added table or diagram belongs in the live document.
+ *
+ * The paragraph diff has already brought the Doc's text into line with the
+ * model, so the leaf preceding this element in the model can be found by its
+ * text in the Doc, and the element goes directly after it. Matching counts
+ * occurrences, so a document repeating a line ("Notes", "Example") anchors to
+ * the right one rather than the first.
+ *
+ * Falls back to the end of the body when there is no preceding leaf to anchor
+ * to -- which is also the correct answer for an element appended at the end.
+ */
+function insertionIndexFor(
+  apiDoc: GDocsApiDocument,
+  elements: DocsElement[],
+  position: number,
+): number {
+  const bodyEnd = (apiDoc?.body?.content?.at(-1)?.endIndex ?? 2) - 1;
+
+  // Nearest preceding element that contributes text; tables and images do not.
+  let anchorText: string | null = null;
+  let occurrence = 0;
+  for (let i = position - 1; i >= 0; i--) {
+    const el = elements[i];
+    if (el == null || el.type === 'table' || el.type === 'image') continue;
+    const leaves = flattenElements([el]);
+    const last = leaves.at(-1);
+    if (last == null) continue;
+    anchorText = getLeafText(last);
+    // How many earlier leaves carry the same text, so we can match the Nth.
+    const earlier = flattenElements(elements.slice(0, i));
+    occurrence = earlier.filter((e) => getLeafText(e) === anchorText).length;
+    break;
+  }
+  if (anchorText == null) {
+    // Nothing precedes it: the very start of the body.
+    return position === 0 ? 1 : bodyEnd;
+  }
+
+  let seen = 0;
+  for (const para of extractApiParagraphs(apiDoc)) {
+    if (para.text.replace(/\n$/, '') !== anchorText) continue;
+    // The final paragraph's endIndex covers the document's mandatory trailing
+    // newline, which is not a writable position -- clamp to just before it.
+    if (seen === occurrence) return Math.min(para.endIndex, bodyEnd);
+    seen++;
+  }
+  return bodyEnd;
+}
+
 /** The document index a request acts on, for ordering a mixed batch. */
 function requestIndex(request: DocsBatchUpdateRequest): number {
   if ('deleteContentRange' in request) return request.deleteContentRange.range.startIndex;
@@ -1215,7 +1265,12 @@ export class GoogleDocsSyncService {
 
     // ── Tables ────��────────────────────────��────────────────────
     const apiTables = extractApiTables(doc);
-    const modelTables = newDocsDoc.elements.filter(e => e.type === 'table');
+    // Positions are kept so a newly added table can be placed where the
+    // markdown puts it rather than appended to the end of the document.
+    const modelTableEntries = newDocsDoc.elements
+      .map((el, position) => ({ el, position }))
+      .filter(({ el }) => el.type === 'table');
+    const modelTables = modelTableEntries.map((e) => e.el);
 
     // Match by position (1st model table <-> 1st API table, etc.)
     const tableCount = Math.min(apiTables.length, modelTables.length);
@@ -1267,9 +1322,9 @@ export class GoogleDocsSyncService {
     // Tables added in markdown (more model tables than API tables)
     // These need to be inserted at the correct position — we use the
     // end of the document as insertion point for new tables.
-    const tablesToAdd: DocsElement[] = [];
-    for (let i = tableCount; i < modelTables.length; i++) {
-      tablesToAdd.push(modelTables[i]!);
+    const tablesToAdd: Array<{ el: DocsElement; position: number }> = [];
+    for (let i = tableCount; i < modelTableEntries.length; i++) {
+      tablesToAdd.push(modelTableEntries[i]!);
     }
 
     // Process table deletions and replacements in reverse document order
@@ -1291,7 +1346,7 @@ export class GoogleDocsSyncService {
 
     // Insert new tables (added in markdown)
     if (tablesToAdd.length > 0) {
-      await this.insertNewTables(docId, tablesToAdd);
+      await this.insertNewTables(docId, tablesToAdd, newDocsDoc.elements);
     }
 
     // Resize in reverse document order so earlier tables keep their indices.
@@ -1306,9 +1361,10 @@ export class GoogleDocsSyncService {
     }
 
     // ── Images (mermaid diagrams) ────────────���──────────────────
-    const modelImages = newDocsDoc.elements.filter(
-      e => e.type === 'image' && e.imageLink
-    );
+    const modelImageEntries = newDocsDoc.elements
+      .map((el, position) => ({ el, position }))
+      .filter(({ el }) => el.type === 'image' && el.imageLink);
+    const modelImages = modelImageEntries.map((e) => e.el);
     if (modelImages.length === 0) return;
 
     const imgDoc = await this.docsService.getDocument(docId);
@@ -1350,12 +1406,13 @@ export class GoogleDocsSyncService {
       }
     }
 
-    // New images added in markdown — these are inserted at doc end for now
-    for (let i = imageCount; i < modelImages.length; i++) {
-      const modelImage = modelImages[i]!;
+    // New images go where the markdown puts them, not at the end.
+    for (let i = imageCount; i < modelImageEntries.length; i++) {
+      const { el: modelImage, position } = modelImageEntries[i]!;
+      // Re-read each time: the previous insert moved everything after it.
       const currentDoc = await this.docsService.getDocument(docId);
-      const endIdx = currentDoc?.body?.content?.at(-1)?.endIndex ?? 2;
-      await this.insertImageAtIndex(docId, endIdx - 1, modelImage);
+      const insertAt = insertionIndexFor(currentDoc, newDocsDoc.elements, position);
+      await this.insertImageAtIndex(docId, insertAt, modelImage);
     }
   }
 
@@ -1535,16 +1592,16 @@ export class GoogleDocsSyncService {
    */
   private async insertNewTables(
     docId: string,
-    modelTables: DocsElement[],
+    newTables: Array<{ el: DocsElement; position: number }>,
+    elements: DocsElement[],
   ): Promise<void> {
-    for (const modelTable of modelTables) {
+    for (const { el: modelTable, position } of newTables) {
       const rows = modelTable.rows ?? [];
       if (rows.length === 0) continue;
 
-      // Insert at end of document
+      // Re-read each time: the previous insert moved everything after it.
       const currentDoc = await this.docsService.getDocument(docId);
-      const endIdx = currentDoc?.body?.content?.at(-1)?.endIndex ?? 2;
-      const insertAt = endIdx - 1;
+      const insertAt = insertionIndexFor(currentDoc, elements, position);
 
       const numRows = rows.length;
       const numCols = rows[0]!.length;

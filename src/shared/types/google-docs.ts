@@ -4,11 +4,11 @@
 // (most fields optional) to match the API's shape without requiring
 // a full generated client.
 
-export interface GDocsLink {
+interface GDocsLink {
   url?: string;
 }
 
-export interface GDocsTextStyle {
+interface GDocsTextStyle {
   bold?: boolean;
   italic?: boolean;
   strikethrough?: boolean;
@@ -17,40 +17,40 @@ export interface GDocsTextStyle {
   weightedFontFamily?: { fontFamily: string };
 }
 
-export interface GDocsTextRun {
+interface GDocsTextRun {
   content?: string;
   textStyle?: GDocsTextStyle;
   startIndex?: number;
   endIndex?: number;
 }
 
-export interface GDocsInlineObjectElement {
+interface GDocsInlineObjectElement {
   inlineObjectId?: string;
   startIndex?: number;
   endIndex?: number;
 }
 
-export interface GDocsParagraphElement {
+interface GDocsParagraphElement {
   startIndex?: number;
   endIndex?: number;
   textRun?: GDocsTextRun;
   inlineObjectElement?: GDocsInlineObjectElement;
 }
 
-export interface GDocsParagraph {
+interface GDocsParagraph {
   elements?: GDocsParagraphElement[];
   paragraphStyle?: Record<string, unknown>;
 }
 
-export interface GDocsTableCell {
+interface GDocsTableCell {
   content?: GDocsStructuralElement[];
 }
 
-export interface GDocsTableRow {
+interface GDocsTableRow {
   tableCells?: GDocsTableCell[];
 }
 
-export interface GDocsTable {
+interface GDocsTable {
   rows?: number;
   columns?: number;
   tableRows?: GDocsTableRow[];
@@ -64,18 +64,18 @@ export interface GDocsStructuralElement {
   sectionBreak?: Record<string, unknown>;
 }
 
-export interface GDocsBody {
+interface GDocsBody {
   content?: GDocsStructuralElement[];
 }
 
 /** A length in the units the Docs API reports. */
-export interface GDocsDimension {
+interface GDocsDimension {
   magnitude?: number;
   unit?: string;
 }
 
 /** Page geometry, read so table widths can be sized to the real text column. */
-export interface GDocsDocumentStyle {
+interface GDocsDocumentStyle {
   pageSize?: { width?: GDocsDimension; height?: GDocsDimension };
   marginLeft?: GDocsDimension;
   marginRight?: GDocsDimension;

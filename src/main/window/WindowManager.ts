@@ -262,10 +262,3 @@ export function getWindowManager(): WindowManager {
   }
   return windowManagerInstance;
 }
-
-export function resetWindowManager(): void {
-  if (windowManagerInstance) {
-    windowManagerInstance.destroy();
-    windowManagerInstance = null;
-  }
-}

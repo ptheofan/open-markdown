@@ -117,7 +117,7 @@ export class DocumentCopyService {
       try {
         const code = mermaidPlugin.decodeFromAttribute(encodedSource);
         const pngBase64 = await mermaidPlugin.renderToPng(originalContainer);
-        const liveUrl = mermaidPlugin.generateMermaidLiveUrl(code);
+        const liveUrl = await mermaidPlugin.generateMermaidLiveUrl(code);
 
         // Replace container with image + link (image as block, no spacing between)
         const replacement = document.createElement('div');

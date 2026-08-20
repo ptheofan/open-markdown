@@ -430,3 +430,30 @@ Some text below.
     });
   });
 });
+
+/**
+ * mermaid.live decodes the `#pako:` fragment with pako.inflate. We compress
+ * with the platform's CompressionStream instead of bundling pako, so the one
+ * thing worth pinning is that the two agree on the format: 'deflate' is
+ * zlib-wrapped and round-trips, 'deflate-raw' does not and throws there.
+ *
+ * pako stays a devDependency purely as the reference decoder for this test.
+ */
+describe('generateMermaidLiveUrl', () => {
+  it('produces a fragment pako can inflate back to the original state', async () => {
+    const plugin = new MermaidPlugin();
+    const code = 'graph TD\n  A-->B';
+
+    const url = await plugin.generateMermaidLiveUrl(code);
+
+    expect(url.startsWith('https://mermaid.live/edit#pako:')).toBe(true);
+    const base64 = url.slice('https://mermaid.live/edit#pako:'.length);
+    const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+
+    const { inflate } = await import('pako');
+    const state = JSON.parse(inflate(bytes, { to: 'string' })) as {
+      code: string;
+    };
+    expect(state.code).toBe(code);
+  });
+});

@@ -1235,7 +1235,7 @@ class App {
       try {
         const code = mermaidPlugin.decodeFromAttribute(encodedSource);
         const pngBase64 = await mermaidPlugin.renderToPng(container as HTMLElement);
-        const liveUrl = mermaidPlugin.generateMermaidLiveUrl(code);
+        const liveUrl = await mermaidPlugin.generateMermaidLiveUrl(code);
         diagrams.push({ code, pngBase64, liveUrl });
       } catch (error) {
         console.warn('Failed to extract mermaid diagram:', error);

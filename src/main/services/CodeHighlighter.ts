@@ -109,24 +109,70 @@ export function isSupportedLanguage(language: string | undefined): boolean {
 }
 
 /**
+ * Languages considered when a fence does not name one.
+ *
+ * Unconstrained detection ranges over every grammar highlight.js ships and
+ * reaches for obscure ones on weak evidence — a plain Python snippet is
+ * identified as RouterOS config, scoring higher than Python itself. Limiting
+ * the field to languages a markdown document plausibly contains makes the
+ * winner meaningful.
+ */
+const AUTO_DETECT_LANGUAGES = [
+  'python', 'javascript', 'typescript', 'json', 'bash', 'shell',
+  'go', 'rust', 'java', 'c', 'cpp', 'csharp', 'ruby', 'php',
+  'sql', 'yaml', 'xml', 'html', 'css', 'scss', 'markdown',
+  'dockerfile', 'ini', 'diff', 'kotlin', 'swift',
+];
+
+/**
+ * Minimum highlight.js relevance before a guess is trusted.
+ *
+ * Relevance counts matched constructs, so short or non-code text scores low —
+ * English prose still "matches" CSS at around 4. Anything below this is left
+ * uncoloured, because plain code reads fine whereas miscoloured code misleads.
+ */
+const AUTO_DETECT_MIN_RELEVANCE = 5;
+
+/**
  * Highlight `code`, returning flat spans in document order.
  *
  * The concatenated span texts always equal `code` exactly — callers rely on
  * that to compute API ranges, so nothing may be added or dropped here.
- * Unknown or missing languages fall back to plain, uncoloured output rather
- * than guessing, since a wrong guess colours the code misleadingly.
+ *
+ * A fence with no language is detected against a constrained candidate list
+ * and only trusted above a relevance floor; everything else falls back to
+ * plain, uncoloured output.
  */
 export function highlightCode(code: string, language?: string): CodeSpan[] {
   if (!code) return [];
 
-  let html: string;
   try {
-    if (!isSupportedLanguage(language)) return [{ text: code }];
-    html = hljs.highlight(code, { language: language!, ignoreIllegals: true }).value;
+    if (isSupportedLanguage(language)) {
+      return parseHighlighted(hljs.highlight(code, { language: language!, ignoreIllegals: true }).value, code);
+    }
+
+    // A fence that names an unknown language has still told us what it is;
+    // substituting a guess would be worse than leaving it plain.
+    if (language) return [{ text: code }];
+
+    const auto = hljs.highlightAuto(code, AUTO_DETECT_LANGUAGES);
+    if (!auto.language || auto.relevance < AUTO_DETECT_MIN_RELEVANCE) {
+      return [{ text: code }];
+    }
+    return parseHighlighted(auto.value, code);
   } catch {
     return [{ text: code }];
   }
+}
 
+/**
+ * Turn highlight.js HTML back into flat spans.
+ *
+ * Returns a single plain span if the result would not reproduce `code`
+ * exactly — callers derive API ranges from these lengths, so a lossy parse
+ * would corrupt the document rather than merely look wrong.
+ */
+function parseHighlighted(html: string, code: string): CodeSpan[] {
   const spans: CodeSpan[] = [];
   const stack: (RgbColor | undefined)[] = [];
   const pattern = /<span class="([^"]*)">|<\/span>|[^<]+/g;
@@ -153,9 +199,7 @@ export function highlightCode(code: string, language?: string): CodeSpan[] {
     }
   }
 
-  // The parser must be lossless; fall back rather than emit wrong ranges.
   if (spans.map((s) => s.text).join('') !== code) return [{ text: code }];
-
   return spans;
 }
 

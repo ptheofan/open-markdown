@@ -53,9 +53,32 @@ describe('highlightCode', () => {
     expect(spans.some((s) => !s.color)).toBe(true);
   });
 
-  it('returns one uncoloured span when the language is unknown or absent', () => {
+  it('leaves a fence alone when it names a language highlight.js lacks', () => {
+    // The author said what it is; substituting a guess would be worse.
     expect(highlightCode('x = 1', 'not-a-language')).toEqual([{ text: 'x = 1' }]);
-    expect(highlightCode('x = 1')).toEqual([{ text: 'x = 1' }]);
+  });
+
+  it('detects an untagged fence against a constrained candidate list', () => {
+    // Unconstrained detection calls this RouterOS config, outscoring Python.
+    const code = [
+      '# Shape (types only)',
+      'CoreAttribute(',
+      '    key="devices",',
+      '    label="Devices",',
+      '    value_schema=ArraySchema(item=SchemaRef("Device")),',
+      '    write=None,',
+      ')',
+    ].join('\n');
+
+    const spans = highlightCode(code);
+
+    expect(spans.map((s) => s.text).join('')).toBe(code);
+    expect(spans.filter((s) => s.color).length).toBeGreaterThan(0);
+  });
+
+  it('refuses to colour text that is not convincingly code', () => {
+    const prose = 'This is just a paragraph of English text, nothing like code at all.';
+    expect(highlightCode(prose)).toEqual([{ text: prose }]);
   });
 
   it('reports which languages it can actually highlight', () => {

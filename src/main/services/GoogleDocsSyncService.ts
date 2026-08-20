@@ -7,6 +7,8 @@
  */
 import { diffChars, diffArrays } from 'diff';
 import { convertMarkdownToDocs } from '@main/services/MarkdownToDocsConverter';
+import { convertDocsToMarkdown } from '@main/services/DocsToMarkdownConverter';
+import { threeWayMerge, applyResolutions, joinBlocks } from '@main/services/ThreeWayMerge';
 import {
   buildInsertRequests,
   CODE_FONT_FAMILY,
@@ -26,9 +28,12 @@ import type {
   DocsTextRun,
   GDocsApiDocument,
   GDocsStructuralElement,
+  GoogleDocsResolveResult,
   GoogleDocsSyncResult,
   MermaidDiagramData,
+  SyncConflictChoice,
   SyncPhase,
+  SyncResolveMode,
   SyncProgressUpdate,
   TableColumnWidths,
 } from '@shared/types/google-docs';
@@ -619,7 +624,7 @@ export class GoogleDocsSyncService {
         // is exactly what this feature exists to avoid.
         if (isBodyEmpty(currentDoc)) {
           console.warn('[SyncService] First sync into an empty doc -> fullPopulate');
-          const populated = await this.fullPopulate(docId, filePath, docsDoc);
+          const populated = await this.fullPopulate(docId, filePath, docsDoc, markdown);
           if (populated.success) await this.linkStore.saveModelFingerprint(docId, fingerprint);
           return populated;
         }
@@ -636,7 +641,7 @@ export class GoogleDocsSyncService {
 
       this.report('Applying changes', 'applying');
       console.warn('[SyncService] Applying paragraph-level diff...');
-      const diffed = await this.applyDiff(docId, filePath, currentDoc, docsDoc);
+      const diffed = await this.applyDiff(docId, filePath, currentDoc, docsDoc, markdown);
       if (diffed.success) await this.linkStore.saveModelFingerprint(docId, fingerprint);
       return diffed;
     } catch (err: unknown) {
@@ -679,8 +684,8 @@ export class GoogleDocsSyncService {
 
       // An empty doc has no comments to keep and no indices to diff against.
       const result = isBodyEmpty(currentDoc)
-        ? await this.fullPopulate(docId, filePath, docsDoc)
-        : await this.applyDiff(docId, filePath, currentDoc, docsDoc);
+        ? await this.fullPopulate(docId, filePath, docsDoc, markdown)
+        : await this.applyDiff(docId, filePath, currentDoc, docsDoc, markdown);
       // Without this the next sync always redoes the full diff and reformat.
       if (result.success) await this.linkStore.saveModelFingerprint(docId, fingerprint);
       return result;
@@ -688,6 +693,109 @@ export class GoogleDocsSyncService {
       const message = err instanceof Error ? err.message : String(err);
       return { success: false, error: message };
     }
+  }
+
+  /**
+   * Carry out the reconciliation the user chose for a two-sided change.
+   *
+   * All three modes converge on "work out the intended markdown, then push it
+   * with applyDiff", so the Doc is never cleared and rebuilt whichever way the
+   * user goes.
+   *
+   * - push  -- the file wins; the Doc is edited into shape.
+   * - pull  -- the Doc wins; the file is rewritten, the Doc left alone.
+   * - merge -- both; conflicting blocks come back for the user to settle and
+   *            the call is repeated with their choices.
+   */
+  async resolve(
+    filePath: string,
+    docId: string,
+    mode: SyncResolveMode,
+    markdown: string,
+    options: {
+      mermaidDiagrams?: MermaidDiagramData[];
+      tableWidths?: TableColumnWidths[];
+      resolutions?: SyncConflictChoice[];
+    } = {},
+  ): Promise<GoogleDocsResolveResult> {
+    try {
+      if (mode === 'push') {
+        return await this.syncForceOverwrite(
+          filePath, docId, markdown, options.mermaidDiagrams, options.tableWidths,
+        );
+      }
+
+      const currentDoc = await this.docsService.getDocument(docId);
+      const remote = convertDocsToMarkdown(currentDoc);
+      const snapshots = await this.linkStore.loadMarkdownSnapshots(docId);
+
+      if (mode === 'pull') {
+        // Replaying only the remote's hunks onto the local baseline discards
+        // the local edits, which is what "the Doc wins" means -- while keeping
+        // the markdown form of every block nobody touched. Without snapshots
+        // there is no baseline to replay onto, so the Doc as it reads now is
+        // the best available answer.
+        const merged = snapshots
+          ? joinBlocks(threeWayMerge({
+            localBase: snapshots.local,
+            local: snapshots.local,
+            remoteBase: snapshots.remote,
+            remote,
+          }).blocks)
+          : remote;
+        // The Doc already holds this content, so there is nothing to push.
+        await this.recordSynced(filePath, docId, merged, currentDoc, remote);
+        return { success: true, markdown: merged };
+      }
+
+      if (snapshots === null) {
+        return {
+          success: false,
+          error: 'Merging needs a previous successful sync to compare against. '
+            + 'Choose the Doc or the file for this one.',
+        };
+      }
+
+      const outcome = threeWayMerge({
+        localBase: snapshots.local,
+        local: markdown,
+        remoteBase: snapshots.remote,
+        remote,
+      });
+
+      if (outcome.conflicts.length > 0 && options.resolutions === undefined) {
+        return { success: false, conflicts: outcome.conflicts };
+      }
+
+      const merged = joinBlocks(
+        applyResolutions(outcome.blocks, outcome.conflicts, options.resolutions ?? []),
+      );
+      // The merged text carries the local-only edits too, so the Doc needs it.
+      const pushed = await this.syncForceOverwrite(
+        filePath, docId, merged, options.mermaidDiagrams, options.tableWidths,
+      );
+      return pushed.success ? { ...pushed, markdown: merged } : pushed;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { success: false, error: message, status: (err as { status?: number }).status };
+    }
+  }
+
+  /**
+   * Record a sync that changed only the local file, so the next sync sees both
+   * sides as settled rather than re-reporting the same conflict.
+   */
+  private async recordSynced(
+    filePath: string,
+    docId: string,
+    markdown: string,
+    apiDoc: GDocsApiDocument,
+    remoteMarkdown: string,
+  ): Promise<void> {
+    await this.linkStore.saveBaseline(docId, this.docsService.extractPlainText(apiDoc));
+    await this.linkStore.saveMarkdownSnapshots(docId, markdown, remoteMarkdown);
+    await this.linkStore.saveModelFingerprint(docId, modelFingerprint(convertMarkdownToDocs(markdown)));
+    await this.linkStore.updateLastSynced(filePath, new Date().toISOString());
   }
 
   /**
@@ -794,6 +902,7 @@ export class GoogleDocsSyncService {
     docId: string,
     filePath: string,
     docsDoc: DocsDocument,
+    markdown: string,
   ): Promise<GoogleDocsSyncResult> {
     // First, clear any existing content from the doc
     const currentDoc = await this.docsService.getDocument(docId);
@@ -825,6 +934,7 @@ export class GoogleDocsSyncService {
     const populatedDoc = await this.docsService.getDocument(docId);
     const actualText = this.docsService.extractPlainText(populatedDoc);
     await this.linkStore.saveBaseline(docId, actualText);
+    await this.linkStore.saveMarkdownSnapshots(docId, markdown, convertDocsToMarkdown(populatedDoc));
     await this.linkStore.updateLastSynced(filePath, new Date().toISOString());
     return { success: true };
   }
@@ -955,6 +1065,7 @@ export class GoogleDocsSyncService {
     filePath: string,
     currentApiDoc: GDocsApiDocument,
     newDocsDoc: DocsDocument,
+    markdown: string,
   ): Promise<GoogleDocsSyncResult> {
     // Phase 1: Text paragraph diff
     const apiParas = extractApiParagraphs(currentApiDoc);
@@ -981,6 +1092,9 @@ export class GoogleDocsSyncService {
     // Phase 4: Save baseline from API text
     const baselineText = this.docsService.extractPlainText(finalDoc);
     await this.linkStore.saveBaseline(docId, baselineText);
+    // Both dialects of this moment, so the next merge has something to diff
+    // each side against. finalDoc is already in hand -- no extra API call.
+    await this.linkStore.saveMarkdownSnapshots(docId, markdown, convertDocsToMarkdown(finalDoc));
     await this.linkStore.updateLastSynced(filePath, new Date().toISOString());
     return { success: true };
   }

@@ -165,6 +165,14 @@ export interface GoogleDocsSyncResult {
   unchanged?: boolean;
 }
 
+/** Result of resolving a two-sided change. */
+export interface GoogleDocsResolveResult extends GoogleDocsSyncResult {
+  /** New content for the local markdown file, when the choice changed it. */
+  markdown?: string;
+  /** Blocks the user must settle before a merge can finish. */
+  conflicts?: SyncConflict[];
+}
+
 /** Which stage of a sync is running. */
 export type SyncPhase = 'reading' | 'converting' | 'diagrams' | 'applying' | 'tables' | 'done';
 

@@ -107,6 +107,7 @@ export type {
   SyncResolveMode,
   SyncConflict,
   SyncConflictChoice,
+  GoogleDocsResolveResult,
 } from './google-docs';
 
 // Diff types

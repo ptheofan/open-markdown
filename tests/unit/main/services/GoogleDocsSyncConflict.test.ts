@@ -59,6 +59,8 @@ describe('pushing to a Doc that also changed', () => {
     saveModelFingerprint: vi.fn(),
     saveImageCache: vi.fn(),
     saveBaseline: vi.fn(),
+    saveMarkdownSnapshots: vi.fn(),
+    loadMarkdownSnapshots: vi.fn().mockResolvedValue(null),
     updateLastSynced: vi.fn(),
     getLink: vi.fn(),
     setLink: vi.fn(),
@@ -131,6 +133,8 @@ describe('deciding what a sync should do', () => {
     saveModelFingerprint: vi.fn(),
     saveImageCache: vi.fn(),
     saveBaseline: vi.fn(),
+    saveMarkdownSnapshots: vi.fn(),
+    loadMarkdownSnapshots: vi.fn().mockResolvedValue(null),
     updateLastSynced: vi.fn(),
     getLink: vi.fn(),
     setLink: vi.fn(),
@@ -200,5 +204,122 @@ describe('deciding what a sync should do', () => {
     expect(result.success).toBe(true);
     expect(result.conflict).toBeUndefined();
     expect(mockDocsService.batchUpdate).toHaveBeenCalled();
+  });
+});
+
+describe('carrying out the user\'s choice', () => {
+  const mockDocsService = {
+    getDocument: vi.fn(),
+    batchUpdate: vi.fn(),
+    uploadImage: vi.fn(),
+    extractPlainText: vi.fn(),
+  };
+
+  const mockLinkStore = {
+    loadBaseline: vi.fn(),
+    loadImageCache: vi.fn().mockResolvedValue({}),
+    getModelFingerprint: vi.fn().mockResolvedValue(null),
+    saveModelFingerprint: vi.fn(),
+    saveImageCache: vi.fn(),
+    saveBaseline: vi.fn(),
+    saveMarkdownSnapshots: vi.fn(),
+    loadMarkdownSnapshots: vi.fn(),
+    updateLastSynced: vi.fn(),
+    getLink: vi.fn(),
+    setLink: vi.fn(),
+    removeLink: vi.fn(),
+    initialize: vi.fn(),
+    deleteBaseline: vi.fn(),
+  };
+
+  // The Doc reads "Intro paragraph / Second paragraph"; at the last sync both
+  // sides read "Intro paragraph / Old second text". So the collaborator
+  // rewrote the second block.
+  const SNAPSHOT = 'Intro paragraph\n\nOld second text\n';
+
+  let syncService: ReturnType<typeof createGoogleDocsSyncService>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    syncService = createGoogleDocsSyncService(
+      mockDocsService as unknown as Parameters<typeof createGoogleDocsSyncService>[0],
+      mockLinkStore as unknown as Parameters<typeof createGoogleDocsSyncService>[1],
+    );
+    mockDocsService.getDocument.mockResolvedValue(remoteDoc());
+    mockDocsService.extractPlainText.mockReturnValue('Intro paragraph\nSecond paragraph\n');
+    mockDocsService.batchUpdate.mockResolvedValue({});
+    mockLinkStore.loadMarkdownSnapshots.mockResolvedValue({ local: SNAPSHOT, remote: SNAPSHOT });
+    vi.mocked(convertMarkdownToDocs).mockReturnValue({
+      elements: [{ type: 'paragraph', runs: [{ text: 'whatever' }] }],
+    });
+  });
+
+  it('pull rewrites the file and leaves the Doc alone', async () => {
+    const result = await syncService.resolve('/file.md', 'doc-1', 'pull', SNAPSHOT);
+
+    expect(result.success).toBe(true);
+    expect(result.markdown).toBe('Intro paragraph\n\nSecond paragraph\n');
+    expect(mockDocsService.batchUpdate).not.toHaveBeenCalled();
+  });
+
+  it('pull discards local edits, which is what taking the Doc means', async () => {
+    const result = await syncService.resolve(
+      '/file.md', 'doc-1', 'pull', 'Intro EDITED LOCALLY\n\nOld second text\n',
+    );
+
+    expect(result.markdown).toBe('Intro paragraph\n\nSecond paragraph\n');
+  });
+
+  it('push edits the Doc and does not touch the file', async () => {
+    const result = await syncService.resolve('/file.md', 'doc-1', 'push', SNAPSHOT);
+
+    expect(result.success).toBe(true);
+    expect(result.markdown).toBeUndefined();
+    expect(mockDocsService.batchUpdate).toHaveBeenCalled();
+  });
+
+  it('merge carries both sides when they touched different blocks', async () => {
+    const result = await syncService.resolve(
+      '/file.md', 'doc-1', 'merge', 'Intro EDITED\n\nOld second text\n',
+    );
+
+    expect(result.conflicts).toBeUndefined();
+    expect(result.markdown).toBe('Intro EDITED\n\nSecond paragraph\n');
+    expect(mockDocsService.batchUpdate).toHaveBeenCalled();
+  });
+
+  it('merge stops and reports a clash rather than picking a winner', async () => {
+    const result = await syncService.resolve(
+      '/file.md', 'doc-1', 'merge', 'Intro paragraph\n\nMy own second text\n',
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.conflicts).toHaveLength(1);
+    expect(result.conflicts?.[0]).toMatchObject({
+      local: 'My own second text',
+      remote: 'Second paragraph',
+    });
+    // Nothing is written until the user has settled it.
+    expect(mockDocsService.batchUpdate).not.toHaveBeenCalled();
+  });
+
+  it('merge applies the choice it is given the second time round', async () => {
+    const result = await syncService.resolve(
+      '/file.md', 'doc-1', 'merge', 'Intro paragraph\n\nMy own second text\n',
+      { resolutions: ['remote'] },
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.markdown).toBe('Intro paragraph\n\nSecond paragraph\n');
+  });
+
+  it('says plainly that a merge needs a previous sync to compare against', async () => {
+    mockLinkStore.loadMarkdownSnapshots.mockResolvedValue(null);
+
+    const result = await syncService.resolve('/file.md', 'doc-1', 'merge', SNAPSHOT);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('previous successful sync');
+    expect(mockDocsService.batchUpdate).not.toHaveBeenCalled();
   });
 });

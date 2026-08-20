@@ -24,6 +24,8 @@ describe('GoogleDocsSyncService', () => {
     saveModelFingerprint: vi.fn(),
     saveImageCache: vi.fn(),
     saveBaseline: vi.fn(),
+    saveMarkdownSnapshots: vi.fn(),
+    loadMarkdownSnapshots: vi.fn().mockResolvedValue(null),
     updateLastSynced: vi.fn(),
     getLink: vi.fn(),
     setLink: vi.fn(),

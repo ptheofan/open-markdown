@@ -317,7 +317,7 @@ function findTableElement(
  * Build cell insert/format requests for a table element from the API doc.
  * Processes cells in reverse order to preserve indices.
  */
-function buildCellRequests(
+export function buildCellRequests(
   tableEl: GDocsStructuralElement,
   dataRows: DocsTextRun[][][],
 ): DocsBatchUpdateRequest[] {
@@ -348,15 +348,48 @@ function buildCellRequests(
         },
       });
 
-      // Bold header row
-      if (r === 0) {
+      // Style each run individually so inline marks inside a cell survive.
+      // Every run states bold/italic/strikethrough explicitly, including the
+      // false case: insertText inherits the style at the insertion point, so
+      // omitting them (as buildTextStyleForRun does for unstyled runs) lets a
+      // neighbouring bold run bleed across the whole cell.
+      //
+      // These requests are applied immediately after this cell's insertText and
+      // before any later request, which only ever targets a lower index — so
+      // offsets computed from cellIndex are still valid when they land.
+      const isHeaderRow = r === 0;
+      let runOffset = 0;
+
+      for (const run of dataCell) {
+        if (!run.text) continue;
+
+        const start = cellIndex + runOffset;
+        const textStyle: Record<string, unknown> = {
+          bold: Boolean(run.bold) || isHeaderRow,
+          italic: Boolean(run.italic),
+          strikethrough: Boolean(run.strikethrough),
+        };
+        const fields = ['bold', 'italic', 'strikethrough'];
+
+        if (run.link) {
+          textStyle['link'] = { url: run.link };
+          fields.push('link');
+        }
+        if (run.code) {
+          textStyle['weightedFontFamily'] = { fontFamily: 'Courier New' };
+          textStyle['fontSize'] = { magnitude: 9, unit: 'PT' };
+          fields.push('weightedFontFamily', 'fontSize');
+        }
+
         cellRequests.push({
           updateTextStyle: {
-            range: { startIndex: cellIndex, endIndex: cellIndex + text.length },
-            textStyle: { bold: true },
-            fields: 'bold',
+            range: { startIndex: start, endIndex: start + run.text.length },
+            textStyle,
+            fields: fields.join(','),
           },
         });
+
+        runOffset += run.text.length;
       }
     }
   }

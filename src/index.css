@@ -121,7 +121,10 @@ body {
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
-  -webkit-app-region: no-drag;
+  /* No `no-drag` here: both sides are `flex: 1`, so they span the full toolbar
+   * width and their empty space would occlude the toolbar's drag region,
+   * leaving nowhere to grab the window. `no-drag` belongs on the interactive
+   * children instead — see .toolbar-btn and .toolbar-dropdown. */
 }
 
 .toolbar-left {
@@ -1284,7 +1287,11 @@ button:focus:not(:focus-visible) {
 
 .toolbar-dropdown {
   position: relative;
+  /* Covers the trigger button and, by inheritance, the popup menu — both must
+   * stay clickable now that the toolbar sides are draggable. */
+  -webkit-app-region: no-drag;
 }
+
 
 .toolbar-btn-dropdown {
   display: inline-flex;
@@ -1313,6 +1320,9 @@ button:focus:not(:focus-visible) {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   z-index: 1000;
   overflow: hidden;
+  /* Inherited from .toolbar-dropdown today; stated explicitly so the menu stays
+   * clickable if it is ever rendered outside that wrapper. */
+  -webkit-app-region: no-drag;
 }
 
 .dropdown-item {

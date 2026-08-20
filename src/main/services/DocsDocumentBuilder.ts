@@ -9,6 +9,21 @@ import type { DocsDocument, DocsElement, DocsTextRun, GDocsApiDocument } from '@
 import type { DocsBatchUpdateRequest } from '@main/services/GoogleDocsService';
 import { highlightCode } from '@main/services/CodeHighlighter';
 
+/**
+ * Font for code, block and inline alike.
+ *
+ * Consolas is not open source, but Google serves it from the licensed-font
+ * endpoint it uses for the Workspace set bundled for .docx fidelity, so Docs
+ * recognises it. That matters: the API renders an unrecognised font name as
+ * *Arial*, which would leave code proportionally spaced rather than merely
+ * looking different.
+ *
+ * Swap for another Docs-recognised monospace if it ever renders as Arial —
+ * Roboto Mono, JetBrains Mono, Inconsolata and Source Code Pro are all Google
+ * Fonts and therefore safe.
+ */
+export const CODE_FONT_FAMILY = 'Consolas';
+
 interface BuildContext {
   index: number;
   requests: DocsBatchUpdateRequest[];
@@ -42,7 +57,7 @@ function buildTextStyleForRun(run: DocsTextRun): Record<string, unknown> | null 
   if (run.strikethrough) style['strikethrough'] = true;
   if (run.link) style['link'] = { url: run.link };
   if (run.code) {
-    style['weightedFontFamily'] = { fontFamily: 'Courier New' };
+    style['weightedFontFamily'] = { fontFamily: CODE_FONT_FAMILY };
   }
   if (Object.keys(style).length === 0) return null;
   return style;
@@ -161,7 +176,7 @@ export function buildCodeBlockStyleRequests(
   requests.push({
     updateTextStyle: {
       range: { startIndex, endIndex: styledEnd },
-      textStyle: { weightedFontFamily: { fontFamily: 'Courier New' } },
+      textStyle: { weightedFontFamily: { fontFamily: CODE_FONT_FAMILY } },
       fields: 'weightedFontFamily',
     },
   });

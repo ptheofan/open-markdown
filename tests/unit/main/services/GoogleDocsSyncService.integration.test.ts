@@ -13,6 +13,7 @@ import type { GoogleDocsService } from '@main/services/GoogleDocsService';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
+import { CODE_FONT_FAMILY } from '@main/services/DocsDocumentBuilder';
 
 // Mock electron for LinkStore (it uses app.getPath('userData') as fallback)
 vi.mock('electron', () => ({
@@ -139,7 +140,7 @@ describe('GoogleDocsSyncService Integration', () => {
 
       // Should contain monospace font for code block
       const codeFont = requests.filter(
-        (r: any) => r.updateTextStyle?.textStyle?.weightedFontFamily?.fontFamily === 'Courier New',
+        (r: any) => r.updateTextStyle?.textStyle?.weightedFontFamily?.fontFamily === CODE_FONT_FAMILY,
       );
       expect(codeFont.length).toBeGreaterThan(0);
 

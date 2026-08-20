@@ -6,6 +6,7 @@ import { describe, it, expect } from 'vitest';
 import { buildFormattingFromApiDoc } from '@main/services/DocsDocumentBuilder';
 import type { DocsBatchUpdateRequest } from '@main/services/GoogleDocsService';
 import type { DocsDocument, GDocsApiDocument, GDocsStructuralElement } from '@shared/types/google-docs';
+import { CODE_FONT_FAMILY } from '@main/services/DocsDocumentBuilder';
 
 function makeApiDoc(content: GDocsStructuralElement[]): GDocsApiDocument {
   return { body: { content } };
@@ -262,7 +263,7 @@ describe('buildFormattingFromApiDoc', () => {
       const reqs = buildFormattingFromApiDoc(apiDoc, docsDoc);
 
       const monoReq = reqs.filter(hasTextStyle).find(
-        r => r.updateTextStyle.textStyle.weightedFontFamily?.fontFamily === 'Courier New'
+        r => r.updateTextStyle.textStyle.weightedFontFamily?.fontFamily === CODE_FONT_FAMILY
       );
       expect(monoReq).toBeDefined();
       // Should style "const x = 1;" (12 chars) starting at index 1

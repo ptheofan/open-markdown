@@ -16,6 +16,7 @@ import { highlightCode, isSupportedLanguage } from '@main/services/CodeHighlight
 import {
   buildCodeBlockStyleRequests,
   buildFormattingFromApiDoc,
+  CODE_FONT_FAMILY,
 } from '@main/services/DocsDocumentBuilder';
 import type { DocsBatchUpdateRequest } from '@main/services/GoogleDocsService';
 import type {
@@ -105,15 +106,24 @@ describe('buildCodeBlockStyleRequests', () => {
     expect(para.fields).toBe('namedStyleType,shading');
   });
 
-  it('applies monospace across the whole block', () => {
+  it('applies the code font across the whole block', () => {
     const mono = requests()
       .filter(isText)
       .find((r) => r.updateTextStyle.textStyle['weightedFontFamily']);
 
+    expect(mono!.updateTextStyle.textStyle['weightedFontFamily']).toEqual({
+      fontFamily: CODE_FONT_FAMILY,
+    });
     expect(mono!.updateTextStyle.range).toEqual({
       startIndex: 100,
       endIndex: 100 + code.length,
     });
+  });
+
+  it('names a font Docs recognises, since unknown names render as Arial', () => {
+    // Arial is not monospace, so a typo here silently destroys code layout.
+    const DOCS_MONOSPACE = ['Consolas', 'Roboto Mono', 'JetBrains Mono', 'Inconsolata', 'Source Code Pro', 'Courier New', 'Cousine'];
+    expect(DOCS_MONOSPACE).toContain(CODE_FONT_FAMILY);
   });
 
   it('clears colour before painting, so re-syncs leave no stale tokens', () => {

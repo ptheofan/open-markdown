@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildInsertRequests } from '@main/services/DocsDocumentBuilder';
 import type { DocsDocument } from '@shared/types/google-docs';
+import { CODE_FONT_FAMILY } from '@main/services/DocsDocumentBuilder';
 
 /** Typed view of the Google Docs batch update requests used in these tests */
 interface TestBuildRequest {
@@ -100,7 +101,7 @@ describe('DocsDocumentBuilder', () => {
     const { requests } = typedBuild(doc, 1);
     const fontStyle = requests.find((r) => {
       const family = r.updateTextStyle?.textStyle?.weightedFontFamily;
-      return family && typeof family === 'object' && 'fontFamily' in family && family.fontFamily === 'Courier New';
+      return family && typeof family === 'object' && 'fontFamily' in family && family.fontFamily === CODE_FONT_FAMILY;
     });
     expect(fontStyle).toBeDefined();
   });
@@ -206,7 +207,7 @@ describe('DocsDocumentBuilder', () => {
     expect(italicStyle).toBeDefined();
   });
 
-  it('should build inline code style with Courier New', () => {
+  it('should build inline code style with the code font', () => {
     const doc: DocsDocument = {
       elements: [{
         type: 'paragraph',
@@ -216,7 +217,7 @@ describe('DocsDocumentBuilder', () => {
     const { requests } = typedBuild(doc, 1);
     const codeStyle = requests.find((r) => {
       const family = r.updateTextStyle?.textStyle?.weightedFontFamily;
-      return family && typeof family === 'object' && 'fontFamily' in family && family.fontFamily === 'Courier New';
+      return family && typeof family === 'object' && 'fontFamily' in family && family.fontFamily === CODE_FONT_FAMILY;
     });
     expect(codeStyle).toBeDefined();
   });

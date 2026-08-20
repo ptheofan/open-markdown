@@ -9,6 +9,7 @@ import { diffChars, diffArrays } from 'diff';
 import { convertMarkdownToDocs } from '@main/services/MarkdownToDocsConverter';
 import {
   buildInsertRequests,
+  CODE_FONT_FAMILY,
   buildFormattingFromApiDoc,
   extractApiParagraphs,
   flattenElements,
@@ -393,7 +394,7 @@ export function buildCellRequests(
         if (run.code) {
           // Monospace is what `code` means; the size stays whatever the
           // document uses.
-          textStyle['weightedFontFamily'] = { fontFamily: 'Courier New' };
+          textStyle['weightedFontFamily'] = { fontFamily: CODE_FONT_FAMILY };
           if (!fields.includes('weightedFontFamily')) fields.push('weightedFontFamily');
         }
 

@@ -14,6 +14,7 @@ import { buildCellRequests } from '@main/services/GoogleDocsSyncService';
 import type { DocsBatchUpdateRequest } from '@main/services/GoogleDocsService';
 import type { DocsTextRun } from '@shared/types';
 import type { GDocsStructuralElement } from '@shared/types/google-docs';
+import { CODE_FONT_FAMILY } from '@main/services/DocsDocumentBuilder';
 
 vi.mock('electron', () => ({
   app: { getPath: () => '/tmp/mock-userdata' },
@@ -126,7 +127,7 @@ describe('buildCellRequests — inline formatting in table cells', () => {
 
     expect(styles[0]!.textStyle['italic']).toBe(true);
     expect(styles[1]!.textStyle['strikethrough']).toBe(true);
-    expect(styles[2]!.textStyle['weightedFontFamily']).toEqual({ fontFamily: 'Courier New' });
+    expect(styles[2]!.textStyle['weightedFontFamily']).toEqual({ fontFamily: CODE_FONT_FAMILY });
     expect(styles[3]!.textStyle['link']).toEqual({ url: 'https://example.com' });
   });
 

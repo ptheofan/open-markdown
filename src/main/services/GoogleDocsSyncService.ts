@@ -15,6 +15,8 @@ import {
   flattenElements,
   getLeafText,
 } from '@main/services/DocsDocumentBuilder';
+import crypto from 'node:crypto';
+
 import type { ApiParagraph, PendingTable } from '@main/services/DocsDocumentBuilder';
 import type { GoogleDocsService } from '@main/services/GoogleDocsService';
 import type { GoogleDocsLinkStore } from '@main/services/GoogleDocsLinkStore';
@@ -46,6 +48,13 @@ interface DiffOp {
   index: number;
   endIndex?: number;
   text?: string;
+  /**
+   * True for ranges *inside* a paragraph, which carry no trailing newline.
+   * Paragraph-level deletes have one and must exclude it; character-level
+   * deletes must not have their range shortened, or one character of every
+   * removed run survives.
+   */
+  withinParagraph?: boolean;
 }
 
 /**
@@ -62,7 +71,12 @@ function charDiffWithinParagraph(
 
   for (const change of changes) {
     if (change.removed) {
-      ops.push({ type: 'delete', index, endIndex: index + change.value.length });
+      ops.push({
+        type: 'delete',
+        index,
+        endIndex: index + change.value.length,
+        withinParagraph: true,
+      });
       index += change.value.length;
     } else if (change.added) {
       ops.push({ type: 'insert', index, text: change.value });
@@ -176,8 +190,12 @@ function generateParagraphDiffOperations(
     const op = allOps[i]!;
     if (op.type === 'delete') {
       let endIdx = op.endIndex ?? op.index;
-      // Exclude trailing newline from each paragraph delete
-      endIdx = endIdx - 1;
+      // Exclude the trailing newline from paragraph-level deletes only. A
+      // character-level range has no newline to exclude, and shortening it
+      // leaves the last character of every removed run behind.
+      if (!op.withinParagraph) {
+        endIdx = endIdx - 1;
+      }
       // Also clamp to doc body end
       if (maxDeleteEnd != null && endIdx > maxDeleteEnd) {
         endIdx = maxDeleteEnd;
@@ -510,6 +528,11 @@ export function syncProgressPercent(at: {
   return Math.round(start + ((end - start) * done) / total);
 }
 
+/** Cache key for an uploaded diagram: a hash of the rendered image bytes. */
+export function imageCacheKey(pngBase64: string): string {
+  return crypto.createHash('sha256').update(pngBase64).digest('hex');
+}
+
 export class GoogleDocsSyncService {
   /**
    * Set for the duration of one sync. Held on the instance rather than passed
@@ -549,7 +572,7 @@ export class GoogleDocsSyncService {
       console.warn('[SyncService] Step 4: Converting markdown...');
       const docsDoc = convertMarkdownToDocs(markdown);
       console.warn('[SyncService] Step 5: Processing mermaid diagrams...');
-      await this.processMermaidDiagrams(docsDoc, mermaidDiagrams);
+      await this.processMermaidDiagrams(docId, docsDoc, mermaidDiagrams);
       this.applyTableColumnWidths(docsDoc, tableWidths);
 
       if (baseline === null) {
@@ -589,7 +612,7 @@ export class GoogleDocsSyncService {
     try {
       console.warn('[SyncService] Force overwrite -- clearing doc and repopulating');
       const docsDoc = convertMarkdownToDocs(markdown);
-      await this.processMermaidDiagrams(docsDoc, mermaidDiagrams);
+      await this.processMermaidDiagrams(docId, docsDoc, mermaidDiagrams);
       this.applyTableColumnWidths(docsDoc, tableWidths);
 
       // Full clear + repopulate (same as first sync)
@@ -635,6 +658,7 @@ export class GoogleDocsSyncService {
   }
 
   private async processMermaidDiagrams(
+    docId: string,
     docsDoc: DocsDocument,
     mermaidDiagrams?: MermaidDiagramData[],
   ): Promise<void> {
@@ -647,10 +671,25 @@ export class GoogleDocsSyncService {
     let done = 0;
     this.report('Preparing diagrams', 'diagrams', 0, total);
 
+    const cache = await this.linkStore.loadImageCache(docId);
+    let cacheChanged = false;
+
     for (const element of docsDoc.elements) {
       if (element.type === 'image' && element.code) {
         const diagram = mermaidDiagrams.find(d => d.code === element.code);
         if (!diagram) continue;
+
+        // Identical bytes mean Drive already holds this image; uploading it
+        // again costs a round trip and produces a duplicate file.
+        const key = imageCacheKey(diagram.pngBase64);
+        const cachedFileId = cache[key];
+        if (cachedFileId) {
+          element.imageLink = `https://drive.google.com/uc?id=${cachedFileId}`;
+          element.mermaidLiveUrl = diagram.liveUrl;
+          done += 1;
+          this.report(`Diagram ${done} of ${total} unchanged`, 'diagrams', done, total);
+          continue;
+        }
 
         this.report(`Uploading diagram ${done + 1} of ${total}`, 'diagrams', done, total);
 
@@ -665,6 +704,8 @@ export class GoogleDocsSyncService {
           // Set image link to Drive URI for insertInlineImage
           element.imageLink = `https://drive.google.com/uc?id=${fileId}`;
           element.mermaidLiveUrl = diagram.liveUrl;
+          cache[key] = fileId;
+          cacheChanged = true;
           done += 1;
           this.report(`Uploaded diagram ${done} of ${total}`, 'diagrams', done, total);
         } catch (error) {
@@ -672,6 +713,10 @@ export class GoogleDocsSyncService {
           // Continue without the image — it will be skipped by the builder
         }
       }
+    }
+
+    if (cacheChanged) {
+      await this.linkStore.saveImageCache(docId, cache);
     }
   }
 

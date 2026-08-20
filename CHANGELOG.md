@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Syncing no longer leaves stray characters behind when a paragraph changes.** Every delete had one character trimmed off its range to avoid removing a paragraph's trailing newline, but character-level deletes inside a paragraph have no newline to trim — so the last character of every removed run survived. Correcting `**bold**` markers left a lone `*` in the document.
+
+### Changed
+
+- **Diagrams are only uploaded when they change.** Each rendered image is remembered by a hash of its bytes, so an unchanged diagram reuses the file already in Drive instead of uploading a duplicate on every sync.
+
+### Fixed
+
 - **Saving straight from an open editor no longer loses the edit.** Text being typed only reaches the document when the editor commits, and committing is also what marks the document as changed. Save checked "is there anything to change?" before that happened, so an edit the user never clicked away from looked like no change at all: nothing was written to disk, exiting edit mode committed it into the view anyway, and the change was gone the next time the file was opened. Pending edits are now committed before the document is read or judged unchanged.
 - **Bolding a word mid-sentence no longer leaves literal asterisks.** Selecting a word by double-click takes its trailing space with it, so the editor wrapped `Testt2 ` rather than `Testt2` and wrote `**Testt2 **`. A closing `**` preceded by a space is not a valid CommonMark closer, so the markers survived as text instead of becoming bold. Emphasis markers are now placed inside any surrounding whitespace, for bold, italic and strikethrough alike.
 

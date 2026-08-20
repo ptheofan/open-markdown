@@ -77,10 +77,35 @@ export class GoogleDocsLinkStore {
     }
   }
 
+  /**
+   * Drive file ids for diagram images already uploaded for this document,
+   * keyed by a hash of the image bytes. Re-uploading an identical diagram on
+   * every sync is pure latency: the bytes are the same and Drive already has
+   * them.
+   */
+  async loadImageCache(docId: string): Promise<Record<string, string>> {
+    const cachePath = path.join(this.baselineDir, `${docId}.images.json`);
+    try {
+      return JSON.parse(await fs.readFile(cachePath, 'utf-8')) as Record<string, string>;
+    } catch {
+      return {};
+    }
+  }
+
+  async saveImageCache(docId: string, cache: Record<string, string>): Promise<void> {
+    const cachePath = path.join(this.baselineDir, `${docId}.images.json`);
+    await fs.writeFile(cachePath, JSON.stringify(cache), 'utf-8');
+  }
+
   async deleteBaseline(docId: string): Promise<void> {
     const baselinePath = path.join(this.baselineDir, `${docId}.baseline.txt`);
     try {
       await fs.unlink(baselinePath);
+    } catch {
+      // ignore if not found
+    }
+    try {
+      await fs.unlink(path.join(this.baselineDir, `${docId}.images.json`));
     } catch {
       // ignore if not found
     }

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
-  syncProgressPercent, createGoogleDocsSyncService } from '@main/services/GoogleDocsSyncService';
+  syncProgressPercent, imageCacheKey, createGoogleDocsSyncService } from '@main/services/GoogleDocsSyncService';
 
 // Mock the converter module
 vi.mock('@main/services/MarkdownToDocsConverter', () => ({
@@ -19,6 +19,8 @@ describe('GoogleDocsSyncService', () => {
 
   const mockLinkStore = {
     loadBaseline: vi.fn(),
+    loadImageCache: vi.fn().mockResolvedValue({}),
+    saveImageCache: vi.fn(),
     saveBaseline: vi.fn(),
     updateLastSynced: vi.fn(),
     getLink: vi.fn(),
@@ -36,6 +38,60 @@ describe('GoogleDocsSyncService', () => {
       mockDocsService as unknown as Parameters<typeof createGoogleDocsSyncService>[0],
       mockLinkStore as unknown as Parameters<typeof createGoogleDocsSyncService>[1],
     );
+  });
+
+  describe('diagram upload reuse', () => {
+    function setupTwoDiagrams(): void {
+      mockLinkStore.loadBaseline.mockResolvedValue(null);
+      mockDocsService.getDocument.mockResolvedValue({ body: { content: [{ endIndex: 1 }] } });
+      mockDocsService.extractPlainText.mockReturnValue('');
+      mockDocsService.batchUpdate.mockResolvedValue({});
+      mockDocsService.uploadImage.mockResolvedValue('file-id');
+      vi.mocked(convertMarkdownToDocs).mockReturnValue({
+        elements: [
+          { type: 'image', code: 'graph A' },
+          { type: 'image', code: 'graph B' },
+        ],
+      });
+    }
+
+    const diagrams = [
+      { code: 'graph A', pngBase64: 'AAA', liveUrl: 'https://mermaid.live/a' },
+      { code: 'graph B', pngBase64: 'BBB', liveUrl: 'https://mermaid.live/b' },
+    ];
+
+    it('uploads diagrams that have never been seen', async () => {
+      setupTwoDiagrams();
+      mockLinkStore.loadImageCache.mockResolvedValue({});
+
+      await syncService.sync('/file.md', 'doc-1', 'x', diagrams);
+
+      expect(mockDocsService.uploadImage).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not re-upload a diagram whose image is unchanged', async () => {
+      setupTwoDiagrams();
+      // Both diagrams were uploaded by an earlier sync and are byte-identical.
+      mockLinkStore.loadImageCache.mockResolvedValue({
+        [imageCacheKey('AAA')]: 'existing-a',
+        [imageCacheKey('BBB')]: 'existing-b',
+      });
+
+      await syncService.sync('/file.md', 'doc-1', 'x', diagrams);
+
+      expect(mockDocsService.uploadImage).not.toHaveBeenCalled();
+    });
+
+    it('uploads only the diagram that actually changed', async () => {
+      setupTwoDiagrams();
+      mockLinkStore.loadImageCache.mockResolvedValue({
+        [imageCacheKey('AAA')]: 'existing-a',
+      });
+
+      await syncService.sync('/file.md', 'doc-1', 'x', diagrams);
+
+      expect(mockDocsService.uploadImage).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('progress reporting', () => {
@@ -67,6 +123,7 @@ describe('GoogleDocsSyncService', () => {
       mockDocsService.extractPlainText.mockReturnValue('');
       mockDocsService.batchUpdate.mockResolvedValue({});
       mockDocsService.uploadImage.mockResolvedValue('file-id');
+      mockLinkStore.loadImageCache.mockResolvedValue({}); // nothing uploaded before
       vi.mocked(convertMarkdownToDocs).mockReturnValue({
         elements: [
           { type: 'image', code: 'graph A' },

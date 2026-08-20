@@ -36,7 +36,7 @@ export function registerGoogleDocsHandlers(): void {
     await linkStore.removeLink(filePath);
     const error =
       'That Google Doc is no longer accessible. Link this file again to pick a document.';
-    sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, { syncing: false, error });
+    sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, { syncing: false });
     return { success: false, error };
   };
   const syncService = createGoogleDocsSyncService(docsService, linkStore);
@@ -129,7 +129,7 @@ export function registerGoogleDocsHandlers(): void {
           return await dropDeadLink(filePath);
         }
 
-        sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, { syncing: false, error: message });
+        sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, { syncing: false });
         return { success: false, error: message };
       }
     },
@@ -155,7 +155,7 @@ export function registerGoogleDocsHandlers(): void {
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Sync failed';
         console.error('Google Docs overwrite sync error:', error);
-        sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, { syncing: false, error: message });
+        sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, { syncing: false });
         return { success: false, error: message };
       }
     },

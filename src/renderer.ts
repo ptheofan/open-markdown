@@ -569,9 +569,12 @@ class App {
       (status: { syncing: boolean; error?: string }) => {
         if (status.syncing) {
           this.googleDocsButton?.setState('syncing');
-        } else if (status.error) {
-          this.toast?.error(`Sync failed: ${status.error}`);
-          this.googleDocsButton?.setState('ready');
+        } else {
+          // Recompute from the link store: a sync that dropped an unreachable
+          // link must leave the button offering 'link', not 'sync'. The error
+          // itself is reported by whoever invoked the sync, not here, so it is
+          // not toasted twice.
+          void this.updateGoogleDocsButtonState();
         }
       }
     );
@@ -1247,6 +1250,7 @@ class App {
       } else {
         console.error('Google Docs sync error result:', result);
         this.toast?.error(result.error ?? 'Sync failed');
+        await this.updateGoogleDocsButtonState();
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Sync failed';
@@ -1279,10 +1283,10 @@ class App {
 
       console.error('Google Docs sync exception:', error);
       this.toast?.error(message);
-      this.googleDocsButton?.setState('ready');
+      await this.updateGoogleDocsButtonState();
       return;
     }
-    this.googleDocsButton?.setState('ready');
+    await this.updateGoogleDocsButtonState();
   }
 
   /**

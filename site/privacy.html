@@ -32,7 +32,7 @@
 
     <h2>Overview</h2>
     <p>Open Markdown is a desktop application that runs on your device. <strong>We operate no servers and receive no data about you or your documents &mdash; none, ever.</strong> There is no account to create with us, no analytics, and no telemetry.</p>
-    <p>The app has one optional feature that uses the network: synchronising a local Markdown file to a Google Doc. It is off until you sign in, and when you do, the app talks directly to Google &mdash; never to us. This policy explains exactly what that involves.</p>
+    <p>Apart from fetching web-hosted images that a document itself embeds (see &ldquo;Your documents&rdquo; below), the app has one optional feature that uses the network: synchronising a local Markdown file to a Google Doc. It is off until you sign in, and when you do, the app talks directly to Google &mdash; never to us. This policy explains exactly what that involves.</p>
 
     <h2>What we collect</h2>
     <p><strong>Nothing.</strong> Specifically:</p>
@@ -46,7 +46,7 @@
 
     <h2>Your documents</h2>
     <p>Markdown files are read, rendered, and edited entirely on your device. File contents are never transmitted to us or to any third party &mdash; with the single exception of documents you explicitly choose to sync to your own Google account, described below.</p>
-    <p>With the Google integration unused, the app makes no network requests at all and works fully offline.</p>
+    <p>With the Google integration unused, the app makes no network requests of its own and works fully offline &mdash; with one exception: if a document you open embeds an image hosted on the web, the app fetches that image from its host in order to display it. The host sees an ordinary image request from your device, including your IP address. These requests go straight from your device to the image&rsquo;s host; we are not involved and never see them. Documents that use only local images render entirely offline.</p>
 
     <h2>Google Docs synchronisation (optional)</h2>
     <p>If you choose to sign in with Google, the app connects to Google&rsquo;s APIs on your behalf using OAuth 2.0. We never see your Google password &mdash; sign-in happens in your browser, on Google&rsquo;s own pages.</p>
@@ -86,9 +86,12 @@
     <h3>Limited Use</h3>
     <p>Open Markdown&rsquo;s use of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements. Data obtained from Google APIs is used solely to provide the synchronisation feature you asked for. It is never sold, never transferred to third parties, never used for advertising, and never read by humans.</p>
 
+    <h2>App Store distribution</h2>
+    <p>If you install the app through the Mac App Store or TestFlight, Apple collects diagnostics and usage data under <a href="https://www.apple.com/legal/privacy/">Apple&rsquo;s own privacy policy</a> and your device settings. If you have opted in to sharing analytics with developers, Apple makes aggregated crash reports available to us. That is the only route by which any data about your use of the app can reach us, and it is controlled entirely by your Apple settings, not by the app.</p>
+
     <h2>Other third-party services</h2>
     <p>Links you click in a document open in your default browser. The app also offers a &ldquo;view in mermaid.live&rdquo; action that opens a diagram editor in your browser; the diagram is encoded in the link. These sites are operated by others and have their own privacy policies.</p>
-    <p>Aside from these, and Google when you use synchronisation, the app contacts no external service.</p>
+    <p>Aside from these, Google when you use synchronisation, and the hosts of web images embedded in your own documents, the app contacts no external service.</p>
 
     <h2>Verifying this for yourself</h2>
     <p>Open Markdown is open source under GPL-3.0. Every network request the app can make is visible in the source code at <a href="https://github.com/ptheofan/open-markdown">github.com/ptheofan/open-markdown</a>. You do not have to take our word for any of the above.</p>

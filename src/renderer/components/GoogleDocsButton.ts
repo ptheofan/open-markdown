@@ -14,6 +14,7 @@ export interface GoogleDocsButtonCallbacks {
   onLinkRequest?: () => void;     // State: unlinked -> show link dialog
   onSignInRequest?: () => void;   // State: needs-auth -> trigger OAuth
   onSyncRequest?: () => void;     // State: ready -> trigger sync
+  onShowProgressRequest?: () => void; // State: syncing -> reopen the progress bar
   onUnlinkRequest?: () => void;   // Context: right-click or long press
 }
 
@@ -52,6 +53,10 @@ export class GoogleDocsButton {
         case 'ready':
           this.callbacks.onSyncRequest?.();
           break;
+        case 'syncing':
+          // Not a second sync -- the click reopens a dismissed progress bar.
+          this.callbacks.onShowProgressRequest?.();
+          break;
       }
     });
   }
@@ -73,7 +78,12 @@ export class GoogleDocsButton {
     if (this.icon) this.icon.classList.toggle('hidden', syncing);
     if (this.spinner) this.spinner.classList.toggle('hidden', !syncing);
 
-    this.button.disabled = syncing || !this.enabled;
+    // Deliberately NOT the `disabled` attribute while syncing: a disabled
+    // button never fires click, which would strand the user with no way to
+    // reopen a progress bar they dismissed. It still reads as busy.
+    this.button.disabled = !this.enabled;
+    this.button.setAttribute('aria-busy', syncing ? 'true' : 'false');
+    this.button.classList.toggle('is-syncing', syncing);
 
     // Update title
     const titles: Record<GoogleDocsButtonState, string> = {
@@ -90,7 +100,7 @@ export class GoogleDocsButton {
    */
   setEnabled(enabled: boolean): void {
     this.enabled = enabled;
-    this.button.disabled = !enabled || this.state === 'syncing';
+    this.button.disabled = !enabled;
   }
 
   /**

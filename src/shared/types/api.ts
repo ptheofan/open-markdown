@@ -13,7 +13,7 @@ import type {
   ExternalFileOpenEvent,
 } from './fileAssociation';
 import type { RecentFileEntry } from './recentFiles';
-import type { GoogleDocLink, GoogleDocsSyncResult, GoogleAuthState, MermaidDiagramData, TableColumnWidths } from './google-docs';
+import type { GoogleDocLink, GoogleDocsSyncResult, GoogleAuthState, MermaidDiagramData, TableColumnWidths, SyncProgressUpdate } from './google-docs';
 
 /**
  * IPC Channel names for type-safe communication
@@ -92,6 +92,7 @@ export const IPC_CHANNELS = {
     SYNC_CONFIRM_OVERWRITE: 'google-docs:sync-confirm-overwrite',
     ON_AUTH_CHANGE: 'google-docs:on-auth-change',
     ON_SYNC_STATUS: 'google-docs:on-sync-status',
+    ON_SYNC_PROGRESS: 'google-docs:on-sync-progress',
   },
 } as const;
 
@@ -305,6 +306,7 @@ export interface GoogleDocsAPI {
   sync: (filePath: string, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[], tableWidths?: TableColumnWidths[]) => Promise<GoogleDocsSyncResult>;
   syncConfirmOverwrite: (filePath: string, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[], tableWidths?: TableColumnWidths[]) => Promise<GoogleDocsSyncResult>;
   onAuthChange: (callback: (state: GoogleAuthState) => void) => () => void;
+  onSyncProgress: (callback: (update: SyncProgressUpdate) => void) => () => void;
   onSyncStatus: (callback: (status: { syncing: boolean; error?: string }) => void) => () => void;
 }
 

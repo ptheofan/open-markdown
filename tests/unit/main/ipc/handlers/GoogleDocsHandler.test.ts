@@ -1,11 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+const sent = vi.hoisted(() => ({ calls: [] as { channel: string; payload: unknown }[] }));
+
 vi.mock('electron', () => ({
   ipcMain: {
     handle: vi.fn(),
     removeHandler: vi.fn(),
   },
-  BrowserWindow: { getAllWindows: () => [] },
+  BrowserWindow: {
+    getAllWindows: () => [
+      {
+        isDestroyed: () => false,
+        webContents: {
+          send: (channel: string, payload: unknown) => sent.calls.push({ channel, payload }),
+        },
+      },
+    ],
+  },
 }));
 
 const mocks = vi.hoisted(() => ({
@@ -105,6 +116,39 @@ describe('GoogleDocsHandler', () => {
       const result = await invokePickAndLink('/notes/a.md');
       expect(mocks.linkStore.setLink).not.toHaveBeenCalled();
       expect(result).toBeNull();
+    });
+  });
+
+  describe('sync progress', () => {
+    it('broadcasts each progress update the sync service reports', async () => {
+      sent.calls.length = 0;
+      mocks.linkStore.getLink.mockReturnValue({ docId: 'doc-1', lastSyncedAt: null });
+      // Drive the callback the handler hands us, the way the service would.
+      mocks.syncService.sync.mockImplementation(
+        (
+          _f: string,
+          _d: string,
+          _m: string,
+          _mm: unknown,
+          _t: unknown,
+          onProgress?: (u: { percent: number; label: string }) => void,
+        ) => {
+          onProgress?.({ percent: 25, label: 'Uploading diagram 1 of 2' });
+          onProgress?.({ percent: 70, label: 'Uploaded diagram 2 of 2' });
+          return Promise.resolve({ success: true });
+        },
+      );
+
+      registerGoogleDocsHandlers();
+      const entry = vi.mocked(ipcMain.handle).mock.calls.find((c) => c[0] === 'google-docs:sync');
+      if (!entry) throw new Error('sync handler not registered');
+      await (entry[1] as (e: unknown, ...a: unknown[]) => Promise<unknown>)({}, '/a.md', '# x');
+
+      const progress = sent.calls.filter((c) => c.channel === 'google-docs:on-sync-progress');
+      expect(progress.map((c) => c.payload)).toEqual([
+        { percent: 25, label: 'Uploading diagram 1 of 2' },
+        { percent: 70, label: 'Uploaded diagram 2 of 2' },
+      ]);
     });
   });
 

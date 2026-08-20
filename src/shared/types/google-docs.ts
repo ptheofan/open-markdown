@@ -107,6 +107,17 @@ export interface GoogleDocsSyncResult {
   status?: number;
 }
 
+/** Which stage of a sync is running. */
+export type SyncPhase = 'reading' | 'converting' | 'diagrams' | 'applying' | 'tables' | 'done';
+
+/** A point in a sync's progress, as reported to the UI. */
+export interface SyncProgressUpdate {
+  /** 0-100, monotonically rising across a single sync. */
+  percent: number;
+  /** What is happening right now, e.g. "Uploading diagram 3 of 5". */
+  label: string;
+}
+
 /** Auth state exposed to renderer */
 export interface GoogleAuthState {
   isAuthenticated: boolean;

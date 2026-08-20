@@ -26,6 +26,8 @@ import type {
   GDocsStructuralElement,
   GoogleDocsSyncResult,
   MermaidDiagramData,
+  SyncPhase,
+  SyncProgressUpdate,
   TableColumnWidths,
 } from '@shared/types/google-docs';
 import type { DocsBatchUpdateRequest } from '@main/services/GoogleDocsService';
@@ -478,7 +480,49 @@ export function buildCellRequests(
 
 // ── Sync service class ─────────────────────────────���─────────────────
 
+/**
+ * Where each phase sits on the 0-100 bar. The two counted phases own a band
+ * rather than a point, so a sync spending thirty seconds uploading diagrams
+ * shows movement instead of looking hung -- the whole reason this exists.
+ */
+const PROGRESS_BANDS: Record<SyncPhase, readonly [number, number]> = {
+  reading: [0, 10],
+  converting: [10, 20],
+  diagrams: [25, 70],
+  applying: [70, 85],
+  tables: [90, 100],
+  done: [100, 100],
+};
+
+/**
+ * Percentage for a point in a sync. Counted phases interpolate across their
+ * band by index/total; every other phase reports its band's end.
+ */
+export function syncProgressPercent(at: {
+  phase: SyncPhase;
+  index?: number;
+  total?: number;
+}): number {
+  const [start, end] = PROGRESS_BANDS[at.phase];
+  const total = at.total ?? 0;
+  if (total <= 0) return end;
+  const done = Math.min(Math.max(at.index ?? 0, 0), total);
+  return Math.round(start + ((end - start) * done) / total);
+}
+
 export class GoogleDocsSyncService {
+  /**
+   * Set for the duration of one sync. Held on the instance rather than passed
+   * down so the inner steps can report without every signature growing a
+   * parameter it only forwards.
+   */
+  private progress?: (update: SyncProgressUpdate) => void;
+
+  /** Report a point in the current sync, if anyone is listening. */
+  private report(label: string, phase: SyncPhase, index?: number, total?: number): void {
+    this.progress?.({ percent: syncProgressPercent({ phase, index, total }), label });
+  }
+
   private docsService: GoogleDocsService;
   private linkStore: GoogleDocsLinkStore;
 
@@ -491,14 +535,17 @@ export class GoogleDocsSyncService {
    * Main sync method — performs three-way diffing to detect external edits
    * and apply minimal changes.
    */
-  async sync(filePath: string, docId: string, markdown: string, mermaidDiagrams?: MermaidDiagramData[], tableWidths?: TableColumnWidths[]): Promise<GoogleDocsSyncResult> {
+  async sync(filePath: string, docId: string, markdown: string, mermaidDiagrams?: MermaidDiagramData[], tableWidths?: TableColumnWidths[], onProgress?: (update: SyncProgressUpdate) => void): Promise<GoogleDocsSyncResult> {
+    this.progress = onProgress;
     try {
+      this.report('Reading the Google Doc', 'reading');
       console.warn('[SyncService] Step 1: Loading baseline...');
       const baseline = await this.linkStore.loadBaseline(docId);
       console.warn('[SyncService] Step 2: Reading current doc from API...');
       const currentDoc = await this.docsService.getDocument(docId);
       console.warn('[SyncService] Step 3: Extracting plain text for external-edit check...');
       const theirs = this.docsService.extractPlainText(currentDoc);
+      this.report('Converting your markdown', 'converting');
       console.warn('[SyncService] Step 4: Converting markdown...');
       const docsDoc = convertMarkdownToDocs(markdown);
       console.warn('[SyncService] Step 5: Processing mermaid diagrams...');
@@ -515,6 +562,7 @@ export class GoogleDocsSyncService {
         return { success: false, externalEditsDetected: true };
       }
 
+      this.report('Applying changes', 'applying');
       console.warn('[SyncService] Applying paragraph-level diff...');
       return await this.applyDiff(docId, filePath, currentDoc, docsDoc);
     } catch (err: unknown) {
@@ -522,6 +570,9 @@ export class GoogleDocsSyncService {
       const stack = err instanceof Error ? err.stack : '';
       console.error('[SyncService] ERROR:', message, '\n', stack);
       return { success: false, error: message, status: (err as { status?: number }).status };
+    } finally {
+      this.report('Done', 'done');
+      this.progress = undefined;
     }
   }
 
@@ -589,10 +640,19 @@ export class GoogleDocsSyncService {
   ): Promise<void> {
     if (!mermaidDiagrams || mermaidDiagrams.length === 0) return;
 
+    const uploads = docsDoc.elements.filter(
+      (el) => el.type === 'image' && el.code && mermaidDiagrams.some((d) => d.code === el.code),
+    );
+    const total = uploads.length;
+    let done = 0;
+    this.report('Preparing diagrams', 'diagrams', 0, total);
+
     for (const element of docsDoc.elements) {
       if (element.type === 'image' && element.code) {
         const diagram = mermaidDiagrams.find(d => d.code === element.code);
         if (!diagram) continue;
+
+        this.report(`Uploading diagram ${done + 1} of ${total}`, 'diagrams', done, total);
 
         try {
           // Upload PNG to Google Drive
@@ -605,6 +665,8 @@ export class GoogleDocsSyncService {
           // Set image link to Drive URI for insertInlineImage
           element.imageLink = `https://drive.google.com/uc?id=${fileId}`;
           element.mermaidLiveUrl = diagram.liveUrl;
+          done += 1;
+          this.report(`Uploaded diagram ${done} of ${total}`, 'diagrams', done, total);
         } catch (error) {
           console.warn('Failed to upload mermaid diagram to Drive:', error);
           // Continue without the image — it will be skipped by the builder

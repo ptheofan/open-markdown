@@ -17,6 +17,7 @@ import {
   createRecentFilesDropdown,
   createOpenExternalDropdown,
   createGoogleDocsButton,
+  createSyncProgressBar,
   createGoogleDocsConfirmDialog,
   Toast,
   type MarkdownViewer,
@@ -31,6 +32,7 @@ import {
   type RecentFilesDropdown,
   type OpenExternalDropdown,
   type GoogleDocsButton,
+  type SyncProgressBar,
   type GoogleDocsConfirmDialog,
 } from './renderer/components';
 import type { EditModeCallbacks } from './renderer/components/EditModeController';
@@ -96,6 +98,7 @@ class App {
   private recentFilesDropdown: RecentFilesDropdown | null = null;
   private openExternalDropdown: OpenExternalDropdown | null = null;
   private googleDocsButton: GoogleDocsButton | null = null;
+  private syncProgressBar: SyncProgressBar | null = null;
   private googleDocsConfirmDialog: GoogleDocsConfirmDialog | null = null;
 
   private state: AppState = {
@@ -256,10 +259,12 @@ class App {
     const gdocsSyncBtn = document.getElementById('gdocs-sync-btn') as HTMLButtonElement | null;
     if (gdocsSyncBtn) {
       this.googleDocsButton = createGoogleDocsButton(gdocsSyncBtn);
+      this.syncProgressBar = createSyncProgressBar();
       this.googleDocsButton.setCallbacks({
         onLinkRequest: () => { void this.handleGoogleDocsPickAndSync(); },
         onSignInRequest: () => { void this.handleGoogleDocsSignIn(); },
         onSyncRequest: () => { void this.handleGoogleDocsSync(); },
+        onShowProgressRequest: () => { this.syncProgressBar?.show(); },
       });
     }
 
@@ -564,12 +569,22 @@ class App {
     );
     this.cleanupFunctions.push(cleanupGDocsAuth);
 
+    // Google Docs sync progress listener
+    const cleanupGDocsProgress = window.electronAPI.googleDocs.onSyncProgress((update) => {
+      // Only redraws when on screen; a dismissed bar still tracks the sync so
+      // reopening it shows where the sync is now, not where it was dismissed.
+      this.syncProgressBar?.update(update);
+    });
+    this.cleanupFunctions.push(cleanupGDocsProgress);
+
     // Google Docs sync status listener
     const cleanupGDocsSync = window.electronAPI.googleDocs.onSyncStatus(
       (status: { syncing: boolean; error?: string }) => {
         if (status.syncing) {
           this.googleDocsButton?.setState('syncing');
+          this.syncProgressBar?.show();
         } else {
+          this.syncProgressBar?.finish();
           // Recompute from the link store: a sync that dropped an unreachable
           // link must leave the button offering 'link', not 'sync'. The error
           // itself is reported by whoever invoked the sync, not here, so it is
@@ -1407,6 +1422,7 @@ class App {
     this.recentFilesDropdown?.destroy();
     this.openExternalDropdown?.destroy();
     this.googleDocsButton?.destroy();
+    this.syncProgressBar?.destroy();
     this.googleDocsConfirmDialog?.destroy();
   }
 }

@@ -149,3 +149,9 @@ export {
   GoogleDocsSettings,
   createGoogleDocsSettings,
 } from './GoogleDocsSettings';
+
+// SyncProgressBar
+export {
+  createSyncProgressBar,
+  type SyncProgressBar,
+} from './SyncProgressBar';

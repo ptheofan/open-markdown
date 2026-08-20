@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Sync progress snackbar**: a bar at the bottom of the window reporting what a Google Docs sync is doing and how far along it is. Diagram uploads and table inserts each advance it, so the slowest part of a sync visibly moves instead of appearing to hang. Dismiss it with the ✕; clicking the spinning sync button brings it back, still tracking the sync in progress.
+
 ### Changed
 
 - **Linking a file to a Google Doc now goes through Google's own file picker** instead of pasting a document URL. Picking a document is what grants access to it, so the app no longer needs the sensitive `documents` scope ("see, edit, create and delete all your Google Docs documents") and requests only per-file `drive.file` access.

@@ -105,7 +105,14 @@ export function registerGoogleDocsHandlers(): void {
         if (!link) return { success: false, error: 'File not linked to Google Docs' };
         console.warn('[SYNC] Calling syncService.sync...');
         sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, { syncing: true });
-        const result = await syncService.sync(filePath, link.docId, markdownContent, mermaidDiagrams, tableWidths);
+        const result = await syncService.sync(
+          filePath,
+          link.docId,
+          markdownContent,
+          mermaidDiagrams,
+          tableWidths,
+          (update) => sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_PROGRESS, update),
+        );
         console.warn('[SYNC] Result:', JSON.stringify(result));
 
         // The sync service reports API failures rather than throwing, so an

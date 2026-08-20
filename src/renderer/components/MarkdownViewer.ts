@@ -133,6 +133,10 @@ export class MarkdownViewer {
       await this.initialize();
     }
 
+    // Captured before the state moves on: a re-render of the same file (a
+    // watched file changing on disk) should leave the user's selection alone.
+    const isDifferentDocument = Boolean(filePath) && filePath !== this.state.filePath;
+
     this.state.isRendering = true;
     this.state.content = markdown;
     if (filePath) {
@@ -143,6 +147,13 @@ export class MarkdownViewer {
       // Render markdown to HTML
       const html = this.pluginManager.render(markdown);
       this.container.innerHTML = html;
+
+      // A Select All from the previous document leaves a range spanning this
+      // container. Replacing its children does not collapse that range, so the
+      // incoming document appears fully selected until something else clears it.
+      if (isDifferentDocument) {
+        window.getSelection()?.removeAllRanges();
+      }
 
       // Resolve relative/local image paths against the document's location
       this.rewriteAssetPaths();

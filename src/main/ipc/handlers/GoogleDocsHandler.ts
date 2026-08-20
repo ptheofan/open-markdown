@@ -164,6 +164,9 @@ export function registerGoogleDocsHandlers(): void {
           mermaidDiagrams,
           tableWidths,
           resolutions,
+          onProgress: (update) => sendToAllWindows(
+            IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_PROGRESS, update,
+          ),
         });
         if (!result.success && isGone(result.status)) {
           return await dropDeadLink(filePath);

@@ -313,6 +313,19 @@ describe('carrying out the user\'s choice', () => {
     expect(result.markdown).toBe('Intro paragraph\n\nSecond paragraph\n');
   });
 
+  it('reports progress, so the snackbar keeps moving while it works', async () => {
+    // resolve() can upload diagrams and rewrite a large document, exactly like
+    // sync(). Without this the progress bar sits dark for the whole operation.
+    const updates: Array<{ percent: number; label: string }> = [];
+
+    await syncService.resolve('/file.md', 'doc-1', 'push', SNAPSHOT, {
+      onProgress: (u) => updates.push(u),
+    });
+
+    expect(updates[0]?.label).toBe('Reading the Google Doc');
+    expect(updates.at(-1)).toEqual({ percent: 100, label: 'Done' });
+  });
+
   it('says plainly that a merge needs a previous sync to compare against', async () => {
     mockLinkStore.loadMarkdownSnapshots.mockResolvedValue(null);
 

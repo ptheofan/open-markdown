@@ -716,9 +716,12 @@ export class GoogleDocsSyncService {
       mermaidDiagrams?: MermaidDiagramData[];
       tableWidths?: TableColumnWidths[];
       resolutions?: SyncConflictChoice[];
+      onProgress?: (update: SyncProgressUpdate) => void;
     } = {},
   ): Promise<GoogleDocsResolveResult> {
+    this.progress = options.onProgress;
     try {
+      this.report('Reading the Google Doc', 'reading');
       if (mode === 'push') {
         return await this.syncForceOverwrite(
           filePath, docId, markdown, options.mermaidDiagrams, options.tableWidths,
@@ -770,6 +773,7 @@ export class GoogleDocsSyncService {
       const merged = joinBlocks(
         applyResolutions(outcome.blocks, outcome.conflicts, options.resolutions ?? []),
       );
+      this.report('Applying changes', 'applying');
       // The merged text carries the local-only edits too, so the Doc needs it.
       const pushed = await this.syncForceOverwrite(
         filePath, docId, merged, options.mermaidDiagrams, options.tableWidths,
@@ -778,6 +782,9 @@ export class GoogleDocsSyncService {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return { success: false, error: message, status: (err as { status?: number }).status };
+    } finally {
+      this.report('Done', 'done');
+      this.progress = undefined;
     }
   }
 

@@ -86,7 +86,9 @@ export class GithubFlavoredPlugin implements MarkdownPlugin {
         let slug = text
           .trim()
           .toLowerCase()
-          .replace(/[^\w\- ]+/g, '')
+          // Unicode-aware: an ASCII-only class empties a Greek/CJK heading,
+          // leaving a bogus id its anchors can never resolve to.
+          .replace(/[^\p{L}\p{N}_\- ]+/gu, '')
           .replace(/\s+/g, '-');
         if (!slug) continue;
 

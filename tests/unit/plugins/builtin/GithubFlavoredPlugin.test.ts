@@ -206,4 +206,46 @@ describe('GithubFlavoredPlugin', () => {
       expect(result).toContain('<table');
     });
   });
+
+  describe('heading anchors', () => {
+    /** Pull the id off the first heading of the rendered output. */
+    function headingId(markdown: string, tag = 'h2'): string | null {
+      const html = renderer.render(markdown);
+      return new RegExp(`<${tag}[^>]*\\sid="([^"]*)"`).exec(html)?.[1] ?? null;
+    }
+
+    it('slugs a heading into a lowercase hyphenated id', () => {
+      expect(headingId('## TextField API')).toBe('textfield-api');
+    });
+
+    it('drops punctuation from the slug', () => {
+      expect(headingId('## What is it, really?')).toBe('what-is-it-really');
+    });
+
+    it('includes inline code in the slug', () => {
+      expect(headingId('## The `useState` hook')).toBe('the-usestate-hook');
+    });
+
+    it('suffixes duplicate slugs so every heading keeps a unique id', () => {
+      const html = renderer.render('## Notes\n\n## Notes\n\n## Notes');
+      const ids = [...html.matchAll(/<h2[^>]*\sid="([^"]*)"/g)].map((m) => m[1]);
+      expect(ids).toEqual(['notes', 'notes-1', 'notes-2']);
+    });
+
+    it('keeps non-ASCII letters so anchors in non-English documents resolve', () => {
+      expect(headingId('## Καλημέρα κόσμε')).toBe('καλημέρα-κόσμε');
+      expect(headingId('## 安装指南')).toBe('安装指南');
+    });
+
+    // Negative cases: proof the rule is targeted, not spraying ids everywhere.
+
+    it('does not put an id on anything that is not a heading', () => {
+      const html = renderer.render('Some text\n\n- item\n\n> quote');
+      expect(html).not.toContain('id=');
+    });
+
+    it('emits no id at all when the heading slugs to nothing', () => {
+      expect(headingId('## ***')).toBeNull();
+    });
+  });
 });

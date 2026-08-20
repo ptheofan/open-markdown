@@ -3,7 +3,7 @@ import { pathToFileURL } from 'node:url';
 
 import { describe, it, expect } from 'vitest';
 
-import { resolveAssetUrl } from '../../../src/preload/assetResolver';
+import { resolveAssetUrl, resolveLocalPath } from '../../../src/preload/assetResolver';
 
 const BASE = path.resolve('/docs/project/README.md');
 
@@ -67,5 +67,42 @@ describe('resolveAssetUrl', () => {
     expect(result).toBe(
       expectedUrl(path.resolve('/docs/project/images/my logo.svg'))
     );
+  });
+});
+
+/**
+ * Link handling resolves a reference to a bare filesystem path, not an
+ * `om-asset:` URL — the caller slices the extension off it and hands it to the
+ * file loader, so the raw-path shape is what matters here.
+ */
+describe('resolveLocalPath', () => {
+  it('resolves a sibling document against the current one', () => {
+    expect(resolveLocalPath(BASE, './guide.md')).toBe(
+      path.resolve('/docs/project/guide.md')
+    );
+  });
+
+  it('keeps an absolute path as-is', () => {
+    expect(resolveLocalPath(BASE, '/elsewhere/notes.md')).toBe(
+      path.resolve('/elsewhere/notes.md')
+    );
+  });
+
+  it('strips a fragment so the path still ends in the file extension', () => {
+    expect(resolveLocalPath(BASE, 'guide.md#install')).toBe(
+      path.resolve('/docs/project/guide.md')
+    );
+  });
+
+  // Negative cases: anything that is not a local file must resolve to null,
+  // otherwise the viewer would try to open a URL as a file.
+  it.each([
+    ['https://example.com/page.md'],
+    ['//cdn.example.com/page.md'],
+    ['mailto:someone@example.com'],
+    ['#section'],
+    [''],
+  ])('returns null for %s', (ref) => {
+    expect(resolveLocalPath(BASE, ref)).toBeNull();
   });
 });

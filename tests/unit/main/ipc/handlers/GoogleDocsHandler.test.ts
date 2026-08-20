@@ -120,6 +120,54 @@ describe('GoogleDocsHandler', () => {
     });
   });
 
+  describe('sync-resolve', () => {
+    function invokeResolve(
+      mode: string,
+      resolutions?: string[],
+    ): Promise<unknown> {
+      registerGoogleDocsHandlers();
+      const entry = vi
+        .mocked(ipcMain.handle)
+        .mock.calls.find((c) => c[0] === 'google-docs:sync-resolve');
+      if (!entry) throw new Error('sync-resolve handler not registered');
+      const fn = entry[1] as (...args: unknown[]) => Promise<unknown>;
+      return fn({}, '/notes/a.md', mode, '# md', undefined, undefined, resolutions);
+    }
+
+    beforeEach(() => {
+      mocks.linkStore.getLink.mockReturnValue({ docId: 'doc-1', lastSyncedAt: null });
+      mocks.syncService.resolve.mockResolvedValue({ success: true });
+    });
+
+    it('passes the chosen mode through to the sync service', async () => {
+      await invokeResolve('pull');
+      expect(mocks.syncService.resolve).toHaveBeenCalledWith(
+        '/notes/a.md', 'doc-1', 'pull', '# md', expect.objectContaining({ resolutions: undefined }),
+      );
+    });
+
+    it('carries the conflict answers on the second trip', async () => {
+      await invokeResolve('merge', ['remote', 'local']);
+      expect(mocks.syncService.resolve).toHaveBeenCalledWith(
+        '/notes/a.md', 'doc-1', 'merge', '# md',
+        expect.objectContaining({ resolutions: ['remote', 'local'] }),
+      );
+    });
+
+    it('drops a link to a document that is gone rather than retrying it', async () => {
+      mocks.syncService.resolve.mockResolvedValue({ success: false, status: 404 });
+      await invokeResolve('push');
+      expect(mocks.linkStore.removeLink).toHaveBeenCalledWith('/notes/a.md');
+    });
+
+    it('refuses when the file is not linked', async () => {
+      mocks.linkStore.getLink.mockReturnValue(undefined);
+      const result = await invokeResolve('merge');
+      expect(result).toEqual({ success: false, error: 'File not linked to Google Docs' });
+      expect(mocks.syncService.resolve).not.toHaveBeenCalled();
+    });
+  });
+
   describe('sync progress', () => {
     it('broadcasts each progress update the sync service reports', async () => {
       sent.calls.length = 0;

@@ -1134,6 +1134,20 @@ class App {
       await window.electronAPI.googleDocs.link(this.state.currentFilePath, url);
       this.googleDocsLinkDialog?.hide();
       await this.updateGoogleDocsButtonState();
+
+      // Linking while signed out must not force a sync — it would fail with
+      // 'Not authenticated' and discard the 'needs-auth' state just computed
+      // above. Sign in first, and only sync once that actually succeeded.
+      const authState = await window.electronAPI.googleDocs.getAuthStatus();
+      if (!authState.isAuthenticated) {
+        await this.handleGoogleDocsSignIn();
+        const reauthed = await window.electronAPI.googleDocs.getAuthStatus();
+        if (!reauthed.isAuthenticated) {
+          this.googleDocsButton?.setState('needs-auth');
+          return;
+        }
+      }
+
       await this.handleGoogleDocsSync();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to link';
@@ -1190,7 +1204,7 @@ class App {
   /**
    * Handle Google Docs sync
    */
-  private async handleGoogleDocsSync(): Promise<void> {
+  private async handleGoogleDocsSync(allowReauth = true): Promise<void> {
     if (!this.state.currentFilePath) return;
 
     const content = this.markdownViewer?.getState().content;
@@ -1228,15 +1242,28 @@ class App {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Sync failed';
 
-      // Session expired — re-authenticate then retry the sync
-      if (message.includes('Session expired')) {
-        console.warn('Google Docs session expired, triggering re-authentication');
+      // Both auth failures mean the same thing to the UI — the user must sign in
+      // before this sync can proceed. 'Session expired' comes from a revoked or
+      // expired refresh token; 'Not authenticated' from having no stored tokens
+      // at all. Only the former used to be handled, so a never-signed-in user
+      // landed in the generic branch below and the button was reset to 'ready',
+      // leaving no way to reach the sign-in flow (Preferences only offers sign
+      // out). allowReauth stops the post-sign-in retry from recursing.
+      if (allowReauth && (message.includes('Session expired') || message.includes('Not authenticated'))) {
+        console.warn('Google Docs authentication required, triggering sign-in');
         try {
           await this.handleGoogleDocsSignIn();
+          // handleGoogleDocsSignIn swallows its own errors, so re-read the auth
+          // state rather than assuming success.
+          const authState = await window.electronAPI.googleDocs.getAuthStatus();
+          if (!authState.isAuthenticated) {
+            this.googleDocsButton?.setState('needs-auth');
+            return;
+          }
           // Retry sync after successful re-auth
-          await this.handleGoogleDocsSync();
+          await this.handleGoogleDocsSync(false);
         } catch {
-          this.googleDocsButton?.setState('ready');
+          this.googleDocsButton?.setState('needs-auth');
         }
         return;
       }

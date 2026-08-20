@@ -6,16 +6,18 @@
 import { test, expect } from './electron-app';
 
 test.describe('App Launch', () => {
-  test('should launch the application and show window', async ({ electronApp }) => {
+  test('should launch the application and show window', async ({
+    electronApp,
+    mainWindow,
+  }) => {
     // Verify app launched
     expect(electronApp).toBeTruthy();
 
-    // Get the first window
-    const window = await electronApp.firstWindow();
-    expect(window).toBeTruthy();
+    // Via the fixture, not firstWindow() — that returns DevTools in dev builds.
+    expect(mainWindow).toBeTruthy();
 
     // Verify window has content
-    const title = await window.title();
+    const title = await mainWindow.title();
     expect(title).toContain('Open Markdown');
   });
 

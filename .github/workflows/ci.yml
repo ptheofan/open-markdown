@@ -71,3 +71,31 @@ jobs:
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
       - run: pnpm package
+
+  e2e:
+    name: E2E
+    runs-on: macos-latest
+    needs: [lint, typecheck, test]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+
+      # Playwright drives .vite/build/index.js, which `pnpm package` produces.
+      # This repeats the build job's package step; the cost buys E2E its own
+      # required status check instead of hiding e2e failures under "Build".
+      - run: pnpm package
+      - run: pnpm test:e2e
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

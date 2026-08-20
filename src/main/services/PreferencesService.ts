@@ -276,17 +276,3 @@ export function getPreferencesService(): PreferencesService {
   }
   return preferencesServiceInstance;
 }
-
-/**
- * Create a new PreferencesService instance (for testing)
- */
-export function createPreferencesService(preferencesDir?: string): PreferencesService {
-  return new PreferencesService(preferencesDir);
-}
-
-/**
- * Reset the singleton instance (for testing)
- */
-export function resetPreferencesService(): void {
-  preferencesServiceInstance = null;
-}

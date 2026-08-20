@@ -80,28 +80,6 @@ export function generatePluginThemeCSS(
 }
 
 /**
- * Aggregate multiple plugin theme declarations into one
- */
-export function aggregatePluginThemeDeclarations(
-  declarations: PluginThemeDeclaration[]
-): PluginThemeDeclaration {
-  const aggregated: PluginThemeDeclaration = {};
-
-  for (const declaration of declarations) {
-    for (const [name, values] of Object.entries(declaration)) {
-      if (aggregated[name]) {
-        console.warn(
-          `[ThemeSystem] Duplicate plugin theme variable: --${name}. Using latest declaration.`
-        );
-      }
-      aggregated[name] = values;
-    }
-  }
-
-  return aggregated;
-}
-
-/**
  * Get the appropriate color from a ColorPair based on theme
  */
 function getColorForTheme(colorPair: ColorPair, theme: ResolvedTheme): string {
@@ -245,12 +223,4 @@ export function applyTheme(
 
   // Also set data-theme attribute for any CSS that uses it
   document.documentElement.setAttribute('data-theme', theme);
-}
-
-/**
- * Get the current theme from the document
- */
-export function getCurrentTheme(): ResolvedTheme {
-  const theme = document.documentElement.getAttribute('data-theme');
-  return theme === 'dark' ? 'dark' : 'light';
 }

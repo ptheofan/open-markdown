@@ -430,3 +430,45 @@ Some text below.
     });
   });
 });
+
+/**
+ * mermaid.live decodes the `#pako:` fragment with pako.inflate. We compress
+ * with the platform's CompressionStream instead of bundling pako, so the one
+ * thing worth pinning is that the two agree on the format: 'deflate' is
+ * zlib-wrapped and round-trips, 'deflate-raw' does not and throws there.
+ *
+ * pako stays a devDependency purely as the reference decoder for this test.
+ */
+describe('generateMermaidLiveUrl', () => {
+  it('produces a fragment pako can inflate back to the original state', async () => {
+    const plugin = new MermaidPlugin();
+    const code = 'graph TD\n  A-->B';
+
+    const url = await plugin.generateMermaidLiveUrl(code);
+
+    expect(url.startsWith('https://mermaid.live/edit#pako:')).toBe(true);
+    const base64 = url.slice('https://mermaid.live/edit#pako:'.length);
+    const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+
+    const { inflate } = await import('pako');
+    const state = JSON.parse(inflate(bytes, { to: 'string' })) as {
+      code: string;
+    };
+    expect(state.code).toBe(code);
+  });
+
+  it('interpolates the resolved url, not a pending promise, into the copied html', async () => {
+    // generateMermaidLiveUrl is async; a missed await at this call site still
+    // typechecks in a template literal and silently ships href="[object Promise]".
+    const plugin = new MermaidPlugin();
+    const code = 'graph TD\n  A-->B';
+    const container = document.createElement('div');
+    container.className = 'mermaid-container';
+    container.setAttribute('data-mermaid-source', btoa(encodeURIComponent(code)));
+
+    const data = await plugin.getContextMenuData(container, 'copy-mermaid-live');
+
+    expect(data.content).toContain('href="https://mermaid.live/edit#pako:');
+    expect(data.content).not.toContain('[object Promise]');
+  });
+});

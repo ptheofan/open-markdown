@@ -104,7 +104,3 @@ export function getGoogleDocsLinkStore(): GoogleDocsLinkStore {
 export function createGoogleDocsLinkStore(dataDir?: string): GoogleDocsLinkStore {
   return new GoogleDocsLinkStore(dataDir);
 }
-
-export function resetGoogleDocsLinkStore(): void {
-  instance = null;
-}

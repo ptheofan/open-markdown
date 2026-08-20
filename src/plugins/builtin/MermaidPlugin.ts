@@ -2,7 +2,6 @@
  * MermaidPlugin - Renders Mermaid diagrams in markdown
  */
 import { toPng } from 'html-to-image';
-import pako from 'pako';
 
 import { BUILTIN_PLUGINS } from '@shared/constants';
 import {
@@ -427,7 +426,7 @@ export class MermaidPlugin implements MarkdownPlugin, PreviewablePlugin {
       }
 
       case 'copy-mermaid-live': {
-        const url = this.generateMermaidLiveUrl(code);
+        const url = await this.generateMermaidLiveUrl(code);
         return {
           type: 'html',
           content: `<a href="${url}">Mermaid Diagram</a>`,
@@ -436,7 +435,7 @@ export class MermaidPlugin implements MarkdownPlugin, PreviewablePlugin {
 
       case 'copy-image-with-link': {
         const pngData = await this.renderToPng(container);
-        const liveUrl = this.generateMermaidLiveUrl(code);
+        const liveUrl = await this.generateMermaidLiveUrl(code);
         return {
           type: 'html',
           content: `<img src="data:image/png;base64,${pngData}"/><br/><a href="${liveUrl}">Mermaid Diagram</a>`,
@@ -587,7 +586,7 @@ export class MermaidPlugin implements MarkdownPlugin, PreviewablePlugin {
    * @param code - Raw mermaid diagram code
    * @returns Full mermaid.live URL
    */
-  generateMermaidLiveUrl(code: string): string {
+  async generateMermaidLiveUrl(code: string): Promise<string> {
     const state = {
       code,
       mermaid: { theme: this.options.theme || 'default' },
@@ -596,7 +595,15 @@ export class MermaidPlugin implements MarkdownPlugin, PreviewablePlugin {
     };
 
     const jsonString = JSON.stringify(state);
-    const compressed = pako.deflate(jsonString, { level: 9 });
+    // CompressionStream('deflate') is zlib-wrapped, which is what mermaid.live's
+    // pako.inflate expects ('deflate-raw' is not — it throws there).
+    const deflate = new CompressionStream('deflate');
+    const writer = deflate.writable.getWriter();
+    void writer.write(new TextEncoder().encode(jsonString));
+    void writer.close();
+    const compressed = new Uint8Array(
+      await new Response(deflate.readable).arrayBuffer()
+    );
     const base64 = btoa(String.fromCharCode(...compressed));
 
     return `https://mermaid.live/edit#pako:${base64}`;

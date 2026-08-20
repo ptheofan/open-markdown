@@ -528,6 +528,19 @@ export function syncProgressPercent(at: {
   return Math.round(start + ((end - start) * done) / total);
 }
 
+/**
+ * Fingerprint of a converted document: text, formatting and diagram sources.
+ *
+ * Taken before diagram uploads, so it contains no Drive links and is stable
+ * across syncs of identical content. Comparing it against the last sync's
+ * fingerprint is how an unchanged document is recognised without doing any
+ * API work -- rebuilding formatting for a large document costs seconds even
+ * when every request is a no-op.
+ */
+export function modelFingerprint(docsDoc: DocsDocument): string {
+  return crypto.createHash('sha256').update(JSON.stringify(docsDoc)).digest('hex');
+}
+
 /** Cache key for an uploaded diagram: a hash of the rendered image bytes. */
 export function imageCacheKey(pngBase64: string): string {
   return crypto.createHash('sha256').update(pngBase64).digest('hex');
@@ -571,13 +584,25 @@ export class GoogleDocsSyncService {
       this.report('Converting your markdown', 'converting');
       console.warn('[SyncService] Step 4: Converting markdown...');
       const docsDoc = convertMarkdownToDocs(markdown);
+      // Nothing changed on either side? Then there is nothing to upload, diff
+      // or reformat. Checked before the diagrams, so an unchanged document
+      // costs one document read rather than a full rebuild.
+      const fingerprint = modelFingerprint(docsDoc);
+      const lastFingerprint = await this.linkStore.getModelFingerprint(docId);
+      if (lastFingerprint === fingerprint && baseline !== null && baseline === theirs) {
+        console.warn('[SyncService] Nothing changed since the last sync -- skipping');
+        return { success: true, unchanged: true };
+      }
+
       console.warn('[SyncService] Step 5: Processing mermaid diagrams...');
       await this.processMermaidDiagrams(docId, docsDoc, mermaidDiagrams);
       this.applyTableColumnWidths(docsDoc, tableWidths);
 
       if (baseline === null) {
         console.warn('[SyncService] First sync -> fullPopulate');
-        return await this.fullPopulate(docId, filePath, docsDoc);
+        const populated = await this.fullPopulate(docId, filePath, docsDoc);
+        if (populated.success) await this.linkStore.saveModelFingerprint(docId, fingerprint);
+        return populated;
       }
 
       if (baseline !== theirs) {
@@ -587,7 +612,9 @@ export class GoogleDocsSyncService {
 
       this.report('Applying changes', 'applying');
       console.warn('[SyncService] Applying paragraph-level diff...');
-      return await this.applyDiff(docId, filePath, currentDoc, docsDoc);
+      const diffed = await this.applyDiff(docId, filePath, currentDoc, docsDoc);
+      if (diffed.success) await this.linkStore.saveModelFingerprint(docId, fingerprint);
+      return diffed;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       const stack = err instanceof Error ? err.stack : '';

@@ -51,8 +51,10 @@ describe('buildFormattingFromApiDoc', () => {
       const docsDoc: DocsDocument = {
         elements: [
           { type: 'heading', headingLevel: 1, runs: [{ text: 'Title' }] },
-          // Table is skipped by flattenElements
-          { type: 'paragraph', runs: [{ text: 'After table' }] },
+          // Table is skipped by flattenElements. Bold so the paragraph genuinely
+          // needs a rewrite -- this test is about landing on index 21 rather
+          // than a table cell, not about formatting unchanged text.
+          { type: 'paragraph', runs: [{ text: 'After table', bold: true }] },
         ],
       };
 

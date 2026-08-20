@@ -105,6 +105,8 @@ export interface GoogleDocsSyncResult {
   externalEditsDetected?: boolean;
   /** HTTP status when the failure came from a Google API call. */
   status?: number;
+  /** Nothing had changed on either side; no API work was done. */
+  unchanged?: boolean;
 }
 
 /** Which stage of a sync is running. */

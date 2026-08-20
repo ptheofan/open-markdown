@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Syncing now only sends what actually changed.** Formatting was re-applied to every paragraph on every sync — a paragraph-style request, one request per text run, and a colour reset, for the whole document — which on a large file meant thousands of no-op requests and dominated sync time. Paragraphs whose formatting already matches are now left untouched. A sync where nothing changed at all is detected up front and does no API work beyond reading the document.
 - **Diagrams are only uploaded when they change.** Each rendered image is remembered by a hash of its bytes, so an unchanged diagram reuses the file already in Drive instead of uploading a duplicate on every sync.
 
 ### Fixed

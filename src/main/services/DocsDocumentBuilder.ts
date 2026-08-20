@@ -496,6 +496,19 @@ export interface ApiParagraph {
   startIndex: number;
   endIndex: number;
   textStartIndex: number;
+  /** Formatting already present in the document, for change detection. */
+  runs?: ApiRunStyle[];
+  namedStyleType?: string;
+}
+
+/** The subset of an existing run's styling we compare against the model. */
+export interface ApiRunStyle {
+  text: string;
+  bold: boolean;
+  italic: boolean;
+  strikethrough: boolean;
+  /** Anything we do not model simply (links, code fonts) forces a rewrite. */
+  exotic: boolean;
 }
 
 export function extractApiParagraphs(apiDoc: GDocsApiDocument): ApiParagraph[] {
@@ -508,6 +521,7 @@ export function extractApiParagraphs(apiDoc: GDocsApiDocument): ApiParagraph[] {
       let text = '';
       let firstTextIndex = el.startIndex ?? 0;
       let foundText = false;
+      const runs: ApiRunStyle[] = [];
       for (const pe of el.paragraph.elements ?? []) {
         if (pe.textRun?.content) {
           if (!foundText) {
@@ -517,6 +531,14 @@ export function extractApiParagraphs(apiDoc: GDocsApiDocument): ApiParagraph[] {
             foundText = true;
           }
           text += pe.textRun.content;
+          const ts = (pe.textRun.textStyle ?? {}) as Record<string, unknown>;
+          runs.push({
+            text: pe.textRun.content,
+            bold: ts['bold'] === true,
+            italic: ts['italic'] === true,
+            strikethrough: ts['strikethrough'] === true,
+            exotic: ts['link'] != null || ts['weightedFontFamily'] != null,
+          });
         }
       }
       result.push({
@@ -524,6 +546,8 @@ export function extractApiParagraphs(apiDoc: GDocsApiDocument): ApiParagraph[] {
         startIndex: el.startIndex ?? 0,
         endIndex: el.endIndex ?? 0,
         textStartIndex: firstTextIndex,
+        runs,
+        namedStyleType: el.paragraph.paragraphStyle?.namedStyleType as string | undefined,
       });
     }
     // Skip table and other structural elements — they keep their
@@ -711,6 +735,49 @@ function matchCodeBlockParagraphs(
  * text).  When a mismatch occurs the algorithm scans ahead in the API list
  * (up to LOOKAHEAD_WINDOW) to find the next matching paragraph.
  */
+/**
+ * Compare the formatting a paragraph already has against the formatting the
+ * model wants, so an unchanged paragraph can be left alone.
+ *
+ * Re-applying formatting to every paragraph costs one paragraph-style request
+ * plus one per run plus a colour reset, for the whole document, on every sync
+ * -- thousands of no-op requests that dominate sync time on a large file.
+ *
+ * Deliberately conservative: returns false for anything it does not model
+ * exactly (links, code fonts, lists, blockquotes), so an unrecognised case
+ * falls through to being rewritten rather than silently skipped.
+ */
+function formattingAlreadyMatches(elem: DocsElement, apiPara: ApiParagraph): boolean {
+  if (elem.type !== 'paragraph' && elem.type !== 'heading') return false;
+  const existing = apiPara.runs;
+  if (!existing || existing.some((r) => r.exotic)) return false;
+
+  const wantStyle =
+    elem.type === 'heading' ? headingLevelToNamedStyle(elem.headingLevel ?? 1) : 'NORMAL_TEXT';
+  if ((apiPara.namedStyleType ?? 'NORMAL_TEXT') !== wantStyle) return false;
+
+  const want = elem.runs ?? [];
+  if (want.some((r) => r.code || r.link)) return false;
+
+  // Compare as flat (character, style) sequences: the document may split runs
+  // differently from the model while carrying identical formatting.
+  const flatten = (
+    runs: { text: string; bold?: boolean; italic?: boolean; strikethrough?: boolean }[],
+  ): string =>
+    runs
+      .map((r) =>
+        [...r.text.replace(/\n$/, '')]
+          .map(
+            (ch) =>
+              `${ch}${r.bold ? 'B' : ''}${r.italic ? 'I' : ''}${r.strikethrough ? 'S' : ''}`,
+          )
+          .join('\u0001'),
+      )
+      .join('\u0001');
+
+  return flatten(existing) === flatten(want);
+}
+
 export function buildFormattingFromApiDoc(apiDoc: GDocsApiDocument, docsDoc: DocsDocument): DocsBatchUpdateRequest[] {
   const requests: DocsBatchUpdateRequest[] = [];
   const apiParas = extractApiParagraphs(apiDoc);
@@ -771,6 +838,15 @@ export function buildFormattingFromApiDoc(apiDoc: GDocsApiDocument, docsDoc: Doc
     // Skip the structural-gap paragraphs and land on the match
     apiIdx += matchOffset;
     const apiPara = apiParas[apiIdx]!;
+
+    // Leave paragraphs that already look right completely untouched.
+    if (
+      !blockquoteChildIndices.has(modelIdx) &&
+      formattingAlreadyMatches(elem, apiPara)
+    ) {
+      apiIdx++;
+      continue;
+    }
 
     applyElementFormatting(requests, elem, apiPara);
 

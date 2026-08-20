@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
-  syncProgressPercent, imageCacheKey, createGoogleDocsSyncService } from '@main/services/GoogleDocsSyncService';
+  syncProgressPercent, imageCacheKey, modelFingerprint, createGoogleDocsSyncService } from '@main/services/GoogleDocsSyncService';
 
 // Mock the converter module
 vi.mock('@main/services/MarkdownToDocsConverter', () => ({
@@ -20,6 +20,8 @@ describe('GoogleDocsSyncService', () => {
   const mockLinkStore = {
     loadBaseline: vi.fn(),
     loadImageCache: vi.fn().mockResolvedValue({}),
+    getModelFingerprint: vi.fn().mockResolvedValue(null),
+    saveModelFingerprint: vi.fn(),
     saveImageCache: vi.fn(),
     saveBaseline: vi.fn(),
     updateLastSynced: vi.fn(),
@@ -38,6 +40,58 @@ describe('GoogleDocsSyncService', () => {
       mockDocsService as unknown as Parameters<typeof createGoogleDocsSyncService>[0],
       mockLinkStore as unknown as Parameters<typeof createGoogleDocsSyncService>[1],
     );
+  });
+
+  describe('unchanged document', () => {
+    const diagrams = [
+      { code: 'graph A', pngBase64: 'AAA', liveUrl: 'https://mermaid.live/a' },
+    ];
+
+    function docSaying(text: string): void {
+      mockLinkStore.loadBaseline.mockResolvedValue(text);
+      mockDocsService.extractPlainText.mockReturnValue(text);
+      mockDocsService.getDocument.mockResolvedValue({ body: { content: [{ endIndex: 1 }] } });
+      mockDocsService.batchUpdate.mockResolvedValue({});
+      mockDocsService.uploadImage.mockResolvedValue('file-id');
+      vi.mocked(convertMarkdownToDocs).mockReturnValue({
+        elements: [{ type: 'paragraph', runs: [{ text: 'Hello' }] }],
+      });
+    }
+
+    it('does no work at all when nothing changed since the last sync', async () => {
+      docSaying('Hello');
+      // Fingerprint recorded by the previous sync of this exact content.
+      mockLinkStore.getModelFingerprint.mockResolvedValue(
+        modelFingerprint({ elements: [{ type: 'paragraph', runs: [{ text: 'Hello' }] }] }),
+      );
+
+      const result = await syncService.sync('/file.md', 'doc-1', 'Hello', diagrams);
+
+      expect(result.success).toBe(true);
+      expect(mockDocsService.batchUpdate).not.toHaveBeenCalled();
+      expect(mockDocsService.uploadImage).not.toHaveBeenCalled();
+    });
+
+    it('still syncs when the markdown changed', async () => {
+      docSaying('Hello');
+      mockLinkStore.getModelFingerprint.mockResolvedValue('fingerprint-of-something-else');
+
+      await syncService.sync('/file.md', 'doc-1', 'Hello', diagrams);
+
+      expect(mockDocsService.batchUpdate).toHaveBeenCalled();
+    });
+
+    it('still syncs when the document was edited in Google Docs', async () => {
+      docSaying('Hello');
+      mockDocsService.extractPlainText.mockReturnValue('Hello, edited by someone else');
+      mockLinkStore.getModelFingerprint.mockResolvedValue(
+        modelFingerprint({ elements: [{ type: 'paragraph', runs: [{ text: 'Hello' }] }] }),
+      );
+
+      const result = await syncService.sync('/file.md', 'doc-1', 'Hello', diagrams);
+
+      expect(result.externalEditsDetected).toBe(true);
+    });
   });
 
   describe('diagram upload reuse', () => {
@@ -236,7 +290,7 @@ describe('GoogleDocsSyncService', () => {
       expect(hasDeleteOrInsert).toBe(true);
     });
 
-    it('should still apply formatting when text is unchanged', async () => {
+    it('sends nothing when text and formatting are both unchanged', async () => {
       const text = 'Hello world\n';
       mockLinkStore.loadBaseline.mockResolvedValue(text);
       mockDocsService.getDocument.mockResolvedValue({
@@ -257,8 +311,36 @@ describe('GoogleDocsSyncService', () => {
 
       const result = await syncService.sync('/file.md', 'doc-123', 'Hello world');
       expect(result.success).toBe(true);
-      // Even when text is identical, formatting is reapplied to ensure
-      // paragraph styles are correct (e.g. if a paragraph was changed to a heading)
+      // Nothing differs, so nothing is sent. Re-applying formatting to every
+      // paragraph regardless is what made a large document slow to sync.
+      expect(mockDocsService.batchUpdate).not.toHaveBeenCalled();
+    });
+
+    it('still applies formatting when a paragraph became a heading', async () => {
+      const text = 'Hello world\n';
+      mockLinkStore.loadBaseline.mockResolvedValue(text);
+      mockDocsService.getDocument.mockResolvedValue({
+        body: {
+          content: [{
+            paragraph: {
+              elements: [{ textRun: { content: text } }],
+              paragraphStyle: { namedStyleType: 'NORMAL_TEXT' },
+            },
+            startIndex: 1,
+            endIndex: 13,
+          }],
+        },
+      });
+      mockDocsService.extractPlainText.mockReturnValue(text);
+      mockDocsService.batchUpdate.mockResolvedValue({});
+
+      // Same text, but now a heading -- a formatting-only change that the
+      // text diff cannot see and which must still reach the document.
+      vi.mocked(convertMarkdownToDocs).mockReturnValue({
+        elements: [{ type: 'heading', headingLevel: 1, runs: [{ text: 'Hello world' }] }],
+      });
+
+      await syncService.sync('/file.md', 'doc-123', '# Hello world');
       expect(mockDocsService.batchUpdate).toHaveBeenCalled();
     });
   });

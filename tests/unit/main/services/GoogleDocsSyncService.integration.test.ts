@@ -224,7 +224,7 @@ describe('GoogleDocsSyncService Integration', () => {
       expect(deletes.length + inserts.length).toBeLessThan(10); // Should be minimal
     });
 
-    it('should still apply formatting when text content is unchanged', async () => {
+    it('does no formatting work when text and formatting are both unchanged', async () => {
       const syncService = createGoogleDocsSyncService(
         mockDocsService as unknown as GoogleDocsService,
         linkStore,
@@ -250,13 +250,13 @@ describe('GoogleDocsSyncService Integration', () => {
       });
       mockDocsService.extractPlainText.mockReturnValue(text);
 
-      // Same content — text diff is a no-op, but formatting is still reapplied
+      // Same text AND same formatting: there is nothing to send. Re-applying
+      // formatting to every paragraph regardless is what made syncing a large
+      // document take many seconds of no-op requests.
       const result = await syncService.sync('/test/file.md', 'doc-123', 'Hello world');
 
       expect(result.success).toBe(true);
-      // Formatting reapply reads the doc and applies paragraph styles,
-      // so batchUpdate IS called (with formatting-only requests)
-      expect(mockDocsService.batchUpdate).toHaveBeenCalled();
+      expect(mockDocsService.batchUpdate).not.toHaveBeenCalled();
     });
 
     it('should handle adding new content at the end', async () => {
@@ -322,8 +322,11 @@ describe('GoogleDocsSyncService Integration', () => {
       );
 
       expect(result.success).toBe(true);
-      // batchUpdate called twice: text diff + formatting reapply
-      expect(mockDocsService.batchUpdate).toHaveBeenCalledTimes(2);
+      // Once, for the text diff. The formatting pass adds nothing because the
+      // inserted paragraph already matches what the model wants -- had it
+      // inherited a heading style from its neighbour, it would not have, and a
+      // second call would follow.
+      expect(mockDocsService.batchUpdate).toHaveBeenCalledTimes(1);
 
       // First call should contain text insert operations
       const textRequests: any[] = mockDocsService.batchUpdate.mock.calls[0]![1];

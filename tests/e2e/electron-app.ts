@@ -30,8 +30,23 @@ export const test = base.extend<{
   },
 
   mainWindow: async ({ electronApp }, use) => {
-    // Wait for the first window to open
-    const window = await electronApp.firstWindow();
+    // The dev build opens DevTools (WindowManager, `if (IS_DEV)`), and that
+    // window can win the race for firstWindow() — which lands every test on a
+    // page titled "DevTools" instead of the renderer. Pick by URL, not by order.
+    await electronApp.firstWindow();
+
+    const isRenderer = (page: Page): boolean =>
+      !page.url().startsWith('devtools://');
+
+    let window = electronApp.windows().find(isRenderer);
+    const deadline = Date.now() + 15000;
+    while (!window && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      window = electronApp.windows().find(isRenderer);
+    }
+    if (!window) {
+      throw new Error('Renderer window never opened (only DevTools was found)');
+    }
 
     // Wait for the app to be ready
     await window.waitForLoadState('domcontentloaded');

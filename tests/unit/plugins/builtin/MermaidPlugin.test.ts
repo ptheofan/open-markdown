@@ -456,4 +456,19 @@ describe('generateMermaidLiveUrl', () => {
     };
     expect(state.code).toBe(code);
   });
+
+  it('interpolates the resolved url, not a pending promise, into the copied html', async () => {
+    // generateMermaidLiveUrl is async; a missed await at this call site still
+    // typechecks in a template literal and silently ships href="[object Promise]".
+    const plugin = new MermaidPlugin();
+    const code = 'graph TD\n  A-->B';
+    const container = document.createElement('div');
+    container.className = 'mermaid-container';
+    container.setAttribute('data-mermaid-source', btoa(encodeURIComponent(code)));
+
+    const data = await plugin.getContextMenuData(container, 'copy-mermaid-live');
+
+    expect(data.content).toContain('href="https://mermaid.live/edit#pako:');
+    expect(data.content).not.toContain('[object Promise]');
+  });
 });

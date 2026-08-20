@@ -16,8 +16,10 @@ import { highlightCode, isSupportedLanguage } from '@main/services/CodeHighlight
 import {
   buildCodeBlockStyleRequests,
   buildFormattingFromApiDoc,
+  buildInsertRequests,
   CODE_FONT_FAMILY,
 } from '@main/services/DocsDocumentBuilder';
+import { convertMarkdownToDocs } from '@main/services/MarkdownToDocsConverter';
 import type { DocsBatchUpdateRequest } from '@main/services/GoogleDocsService';
 import type {
   DocsDocument,
@@ -219,5 +221,61 @@ describe('buildFormattingFromApiDoc — multi-line code blocks', () => {
 
     const reqs = buildFormattingFromApiDoc(apiDoc, mismatched);
     expect(reqs.filter(isPara).filter((r) => r.updateParagraphStyle.paragraphStyle['shading'])).toHaveLength(0);
+  });
+});
+
+describe('code block colours survive the document build', () => {
+  /**
+   * buildElement resets foregroundColor after every element to stop colour
+   * bleeding between them. That reset used to run for code blocks too, landing
+   * immediately after the token colours and erasing all of them — while leaving
+   * the shading and monospace font, which it does not touch, correctly applied.
+   * The block therefore looked styled but never coloured.
+   */
+  it('emits no reset that would erase a painted token colour', () => {
+    const md = [
+      '# Title',
+      '',
+      '```python',
+      '# a comment',
+      'def f(a, b=3):',
+      '    return "text"',
+      '```',
+      '',
+      'Trailing paragraph.',
+    ].join('\n');
+
+    const { requests } = buildInsertRequests(convertMarkdownToDocs(md), 1);
+
+    const colourOps = requests
+      .map((r, i) => ({ r, i }))
+      .filter(({ r }) => isText(r) && r.updateTextStyle.fields === 'foregroundColor')
+      .map(({ r, i }) => ({ i, style: (r as TextStyle).updateTextStyle }));
+
+    const painted = colourOps.filter(({ style }) => 'color' in (style.textStyle['foregroundColor'] as object));
+    expect(painted.length).toBeGreaterThan(0);
+
+    for (const p of painted) {
+      const erased = colourOps.some(
+        ({ i, style }) =>
+          i > p.i &&
+          !('color' in (style.textStyle['foregroundColor'] as object)) &&
+          style.range.startIndex <= p.style.range.startIndex &&
+          style.range.endIndex >= p.style.range.endIndex,
+      );
+      expect(erased).toBe(false);
+    }
+  });
+
+  it('still resets colour after ordinary elements', () => {
+    const { requests } = buildInsertRequests(
+      convertMarkdownToDocs('# Heading\n\nSome text.\n'),
+      1,
+    );
+    const resets = requests
+      .filter(isText)
+      .filter((r) => r.updateTextStyle.fields === 'foregroundColor');
+
+    expect(resets.length).toBeGreaterThan(0);
   });
 });

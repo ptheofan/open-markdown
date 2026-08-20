@@ -428,9 +428,20 @@ function buildElement(ctx: BuildContext, element: DocsElement): void {
   }
 
   // Reset foreground color after each element to prevent color bleeding
-  // (e.g., heading styles setting a color that subsequent text inherits)
+  // (e.g., heading styles setting a color that subsequent text inherits).
+  //
+  // Code blocks are exempt: they colour their own syntax and already clear the
+  // whole block before painting it. Resetting here would land immediately after
+  // those requests and erase every token colour, leaving the shading and the
+  // monospace font — which this does not touch — looking correctly applied.
   const endIndex = ctx.index;
-  if (endIndex > startIndex && element.type !== 'table' && element.type !== 'image') {
+  const paintsItsOwnColor = element.type === 'code_block';
+  if (
+    endIndex > startIndex &&
+    element.type !== 'table' &&
+    element.type !== 'image' &&
+    !paintsItsOwnColor
+  ) {
     ctx.requests.push({
       updateTextStyle: {
         range: { startIndex, endIndex },

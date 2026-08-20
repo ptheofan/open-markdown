@@ -4,8 +4,8 @@ on:
   push:
     tags: ['v*']
   # Ship the current branch (main by default) to TestFlight without moving a
-  # tag. GitHub requires write access to trigger this, so it is maintainer-only
-  # by construction — no actor allowlist needed.
+  # tag. GitHub only lets write-access collaborators dispatch; the job's first
+  # step narrows that to maintainers.
   workflow_dispatch:
 
 concurrency:
@@ -20,6 +20,28 @@ jobs:
     runs-on: macos-latest
 
     steps:
+      # Dispatch requires write access, which includes the plain "write" role.
+      # Shipping to TestFlight should not. Checked against role_name, since the
+      # `permission` field collapses maintain into write and cannot tell them
+      # apart. Fails closed: any error leaves role empty and the case falls
+      # through to exit 1.
+      - name: Require a maintainer for manual runs
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          role=$(gh api "repos/${{ github.repository }}/collaborators/$ACTOR/permission" \
+            --jq '.role_name' 2>/dev/null || true)
+          echo "actor=$ACTOR role=${role:-<lookup failed>}"
+          case "$role" in
+            admin|maintain)
+              echo "$ACTOR may ship to TestFlight." ;;
+            *)
+              echo "::error::$ACTOR has role '${role:-unknown}'; maintain or admin is required."
+              exit 1 ;;
+          esac
+
       - name: Checkout
         uses: actions/checkout@v6
 

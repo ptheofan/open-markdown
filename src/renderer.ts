@@ -1114,7 +1114,12 @@ class App {
     try {
       const link = await window.electronAPI.googleDocs.pickAndLink(this.state.currentFilePath);
       await this.updateGoogleDocsButtonState();
-      if (!link) return; // user closed the picker without choosing
+      if (!link) {
+        // Either the user closed the picker, or Google returned no selection.
+        // Say so rather than appearing to do nothing at all.
+        this.toast?.success('No document selected — nothing was linked.');
+        return;
+      }
       await this.handleGoogleDocsSync();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to link';

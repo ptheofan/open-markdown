@@ -39,6 +39,13 @@ const SCOPES = [
   'email',
 ];
 
+// The desktop Google Picker accepts drive.file and nothing else: "Only the
+// drive.file scope is permitted and it can't be combined with any other
+// scope." Sending 'email' alongside it does not error -- Google simply skips
+// the picker and shows an ordinary consent screen, so the callback comes back
+// without picked_file_ids and the pick silently does nothing.
+const PICKER_SCOPES = ['https://www.googleapis.com/auth/drive.file'];
+
 const AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 
@@ -121,7 +128,7 @@ export class GoogleAuthService {
       client_id: activeClientId,
       redirect_uri: `http://localhost:${this.callbackPort}/callback`,
       response_type: 'code',
-      scope: SCOPES.join(' '),
+      scope: (options?.pickDocument ? PICKER_SCOPES : SCOPES).join(' '),
       code_challenge: codeChallenge,
       code_challenge_method: 'S256',
       access_type: 'offline',

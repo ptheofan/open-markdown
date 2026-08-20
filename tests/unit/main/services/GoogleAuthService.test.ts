@@ -188,11 +188,18 @@ describe('GoogleAuthService', () => {
       const result = service.generateAuthUrl(undefined, { pickDocument: true });
       const url = new URL(result.url);
       expect(url.searchParams.get('trigger_onepick')).toBe('true');
-      // The picker rides on the normal consent flow, so these must survive.
+      // The picker rides on the normal consent flow, so this must survive.
       expect(url.searchParams.get('prompt')).toBe('consent');
-      expect(url.searchParams.get('scope')).toContain(
-        'https://www.googleapis.com/auth/drive.file'
-      );
+    });
+
+    it('should request drive.file alone when picking, with no other scope', () => {
+      // Google: "Only the drive.file scope is permitted [for the desktop
+      // picker] and it can't be combined with any other scope." Sending
+      // 'email' alongside it silently suppresses the picker and degrades to
+      // an ordinary consent screen.
+      const result = service.generateAuthUrl(undefined, { pickDocument: true });
+      const scopes = (new URL(result.url).searchParams.get('scope') ?? '').split(' ').filter(Boolean);
+      expect(scopes).toEqual(['https://www.googleapis.com/auth/drive.file']);
     });
 
     it('should use default client ID when none is set', () => {

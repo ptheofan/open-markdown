@@ -95,6 +95,20 @@ export function registerGoogleDocsHandlers(): void {
         const message = error instanceof Error ? error.message : String(error);
         const stack = error instanceof Error ? error.stack : '';
         console.error('Google Docs sync error:', message, '\n', stack);
+
+        // A document we cannot reach is a link that can never work again --
+        // typically one carried over from the old paste-a-URL flow, which
+        // granted no per-file access. Drop it so the next attempt picks a
+        // document instead of retrying a doomed sync forever.
+        const status = (error as { status?: number }).status;
+        if (status === 404 || status === 403) {
+          await linkStore.removeLink(filePath);
+          const gone =
+            'That Google Doc is no longer accessible. Link this file again to pick a document.';
+          sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, { syncing: false, error: gone });
+          return { success: false, error: gone };
+        }
+
         sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, { syncing: false, error: message });
         return { success: false, error: message };
       }

@@ -16,10 +16,14 @@ const mocks = vi.hoisted(() => ({
     getAccessToken: vi.fn(),
     pickDocument: vi.fn(),
   },
+  syncService: {
+    sync: vi.fn(),
+    syncForceOverwrite: vi.fn(),
+  },
   linkStore: {
     getLink: vi.fn(),
-    setLink: vi.fn(),
     removeLink: vi.fn(),
+    setLink: vi.fn(),
     loadBaseline: vi.fn(),
     saveBaseline: vi.fn(),
     updateLastSynced: vi.fn(),
@@ -46,10 +50,7 @@ vi.mock('@main/services/GoogleDocsService', () => ({
 }));
 
 vi.mock('@main/services/GoogleDocsSyncService', () => ({
-  createGoogleDocsSyncService: () => ({
-    sync: vi.fn(),
-    syncForceOverwrite: vi.fn(),
-  }),
+  createGoogleDocsSyncService: () => mocks.syncService,
 }));
 
 import { ipcMain } from 'electron';
@@ -104,6 +105,39 @@ describe('GoogleDocsHandler', () => {
       const result = await invokePickAndLink('/notes/a.md');
       expect(mocks.linkStore.setLink).not.toHaveBeenCalled();
       expect(result).toBeNull();
+    });
+  });
+
+  describe('sync with a document that is gone', () => {
+    function invokeSync(filePath: string): Promise<unknown> {
+      registerGoogleDocsHandlers();
+      const entry = vi.mocked(ipcMain.handle).mock.calls.find((c) => c[0] === 'google-docs:sync');
+      if (!entry) throw new Error('sync handler not registered');
+      const fn = entry[1] as (e: unknown, ...a: unknown[]) => Promise<unknown>;
+      return fn({}, filePath, '# hi');
+    }
+
+    it('should drop the stale link when the document is not found', async () => {
+      mocks.linkStore.getLink.mockReturnValue({ docId: 'GONE_DOC', lastSyncedAt: null });
+      const notFound = Object.assign(new Error('Requested entity was not found.'), { status: 404 });
+      mocks.syncService.sync.mockRejectedValue(notFound);
+
+      const result = (await invokeSync('/notes/a.md')) as { success: boolean; error: string };
+
+      expect(mocks.linkStore.removeLink).toHaveBeenCalledWith('/notes/a.md');
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/link|pick/i);
+    });
+
+    it('should keep the link when the failure is not a missing document', async () => {
+      mocks.linkStore.getLink.mockReturnValue({ docId: 'FINE_DOC', lastSyncedAt: null });
+      mocks.syncService.sync.mockRejectedValue(
+        Object.assign(new Error('Backend error'), { status: 500 })
+      );
+
+      await invokeSync('/notes/a.md');
+
+      expect(mocks.linkStore.removeLink).not.toHaveBeenCalled();
     });
   });
 

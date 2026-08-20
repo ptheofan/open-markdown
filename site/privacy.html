@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Privacy Policy — Open Markdown</title>
-  <meta name="description" content="Privacy policy for Open Markdown. The app does not collect, store, or transmit any user data.">
+  <meta name="description" content="Privacy policy for Open Markdown. The app runs locally, has no servers and no telemetry. Google Docs sync is optional and talks only to Google.">
   <link rel="icon" href="images/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="css/style.css">
 </head>
@@ -19,6 +19,7 @@
       <ul class="nav-links">
         <li><a href="docs.html">Docs</a></li>
         <li><a href="privacy.html" aria-current="page">Privacy</a></li>
+        <li><a href="terms.html">Terms</a></li>
         <li><a href="support.html">Support</a></li>
         <li><a href="https://github.com/ptheofan/open-markdown">GitHub</a></li>
       </ul>
@@ -27,29 +28,73 @@
 
   <main class="content">
     <h1>Privacy Policy</h1>
-    <p><strong>Effective date:</strong> 21 January 2026</p>
+    <p><strong>Effective date:</strong> 20 August 2026</p>
 
     <h2>Overview</h2>
-    <p>Open Markdown is a local-only desktop application. Your privacy is important to us, and we have designed the app to respect it completely.</p>
+    <p>Open Markdown is a desktop application that runs on your device. <strong>We operate no servers and receive no data about you or your documents &mdash; none, ever.</strong> There is no account to create with us, no analytics, and no telemetry.</p>
+    <p>The app has one optional feature that uses the network: synchronising a local Markdown file to a Google Doc. It is off until you sign in, and when you do, the app talks directly to Google &mdash; never to us. This policy explains exactly what that involves.</p>
 
-    <h2>Data Collection</h2>
-    <p><strong>Open Markdown does not collect, store, or transmit any user data.</strong></p>
+    <h2>What we collect</h2>
+    <p><strong>Nothing.</strong> Specifically:</p>
     <ul>
-      <li>No personal information is collected</li>
-      <li>No analytics or telemetry of any kind</li>
+      <li>No personal information is sent to us</li>
+      <li>No analytics, telemetry, crash reporting, or usage statistics</li>
       <li>No cookies or tracking technologies</li>
-      <li>No network requests are made by the application</li>
-      <li>No user accounts or registration</li>
+      <li>No user accounts or registration with us</li>
+      <li>No advertising networks or data brokers</li>
     </ul>
 
-    <h2>Local Processing</h2>
-    <p>All Markdown files are read and rendered entirely on your device. No file contents are ever sent to any server or third party. The app operates fully offline.</p>
+    <h2>Your documents</h2>
+    <p>Markdown files are read, rendered, and edited entirely on your device. File contents are never transmitted to us or to any third party &mdash; with the single exception of documents you explicitly choose to sync to your own Google account, described below.</p>
+    <p>With the Google integration unused, the app makes no network requests at all and works fully offline.</p>
 
-    <h2>Third-Party Services</h2>
-    <p>Open Markdown does not integrate with any third-party services, advertising networks, or data brokers.</p>
+    <h2>Google Docs synchronisation (optional)</h2>
+    <p>If you choose to sign in with Google, the app connects to Google&rsquo;s APIs on your behalf using OAuth 2.0. We never see your Google password &mdash; sign-in happens in your browser, on Google&rsquo;s own pages.</p>
 
-    <h2>Children's Privacy</h2>
-    <p>Because Open Markdown does not collect any data whatsoever, it is safe for users of all ages.</p>
+    <h3>What the app is permitted to do</h3>
+    <ul>
+      <li><code>documents</code> &mdash; read and write the content of Google Docs, so a linked document can be updated to match your local file.</li>
+      <li><code>drive.file</code> &mdash; create and manage files the app itself creates in your Drive, used for images embedded in a synced document.</li>
+      <li><code>email</code> &mdash; read your account&rsquo;s email address, shown in the app so you can see which account is connected.</li>
+    </ul>
+
+    <h3>What is sent, and to whom</h3>
+    <p>When you sync a file, its contents &mdash; text, formatting, tables, and images &mdash; are sent to <strong>Google&rsquo;s servers only</strong>, and written into the Google Doc you linked. The data goes from your device to Google directly. It does not pass through any system of ours, because we do not have one.</p>
+
+    <h3>Images are made publicly readable &mdash; please read this</h3>
+    <p>The Google Docs API can only embed an image that it is able to fetch. To satisfy this, images in a synced document are uploaded to your Google Drive and their sharing setting is set to <strong>&ldquo;anyone with the link can view&rdquo;</strong>.</p>
+    <p>This means anyone who obtains the image&rsquo;s Drive link can view that image without signing in. The links are long and unguessable, and the images are not listed publicly or indexed by search engines &mdash; but they are not private. <strong>Do not sync documents containing images you need to keep confidential.</strong></p>
+    <p>You can inspect and change these files at any time in your Google Drive, or delete them.</p>
+
+    <h3>What is stored on your device</h3>
+    <ul>
+      <li><strong>Access and refresh tokens</strong>, encrypted at rest using your operating system&rsquo;s secure storage (the Keychain on macOS), so the app can keep syncing without asking you to sign in repeatedly.</li>
+      <li><strong>Your account email address</strong>, to display which account is connected.</li>
+      <li><strong>A link record and a content baseline</strong> for each synced file, so the app can work out what changed and update only that.</li>
+    </ul>
+    <p>All of this stays in the app&rsquo;s local data folder on your machine.</p>
+
+    <h3>Withdrawing access and deleting your data</h3>
+    <p>You can disconnect at any time:</p>
+    <ul>
+      <li>Sign out in the app &mdash; this deletes the stored tokens from your device.</li>
+      <li>Revoke access entirely at your <a href="https://myaccount.google.com/permissions">Google Account permissions page</a>.</li>
+      <li>Delete any documents or uploaded images from your Google Drive, which is under your control at all times.</li>
+    </ul>
+    <p>Because we hold no data about you, there is nothing for us to delete and no request you need to send us.</p>
+
+    <h3>Limited Use</h3>
+    <p>Open Markdown&rsquo;s use of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements. Data obtained from Google APIs is used solely to provide the synchronisation feature you asked for. It is never sold, never transferred to third parties, never used for advertising, and never read by humans.</p>
+
+    <h2>Other third-party services</h2>
+    <p>Links you click in a document open in your default browser. The app also offers a &ldquo;view in mermaid.live&rdquo; action that opens a diagram editor in your browser; the diagram is encoded in the link. These sites are operated by others and have their own privacy policies.</p>
+    <p>Aside from these, and Google when you use synchronisation, the app contacts no external service.</p>
+
+    <h2>Verifying this for yourself</h2>
+    <p>Open Markdown is open source under GPL-3.0. Every network request the app can make is visible in the source code at <a href="https://github.com/ptheofan/open-markdown">github.com/ptheofan/open-markdown</a>. You do not have to take our word for any of the above.</p>
+
+    <h2>Children&rsquo;s Privacy</h2>
+    <p>The app collects no data and is not directed at children. The Google integration requires a Google account, which has its own age requirements.</p>
 
     <h2>Changes to This Policy</h2>
     <p>If this privacy policy is updated, the new version will be published on this page with a revised effective date.</p>
@@ -64,6 +109,7 @@
       <span class="footer-copy">&copy; 2026 ARALU Single Member P.C. - Licensed under GPL-3.0</span>
       <ul class="footer-links">
         <li><a href="privacy.html">Privacy</a></li>
+        <li><a href="terms.html">Terms</a></li>
         <li><a href="support.html">Support</a></li>
         <li><a href="docs.html">Docs</a></li>
         <li><a href="https://github.com/ptheofan/open-markdown">GitHub</a></li>

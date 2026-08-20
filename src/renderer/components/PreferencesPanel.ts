@@ -10,6 +10,7 @@ import type {
   ColorPair,
   FileAssociationStatus,
   ExternalEditorId,
+  GoogleAuthState,
 } from '@shared/types';
 import { CollapsibleSection } from './CollapsibleSection';
 import { Select, Toggle, NumberInput, TextInput, FontSelect } from './FormControls';
@@ -54,6 +55,12 @@ export class PreferencesPanel {
   private customCommandInput: TextInput | null = null;
   private customCommandField: HTMLElement | null = null;
   private googleDocsSyncToggle: Toggle | null = null;
+  private googleDocsSection: HTMLElement | null = null;
+  private googleDocsClientIdField: HTMLElement | null = null;
+  private googleDocsSignOutBtn: HTMLButtonElement | null = null;
+  private googleDocsAuthStatus: HTMLElement | null = null;
+  private googleDocsAuthed = false;
+  private currentGoogleDocsEmail: string | undefined;
 
   constructor() {
     this.element = this.createElement();
@@ -134,6 +141,10 @@ export class PreferencesPanel {
     });
 
     this._isOpen = true;
+
+    // Sign-in happens from the toolbar while this panel is closed, so the
+    // cached auth state may be stale.
+    void this.refreshGoogleDocsAuthState();
   }
 
   /**
@@ -228,6 +239,7 @@ export class PreferencesPanel {
     this.renderTypographySection();
     this.renderPluginSections();
     this.renderExperimentalSection();
+    void this.renderGoogleDocsSection(this.renderGeneration);
     this.sectionsBuilt = true;
   }
 
@@ -252,10 +264,180 @@ export class PreferencesPanel {
       this.emitChange({
         core: { experimental: { googleDocsSync: value } },
       });
+      // updateValues() refreshes controls in place rather than re-rendering, so
+      // the Google Docs section has to be shown/hidden explicitly here.
+      this.googleDocsSection?.classList.toggle(
+        'hidden',
+        !(value || this.googleDocsAuthed)
+      );
     });
 
     section.setContent([this.googleDocsSyncToggle.getElement()]);
     this.sectionsContainer.appendChild(section.getElement());
+  }
+
+  /**
+   * Render the Google Docs section.
+   *
+   * Hidden only when the experimental feature is off *and* the user is signed
+   * out. Staying visible while signed in matters: turning the feature off would
+   * otherwise strand an active Google session with no way to revoke it.
+   */
+  private async renderGoogleDocsSection(generation: number): Promise<void> {
+    if (!this.currentPreferences) return;
+
+    let authState: GoogleAuthState;
+    try {
+      authState = await window.electronAPI.googleDocs.getAuthStatus();
+    } catch {
+      authState = { isAuthenticated: false };
+    }
+
+    // A newer renderSections() call already cleared and rebuilt the container
+    if (generation !== this.renderGeneration) return;
+
+    this.googleDocsAuthed = authState.isAuthenticated;
+    this.currentGoogleDocsEmail = authState.userEmail;
+
+    const section = new CollapsibleSection({
+      title: 'Google Docs',
+      initiallyOpen: false,
+    });
+
+    const fields: HTMLElement[] = [];
+
+    // Account row: current status plus the sign-out action
+    const accountField = document.createElement('div');
+    accountField.className = 'form-field form-field-action';
+
+    const accountLabel = document.createElement('label');
+    accountLabel.className = 'form-label';
+    accountLabel.textContent = 'Account';
+    accountField.appendChild(accountLabel);
+
+    const accountDescription = document.createElement('p');
+    accountDescription.className = 'form-description';
+    accountDescription.textContent =
+      'Signing out removes the stored Google credentials from this machine. Linked documents are kept.';
+    accountField.appendChild(accountDescription);
+
+    const accountRow = document.createElement('div');
+    accountRow.className = 'action-button-row';
+
+    this.googleDocsSignOutBtn = document.createElement('button');
+    this.googleDocsSignOutBtn.className = 'action-button';
+    this.googleDocsSignOutBtn.type = 'button';
+    this.googleDocsSignOutBtn.textContent = 'Sign out of Google';
+    accountRow.appendChild(this.googleDocsSignOutBtn);
+
+    this.googleDocsAuthStatus = document.createElement('span');
+    this.googleDocsAuthStatus.className = 'action-button-status';
+    accountRow.appendChild(this.googleDocsAuthStatus);
+
+    accountField.appendChild(accountRow);
+    fields.push(accountField);
+
+    this.googleDocsSignOutBtn.addEventListener('click', () => {
+      void (async () => {
+        if (!this.googleDocsSignOutBtn) return;
+        this.googleDocsSignOutBtn.disabled = true;
+        try {
+          await window.electronAPI.googleDocs.signOut();
+          this.googleDocsAuthed = false;
+        } catch {
+          // Leave the cached state alone; refresh below reflects reality.
+        }
+        this.updateGoogleDocsAuthUI();
+        this.updateGoogleDocsSectionVisibility();
+      })();
+    });
+
+    // Custom credentials toggle
+    const customCredsToggle = new Toggle({
+      label: 'Use custom API credentials',
+      description:
+        'Authenticate with your own Google Cloud OAuth client instead of the one bundled with the app.',
+      value: this.currentPreferences.core.googleDocs.useCustomCredentials,
+    });
+    customCredsToggle.setOnChange((value) => {
+      this.emitChange({ core: { googleDocs: { useCustomCredentials: value } } });
+      this.googleDocsClientIdField?.classList.toggle('hidden', !value);
+    });
+    fields.push(customCredsToggle.getElement());
+
+    // Client ID, only relevant when custom credentials are in use
+    const clientIdInput = new TextInput({
+      label: 'Client ID',
+      description: 'OAuth 2.0 client ID from your Google Cloud project.',
+      value: this.currentPreferences.core.googleDocs.customClientId,
+      placeholder: 'your-client-id.apps.googleusercontent.com',
+    });
+    clientIdInput.setOnChange((value) => {
+      this.emitChange({ core: { googleDocs: { customClientId: value } } });
+    });
+
+    this.googleDocsClientIdField = clientIdInput.getElement();
+    if (!this.currentPreferences.core.googleDocs.useCustomCredentials) {
+      this.googleDocsClientIdField.classList.add('hidden');
+    }
+    fields.push(this.googleDocsClientIdField);
+
+    section.setContent(fields);
+    this.googleDocsSection = section.getElement();
+    this.sectionsContainer.appendChild(this.googleDocsSection);
+
+    this.updateGoogleDocsAuthUI();
+    this.updateGoogleDocsSectionVisibility();
+  }
+
+  /**
+   * Reflect the cached auth state in the account row.
+   */
+  private updateGoogleDocsAuthUI(): void {
+    if (this.googleDocsAuthStatus) {
+      const email = this.currentGoogleDocsEmail;
+      this.googleDocsAuthStatus.textContent = this.googleDocsAuthed
+        ? email
+          ? `Signed in as ${email}`
+          : 'Signed in'
+        : 'Not signed in';
+      this.googleDocsAuthStatus.classList.toggle('status-success', this.googleDocsAuthed);
+      this.googleDocsAuthStatus.classList.toggle('status-info', !this.googleDocsAuthed);
+    }
+    if (this.googleDocsSignOutBtn) {
+      this.googleDocsSignOutBtn.disabled = !this.googleDocsAuthed;
+    }
+  }
+
+  /**
+   * Show the section unless the feature is off *and* the user is signed out.
+   */
+  private updateGoogleDocsSectionVisibility(): void {
+    if (!this.googleDocsSection) return;
+    const experimentalOn =
+      this.currentPreferences?.core.experimental.googleDocsSync ?? false;
+    this.googleDocsSection.classList.toggle(
+      'hidden',
+      !(experimentalOn || this.googleDocsAuthed)
+    );
+  }
+
+  /**
+   * Re-read auth state from the main process. Sign-in happens outside this
+   * panel (via the toolbar), so the cached flag can be stale by the time the
+   * panel is reopened.
+   */
+  private async refreshGoogleDocsAuthState(): Promise<void> {
+    if (!this.googleDocsSection) return;
+    try {
+      const state = await window.electronAPI.googleDocs.getAuthStatus();
+      this.googleDocsAuthed = state.isAuthenticated;
+      this.currentGoogleDocsEmail = state.userEmail;
+    } catch {
+      return;
+    }
+    this.updateGoogleDocsAuthUI();
+    this.updateGoogleDocsSectionVisibility();
   }
 
   /**

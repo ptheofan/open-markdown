@@ -31,7 +31,6 @@ function collectFields(style: Record<string, unknown>): string {
   if ('strikethrough' in style) fieldNames.push('strikethrough');
   if ('link' in style) fieldNames.push('link');
   if ('weightedFontFamily' in style) fieldNames.push('weightedFontFamily');
-  if ('fontSize' in style) fieldNames.push('fontSize');
   return fieldNames.join(',');
 }
 

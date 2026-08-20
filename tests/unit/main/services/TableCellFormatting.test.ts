@@ -5,21 +5,15 @@
  * text is styled — flattenElements skips tables, so the formatting-reapply
  * pass (buildFormattingFromApiDoc) never sees cell content.
  *
- * Two regressions are covered:
- *  - cell text rendered at a different size from the rest of the document,
- *    because text inserted into a new table does not inherit the document's
- *    NORMAL_TEXT style and nothing carried that style over;
- *  - inline marks inside a cell were dropped, because the runs were flattened
- *    to a single string before insertion.
- *
- * The governing rule for both: reuse whatever the document already defines,
- * never invent a font or a size.
+ * The rule: a cell is Normal Text, the header row is Normal Text + bold, and
+ * nothing here ever writes a font size. Naming the size is what made cell text
+ * drift away from the rest of the document.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { buildCellRequests, getNormalTextStyle } from '@main/services/GoogleDocsSyncService';
+import { buildCellRequests } from '@main/services/GoogleDocsSyncService';
 import type { DocsBatchUpdateRequest } from '@main/services/GoogleDocsService';
 import type { DocsTextRun } from '@shared/types';
-import type { GDocsApiDocument, GDocsStructuralElement } from '@shared/types/google-docs';
+import type { GDocsStructuralElement } from '@shared/types/google-docs';
 
 vi.mock('electron', () => ({
   app: { getPath: () => '/tmp/mock-userdata' },
@@ -133,8 +127,6 @@ describe('buildCellRequests — inline formatting in table cells', () => {
     expect(styles[0]!.textStyle['italic']).toBe(true);
     expect(styles[1]!.textStyle['strikethrough']).toBe(true);
     expect(styles[2]!.textStyle['weightedFontFamily']).toEqual({ fontFamily: 'Courier New' });
-    // `code` means monospace; the size must stay the document's.
-    expect(styles[2]!.textStyle['fontSize']).toBeUndefined();
     expect(styles[3]!.textStyle['link']).toEqual({ url: 'https://example.com' });
   });
 
@@ -147,56 +139,55 @@ describe('buildCellRequests — inline formatting in table cells', () => {
       [[[{ text: 'left' }], [{ text: 'right' }]]],
     );
 
-    const kinds = requests.map((r) => (isInsert(r) ? `insert@${r.insertText.location.index}` : 'style'));
-    expect(kinds).toEqual(['insert@30', 'style', 'insert@10', 'style']);
+    const kinds = requests.map((r) =>
+      isInsert(r) ? `insert@${r.insertText.location.index}` : isStyle(r) ? 'text' : 'para',
+    );
+    expect(kinds).toEqual(['insert@30', 'para', 'text', 'insert@10', 'para', 'text']);
   });
 });
 
-describe('getNormalTextStyle — reuse the document’s own styles', () => {
-  const docWith = (textStyle: Record<string, unknown>): GDocsApiDocument =>
-    ({ namedStyles: { styles: [{ namedStyleType: 'NORMAL_TEXT', textStyle }] } });
+describe('buildCellRequests — the document keeps its own font', () => {
+  const isParagraph = (
+    r: DocsBatchUpdateRequest,
+  ): r is Extract<DocsBatchUpdateRequest, { updateParagraphStyle: unknown }> =>
+    'updateParagraphStyle' in r;
 
-  it('reads the font and size the document defines for body text', () => {
-    const base = getNormalTextStyle(
-      docWith({ fontSize: { magnitude: 10, unit: 'PT' }, weightedFontFamily: { fontFamily: 'Verdana' } }),
+  const table = (): DocsBatchUpdateRequest[] =>
+    buildCellRequests(
+      makeTableElement([[10, 30], [60, 80]]),
+      [
+        [[{ text: 'ID' }], [{ text: 'Description' }]],
+        [[{ text: 'D1' }], [{ text: 'plain ' }, { text: 'bold', bold: true }]],
+      ],
     );
 
-    expect(base.textStyle['fontSize']).toEqual({ magnitude: 10, unit: 'PT' });
-    expect(base.textStyle['weightedFontFamily']).toEqual({ fontFamily: 'Verdana' });
-    expect(base.fields.sort()).toEqual(['fontSize', 'weightedFontFamily']);
+  it('never writes a font size or family for ordinary text', () => {
+    const serialised = JSON.stringify(table());
+    expect(serialised).not.toContain('fontSize');
+    // Courier is only ever emitted for `code`, and none of these runs are code.
+    expect(serialised).not.toContain('weightedFontFamily');
   });
 
-  it('invents nothing when the document defines nothing', () => {
-    expect(getNormalTextStyle(undefined)).toEqual({ textStyle: {}, fields: [] });
-    expect(getNormalTextStyle({} as GDocsApiDocument)).toEqual({ textStyle: {}, fields: [] });
-    expect(getNormalTextStyle(docWith({}))).toEqual({ textStyle: {}, fields: [] });
-  });
+  it('sets every populated cell to Normal Text', () => {
+    const paragraphs = table().filter(isParagraph).map((r) => r.updateParagraphStyle);
 
-  it('ignores other named styles', () => {
-    const doc: GDocsApiDocument = {
-      namedStyles: {
-        styles: [
-          { namedStyleType: 'HEADING_1', textStyle: { fontSize: { magnitude: 20, unit: 'PT' } } },
-          { namedStyleType: 'NORMAL_TEXT', textStyle: { fontSize: { magnitude: 10, unit: 'PT' } } },
-        ],
-      },
-    };
-    expect(getNormalTextStyle(doc).textStyle['fontSize']).toEqual({ magnitude: 10, unit: 'PT' });
-  });
-
-  it('applies the document body font to every cell run', () => {
-    const base = getNormalTextStyle(docWith({ fontSize: { magnitude: 10, unit: 'PT' } }));
-    const requests = buildCellRequests(
-      makeTableElement([[10]]),
-      [[[{ text: 'plain ' }, { text: 'bold', bold: true }]]],
-      base,
-    );
-
-    const styles = requests.filter(isStyle).map((r) => r.updateTextStyle);
-    expect(styles).toHaveLength(2);
-    for (const s of styles) {
-      expect(s.textStyle['fontSize']).toEqual({ magnitude: 10, unit: 'PT' });
-      expect(s.fields).toContain('fontSize');
+    expect(paragraphs).toHaveLength(4);
+    for (const p of paragraphs) {
+      expect(p.paragraphStyle['namedStyleType']).toBe('NORMAL_TEXT');
+      expect(p.fields).toBe('namedStyleType');
     }
+  });
+
+  it('bolds the header row and leaves body cells unbolded', () => {
+    const styles = table().filter(isStyle).map((r) => r.updateTextStyle);
+
+    // Header cells (indices 10 and 30) are bold; body text is not, except the
+    // run the markdown marked bold.
+    const header = styles.filter((s) => s.range.startIndex < 60);
+    const body = styles.filter((s) => s.range.startIndex >= 60);
+
+    expect(header.every((s) => s.textStyle['bold'] === true)).toBe(true);
+    expect(body.filter((s) => s.textStyle['bold'] === true)).toHaveLength(1);
+    expect(body.filter((s) => s.textStyle['bold'] === false)).toHaveLength(2);
   });
 });

@@ -316,46 +316,15 @@ function findTableElement(
 /**
  * Build cell insert/format requests for a table element from the API doc.
  * Processes cells in reverse order to preserve indices.
- */
-/**
- * Read the font the document itself uses for body text.
  *
- * Text inserted into a freshly created table does not pick up the document's
- * NORMAL_TEXT style — it lands at the Docs default, which is why cell text
- * could differ in size from the surrounding document. Rather than hardcode a
- * size, carry the document's own definition over to the cells.
- *
- * Returns only the properties the document actually defines, so nothing is
- * invented when a document leaves them unset.
+ * Cells are set to the NORMAL_TEXT named style and nothing else: the document
+ * already defines what Normal Text looks like, so its font and size follow
+ * automatically. No font size is ever written here. The header row adds bold
+ * on top, and inline marks from the markdown are layered per run.
  */
-export function getNormalTextStyle(
-  doc: GDocsApiDocument | undefined,
-): { textStyle: Record<string, unknown>; fields: string[] } {
-  const normal = doc?.namedStyles?.styles?.find(
-    (s) => s.namedStyleType === 'NORMAL_TEXT',
-  )?.textStyle;
-
-  const textStyle: Record<string, unknown> = {};
-  const fields: string[] = [];
-
-  for (const key of ['weightedFontFamily', 'fontSize'] as const) {
-    const value = normal?.[key];
-    if (value !== undefined && value !== null) {
-      textStyle[key] = value;
-      fields.push(key);
-    }
-  }
-
-  return { textStyle, fields };
-}
-
 export function buildCellRequests(
   tableEl: GDocsStructuralElement,
   dataRows: DocsTextRun[][][],
-  baseStyle: { textStyle: Record<string, unknown>; fields: string[] } = {
-    textStyle: {},
-    fields: [],
-  },
 ): DocsBatchUpdateRequest[] {
   const cellRequests: DocsBatchUpdateRequest[] = [];
   const tableRows = tableEl.table?.tableRows ?? [];
@@ -396,19 +365,26 @@ export function buildCellRequests(
       const isHeaderRow = r === 0;
       let runOffset = 0;
 
+      // Normal Text carries the document's own font and size, so the cell
+      // picks them up without anything here naming a size.
+      cellRequests.push({
+        updateParagraphStyle: {
+          range: { startIndex: cellIndex, endIndex: cellIndex + text.length },
+          paragraphStyle: { namedStyleType: 'NORMAL_TEXT' },
+          fields: 'namedStyleType',
+        },
+      });
+
       for (const run of dataCell) {
         if (!run.text) continue;
 
         const start = cellIndex + runOffset;
-        // Start from the document's own body-text font so cells match the rest
-        // of the document, then layer the markdown's inline marks on top.
         const textStyle: Record<string, unknown> = {
-          ...baseStyle.textStyle,
           bold: Boolean(run.bold) || isHeaderRow,
           italic: Boolean(run.italic),
           strikethrough: Boolean(run.strikethrough),
         };
-        const fields = [...baseStyle.fields, 'bold', 'italic', 'strikethrough'];
+        const fields = ['bold', 'italic', 'strikethrough'];
 
         if (run.link) {
           textStyle['link'] = { url: run.link };
@@ -638,11 +614,7 @@ export class GoogleDocsSyncService {
 
       // Populate cells — insert text into each cell's paragraph
       // Process in reverse order to preserve indices
-      const cellRequests = buildCellRequests(
-        tableEl,
-        table.rows,
-        getNormalTextStyle(docAfterTable),
-      );
+      const cellRequests = buildCellRequests(tableEl, table.rows);
 
       if (cellRequests.length > 0) {
         await this.docsService.batchUpdate(docId, cellRequests);
@@ -866,7 +838,7 @@ export class GoogleDocsSyncService {
       return;
     }
 
-    const cellRequests = buildCellRequests(tableEl, table.rows, getNormalTextStyle(doc));
+    const cellRequests = buildCellRequests(tableEl, table.rows);
 
     if (cellRequests.length > 0) {
       await this.docsService.batchUpdate(docId, cellRequests);

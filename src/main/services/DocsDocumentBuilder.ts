@@ -33,6 +33,8 @@ interface BuildContext {
 export interface PendingTable {
   placeholderText: string;
   rows: DocsTextRun[][][];
+  /** Relative column widths measured in the app's view, if available. */
+  columnWidths?: number[];
 }
 
 export interface BuildResult {
@@ -290,7 +292,11 @@ function buildTable(ctx: BuildContext, element: DocsElement): void {
     },
   });
 
-  ctx.pendingTables.push({ placeholderText, rows });
+  ctx.pendingTables.push({
+    placeholderText,
+    rows,
+    ...(element.columnWidths && { columnWidths: element.columnWidths }),
+  });
   ctx.index += placeholderText.length;
 }
 

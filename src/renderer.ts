@@ -59,6 +59,7 @@ import type {
   ExternalFileOpenEvent,
   RecentFileEntry,
   MermaidDiagramData,
+  TableColumnWidths,
 } from '@shared/types';
 import type { GoogleAuthState } from '@shared/types/google-docs';
 import type { MermaidPlugin } from '@plugins/builtin/MermaidPlugin';
@@ -1173,6 +1174,41 @@ class App {
    * Extract mermaid diagram data (PNG + live URL) from the rendered viewer.
    * Used to pass diagram images to the Google Docs sync service.
    */
+  /**
+   * Measure how wide each table's columns actually are in the rendered view.
+   *
+   * Reported as fractions of the table's own width, not pixels: the document's
+   * text column is a different size from this window, so only the proportions
+   * are meaningful. Tables are returned in document order, which is how the
+   * sync matches them to the markdown's tables.
+   */
+  private extractTableColumnWidths(): TableColumnWidths[] {
+    const viewer = document.getElementById('markdown-content');
+    if (!viewer) return [];
+
+    const widths: TableColumnWidths[] = [];
+
+    for (const table of viewer.querySelectorAll('table')) {
+      // The widest row governs the layout; the first row may be a short header.
+      const row = table.querySelector('tr');
+      const cells = row ? Array.from(row.children) : [];
+
+      const measured = cells.map((cell) => cell.getBoundingClientRect().width);
+      const total = measured.reduce((sum, w) => sum + w, 0);
+
+      // A table that has not been laid out yet measures zero — skip it rather
+      // than send fractions that would collapse every column.
+      if (measured.length === 0 || total <= 0) {
+        widths.push({ fractions: [] });
+        continue;
+      }
+
+      widths.push({ fractions: measured.map((w) => w / total) });
+    }
+
+    return widths;
+  }
+
   private async extractMermaidData(): Promise<MermaidDiagramData[]> {
     const viewer = document.getElementById('markdown-content');
     if (!viewer || !this.markdownViewer) return [];
@@ -1215,11 +1251,13 @@ class App {
     try {
       // Extract mermaid diagrams from the rendered viewer
       const mermaidData = await this.extractMermaidData();
+      const tableWidths = this.extractTableColumnWidths();
 
       const result = await window.electronAPI.googleDocs.sync(
         this.state.currentFilePath,
         content,
         mermaidData.length > 0 ? mermaidData : undefined,
+        tableWidths.length > 0 ? tableWidths : undefined,
       );
 
       if (result.externalEditsDetected) {
@@ -1227,7 +1265,7 @@ class App {
 
         // Show confirmation dialog and wait for user response
         this.googleDocsConfirmDialog?.setCallbacks({
-          onConfirm: () => { void this.handleGoogleDocsSyncOverwrite(content, mermaidData); },
+          onConfirm: () => { void this.handleGoogleDocsSyncOverwrite(content, mermaidData, tableWidths); },
           onCancel: () => { /* do nothing, button already set to ready */ },
         });
         this.googleDocsConfirmDialog?.show();
@@ -1279,7 +1317,11 @@ class App {
   /**
    * Handle Google Docs sync overwrite after confirmation
    */
-  private async handleGoogleDocsSyncOverwrite(content: string, mermaidData?: MermaidDiagramData[]): Promise<void> {
+  private async handleGoogleDocsSyncOverwrite(
+    content: string,
+    mermaidData?: MermaidDiagramData[],
+    tableWidths?: TableColumnWidths[],
+  ): Promise<void> {
     if (!this.state.currentFilePath) return;
 
     this.googleDocsButton?.setState('syncing');
@@ -1289,6 +1331,7 @@ class App {
         this.state.currentFilePath,
         content,
         mermaidData && mermaidData.length > 0 ? mermaidData : undefined,
+        tableWidths && tableWidths.length > 0 ? tableWidths : undefined,
       );
       if (result.success) {
         this.toast?.success('Synced to Google Docs (overwritten)');

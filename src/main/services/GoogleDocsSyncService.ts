@@ -26,6 +26,7 @@ import type {
   GDocsStructuralElement,
   GoogleDocsSyncResult,
   MermaidDiagramData,
+  TableColumnWidths,
 } from '@shared/types/google-docs';
 import type { DocsBatchUpdateRequest } from '@main/services/GoogleDocsService';
 
@@ -323,6 +324,67 @@ function findTableElement(
  * automatically. No font size is ever written here. The header row adds bold
  * on top, and inline marks from the markdown are layered per run.
  */
+
+/**
+ * Width of the document's text column, in points.
+ *
+ * Table widths are absolute in the Docs API, so the proportions measured in the
+ * app have to be scaled to whatever this particular document's page and margins
+ * leave for text. Falls back to US Letter with one-inch margins only when the
+ * document does not report its own geometry.
+ */
+export function getUsableWidthPt(doc: GDocsApiDocument | undefined): number {
+  const style = doc?.documentStyle;
+  const page = style?.pageSize?.width?.magnitude;
+  const left = style?.marginLeft?.magnitude;
+  const right = style?.marginRight?.magnitude;
+
+  if (page === undefined || left === undefined || right === undefined) {
+    return 612 - 72 - 72;
+  }
+  const usable = page - left - right;
+  return usable > 0 ? usable : 612 - 72 - 72;
+}
+
+/** The API rejects any column narrower than 5pt with a 400. */
+const MIN_COLUMN_WIDTH_PT = 5;
+
+/**
+ * Size a table's columns to the proportions measured in the app's view.
+ *
+ * Returns nothing when no measurement is available or it does not describe this
+ * table, leaving Google's own even distribution in place rather than guessing.
+ */
+export function buildColumnWidthRequests(
+  tableStartIndex: number,
+  columnCount: number,
+  fractions: number[] | undefined,
+  usableWidthPt: number,
+): DocsBatchUpdateRequest[] {
+  if (!fractions || fractions.length !== columnCount || columnCount === 0) return [];
+
+  const total = fractions.reduce((sum, f) => sum + f, 0);
+  if (!(total > 0) || fractions.some((f) => !Number.isFinite(f) || f < 0)) return [];
+
+  return fractions.map((fraction, columnIndex) => ({
+    updateTableColumnProperties: {
+      tableStartLocation: { index: tableStartIndex },
+      columnIndices: [columnIndex],
+      tableColumnProperties: {
+        widthType: 'FIXED_WIDTH' as const,
+        width: {
+          magnitude: Math.max(
+            MIN_COLUMN_WIDTH_PT,
+            (fraction / total) * usableWidthPt,
+          ),
+          unit: 'PT',
+        },
+      },
+      fields: 'width,widthType',
+    },
+  }));
+}
+
 export function buildCellRequests(
   tableEl: GDocsStructuralElement,
   dataRows: DocsTextRun[][][],
@@ -429,7 +491,7 @@ export class GoogleDocsSyncService {
    * Main sync method — performs three-way diffing to detect external edits
    * and apply minimal changes.
    */
-  async sync(filePath: string, docId: string, markdown: string, mermaidDiagrams?: MermaidDiagramData[]): Promise<GoogleDocsSyncResult> {
+  async sync(filePath: string, docId: string, markdown: string, mermaidDiagrams?: MermaidDiagramData[], tableWidths?: TableColumnWidths[]): Promise<GoogleDocsSyncResult> {
     try {
       console.warn('[SyncService] Step 1: Loading baseline...');
       const baseline = await this.linkStore.loadBaseline(docId);
@@ -441,6 +503,7 @@ export class GoogleDocsSyncService {
       const docsDoc = convertMarkdownToDocs(markdown);
       console.warn('[SyncService] Step 5: Processing mermaid diagrams...');
       await this.processMermaidDiagrams(docsDoc, mermaidDiagrams);
+      this.applyTableColumnWidths(docsDoc, tableWidths);
 
       if (baseline === null) {
         console.warn('[SyncService] First sync -> fullPopulate');
@@ -470,11 +533,13 @@ export class GoogleDocsSyncService {
     docId: string,
     markdown: string,
     mermaidDiagrams?: MermaidDiagramData[],
+    tableWidths?: TableColumnWidths[],
   ): Promise<GoogleDocsSyncResult> {
     try {
       console.warn('[SyncService] Force overwrite -- clearing doc and repopulating');
       const docsDoc = convertMarkdownToDocs(markdown);
       await this.processMermaidDiagrams(docsDoc, mermaidDiagrams);
+      this.applyTableColumnWidths(docsDoc, tableWidths);
 
       // Full clear + repopulate (same as first sync)
       return await this.fullPopulate(docId, filePath, docsDoc);
@@ -489,6 +554,35 @@ export class GoogleDocsSyncService {
    * diagram data, upload PNGs to Google Drive, and set imageLink on the
    * element so the builder can insert them as inline images.
    */
+  /**
+   * Attach column widths measured in the app's view to the model's tables.
+   *
+   * Matched by document order — the renderer walks the rendered tables in the
+   * same sequence the converter produces them. A table whose column count does
+   * not agree with its measurement is left alone, so a mismatch degrades to
+   * Google's even distribution rather than skewing the wrong table.
+   */
+  private applyTableColumnWidths(
+    docsDoc: DocsDocument,
+    tableWidths?: TableColumnWidths[],
+  ): void {
+    if (!tableWidths || tableWidths.length === 0) return;
+
+    let tableIdx = 0;
+    for (const element of docsDoc.elements) {
+      if (element.type !== 'table') continue;
+
+      const measured = tableWidths[tableIdx];
+      tableIdx++;
+      if (!measured) continue;
+
+      const columnCount = element.rows?.[0]?.length ?? 0;
+      if (measured.fractions.length !== columnCount) continue;
+
+      element.columnWidths = measured.fractions;
+    }
+  }
+
   private async processMermaidDiagrams(
     docsDoc: DocsDocument,
     mermaidDiagrams?: MermaidDiagramData[],
@@ -617,8 +711,18 @@ export class GoogleDocsSyncService {
       // Process in reverse order to preserve indices
       const cellRequests = buildCellRequests(tableEl, table.rows);
 
-      if (cellRequests.length > 0) {
-        await this.docsService.batchUpdate(docId, cellRequests);
+      // Column widths go last: they do not move text, and computing them from
+      // the pre-insert table start keeps the location valid.
+      const widthRequests = buildColumnWidthRequests(
+        tableEl.startIndex ?? placeholderIndex,
+        numCols,
+        table.columnWidths,
+        getUsableWidthPt(docAfterTable),
+      );
+
+      const allRequests = [...cellRequests, ...widthRequests];
+      if (allRequests.length > 0) {
+        await this.docsService.batchUpdate(docId, allRequests);
       }
     }
   }
@@ -818,6 +922,7 @@ export class GoogleDocsSyncService {
     const pendingTable: PendingTable = {
       placeholderText: '', // not used for direct table insertion
       rows,
+      ...(modelTable.columnWidths && { columnWidths: modelTable.columnWidths }),
     };
     await this.populateTableAtIndex(docId, insertAt, pendingTable);
   }
@@ -841,8 +946,16 @@ export class GoogleDocsSyncService {
 
     const cellRequests = buildCellRequests(tableEl, table.rows);
 
-    if (cellRequests.length > 0) {
-      await this.docsService.batchUpdate(docId, cellRequests);
+    const widthRequests = buildColumnWidthRequests(
+      tableEl.startIndex ?? afterIndex,
+      tableEl.table?.tableRows?.[0]?.tableCells?.length ?? 0,
+      table.columnWidths,
+      getUsableWidthPt(doc),
+    );
+
+    const allRequests = [...cellRequests, ...widthRequests];
+    if (allRequests.length > 0) {
+      await this.docsService.batchUpdate(docId, allRequests);
     }
   }
 

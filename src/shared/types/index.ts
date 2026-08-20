@@ -100,6 +100,7 @@ export type {
   DocsElement,
   DocsDocument,
   MermaidDiagramData,
+  TableColumnWidths,
 } from './google-docs';
 
 // Diff types

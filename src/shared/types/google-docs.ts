@@ -68,12 +68,26 @@ export interface GDocsBody {
   content?: GDocsStructuralElement[];
 }
 
+/** A length in the units the Docs API reports. */
+export interface GDocsDimension {
+  magnitude?: number;
+  unit?: string;
+}
+
+/** Page geometry, read so table widths can be sized to the real text column. */
+export interface GDocsDocumentStyle {
+  pageSize?: { width?: GDocsDimension; height?: GDocsDimension };
+  marginLeft?: GDocsDimension;
+  marginRight?: GDocsDimension;
+}
+
 /** A Google Docs API document response (subset of fields we use). */
 export interface GDocsApiDocument {
   documentId?: string;
   title?: string;
   body?: GDocsBody;
   inlineObjects?: Record<string, unknown>;
+  documentStyle?: GDocsDocumentStyle;
 }
 
 // ── Application types ──────────────────────────────────────────────
@@ -104,6 +118,17 @@ export interface GoogleCredentialsConfig {
 }
 
 /** Mermaid diagram data extracted from the renderer for sync */
+/**
+ * Relative column widths of one rendered table, measured in the app's view.
+ *
+ * Fractions of the table's total width rather than pixels: the document's text
+ * column is a different size from the app window, so only the proportions
+ * transfer.
+ */
+export interface TableColumnWidths {
+  fractions: number[];
+}
+
 export interface MermaidDiagramData {
   code: string;
   pngBase64: string;
@@ -128,6 +153,8 @@ export interface DocsElement {
   code?: string;
   language?: string;
   rows?: DocsTextRun[][][];
+  /** Relative column widths measured in the app's view, if available. */
+  columnWidths?: number[];
   imageBase64?: string;
   imageAlt?: string;
   imageLink?: string;

@@ -41,7 +41,18 @@ export type DocsBatchUpdateRequest =
   | { createParagraphBullets: { range: DocsRange; bulletPreset: string } }
   | { insertInlineImage: { uri: string; location: { index: number }; objectSize: Record<string, any> } }
   | { deleteContentRange: { range: DocsRange } }
-  | { insertTable: { rows: number; columns: number; location: { index: number } } };
+  | { insertTable: { rows: number; columns: number; location: { index: number } } }
+  | {
+      updateTableColumnProperties: {
+        tableStartLocation: { index: number };
+        columnIndices: number[];
+        tableColumnProperties: {
+          widthType: 'FIXED_WIDTH' | 'EVENLY_DISTRIBUTED';
+          width?: { magnitude: number; unit: string };
+        };
+        fields: string;
+      };
+    };
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
 /** Response from batchUpdate */

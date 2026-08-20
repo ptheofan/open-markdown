@@ -1,21 +1,25 @@
 /**
- * Tests for inline formatting inside Google Docs table cells.
+ * Tests for text styling inside Google Docs table cells.
  *
  * Cells are populated by buildCellRequests, which is the *only* place cell
  * text is styled — flattenElements skips tables, so the formatting-reapply
  * pass (buildFormattingFromApiDoc) never sees cell content.
  *
  * Two regressions are covered:
+ *  - cell text rendered at a different size from the rest of the document,
+ *    because text inserted into a new table does not inherit the document's
+ *    NORMAL_TEXT style and nothing carried that style over;
  *  - inline marks inside a cell were dropped, because the runs were flattened
- *    to a single string before insertion;
- *  - unstyled text rendered bold, because insertText inherits the style at the
- *    insertion point and nothing ever set bold back to false.
+ *    to a single string before insertion.
+ *
+ * The governing rule for both: reuse whatever the document already defines,
+ * never invent a font or a size.
  */
 import { describe, it, expect, vi } from 'vitest';
-import { buildCellRequests } from '@main/services/GoogleDocsSyncService';
+import { buildCellRequests, getNormalTextStyle } from '@main/services/GoogleDocsSyncService';
 import type { DocsBatchUpdateRequest } from '@main/services/GoogleDocsService';
 import type { DocsTextRun } from '@shared/types';
-import type { GDocsStructuralElement } from '@shared/types/google-docs';
+import type { GDocsApiDocument, GDocsStructuralElement } from '@shared/types/google-docs';
 
 vi.mock('electron', () => ({
   app: { getPath: () => '/tmp/mock-userdata' },
@@ -129,6 +133,8 @@ describe('buildCellRequests — inline formatting in table cells', () => {
     expect(styles[0]!.textStyle['italic']).toBe(true);
     expect(styles[1]!.textStyle['strikethrough']).toBe(true);
     expect(styles[2]!.textStyle['weightedFontFamily']).toEqual({ fontFamily: 'Courier New' });
+    // `code` means monospace; the size must stay the document's.
+    expect(styles[2]!.textStyle['fontSize']).toBeUndefined();
     expect(styles[3]!.textStyle['link']).toEqual({ url: 'https://example.com' });
   });
 
@@ -143,5 +149,54 @@ describe('buildCellRequests — inline formatting in table cells', () => {
 
     const kinds = requests.map((r) => (isInsert(r) ? `insert@${r.insertText.location.index}` : 'style'));
     expect(kinds).toEqual(['insert@30', 'style', 'insert@10', 'style']);
+  });
+});
+
+describe('getNormalTextStyle — reuse the document’s own styles', () => {
+  const docWith = (textStyle: Record<string, unknown>): GDocsApiDocument =>
+    ({ namedStyles: { styles: [{ namedStyleType: 'NORMAL_TEXT', textStyle }] } });
+
+  it('reads the font and size the document defines for body text', () => {
+    const base = getNormalTextStyle(
+      docWith({ fontSize: { magnitude: 10, unit: 'PT' }, weightedFontFamily: { fontFamily: 'Verdana' } }),
+    );
+
+    expect(base.textStyle['fontSize']).toEqual({ magnitude: 10, unit: 'PT' });
+    expect(base.textStyle['weightedFontFamily']).toEqual({ fontFamily: 'Verdana' });
+    expect(base.fields.sort()).toEqual(['fontSize', 'weightedFontFamily']);
+  });
+
+  it('invents nothing when the document defines nothing', () => {
+    expect(getNormalTextStyle(undefined)).toEqual({ textStyle: {}, fields: [] });
+    expect(getNormalTextStyle({} as GDocsApiDocument)).toEqual({ textStyle: {}, fields: [] });
+    expect(getNormalTextStyle(docWith({}))).toEqual({ textStyle: {}, fields: [] });
+  });
+
+  it('ignores other named styles', () => {
+    const doc: GDocsApiDocument = {
+      namedStyles: {
+        styles: [
+          { namedStyleType: 'HEADING_1', textStyle: { fontSize: { magnitude: 20, unit: 'PT' } } },
+          { namedStyleType: 'NORMAL_TEXT', textStyle: { fontSize: { magnitude: 10, unit: 'PT' } } },
+        ],
+      },
+    };
+    expect(getNormalTextStyle(doc).textStyle['fontSize']).toEqual({ magnitude: 10, unit: 'PT' });
+  });
+
+  it('applies the document body font to every cell run', () => {
+    const base = getNormalTextStyle(docWith({ fontSize: { magnitude: 10, unit: 'PT' } }));
+    const requests = buildCellRequests(
+      makeTableElement([[10]]),
+      [[[{ text: 'plain ' }, { text: 'bold', bold: true }]]],
+      base,
+    );
+
+    const styles = requests.filter(isStyle).map((r) => r.updateTextStyle);
+    expect(styles).toHaveLength(2);
+    for (const s of styles) {
+      expect(s.textStyle['fontSize']).toEqual({ magnitude: 10, unit: 'PT' });
+      expect(s.fields).toContain('fontSize');
+    }
   });
 });

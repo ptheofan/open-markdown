@@ -43,7 +43,6 @@ function buildTextStyleForRun(run: DocsTextRun): Record<string, unknown> | null 
   if (run.link) style['link'] = { url: run.link };
   if (run.code) {
     style['weightedFontFamily'] = { fontFamily: 'Courier New' };
-    style['fontSize'] = { magnitude: 9, unit: 'PT' };
   }
   if (Object.keys(style).length === 0) return null;
   return style;
@@ -143,9 +142,8 @@ function buildCodeBlock(ctx: BuildContext, element: DocsElement): void {
         range: { startIndex, endIndex: styledEnd },
         textStyle: {
           weightedFontFamily: { fontFamily: 'Courier New' },
-          fontSize: { magnitude: 9, unit: 'PT' },
         },
-        fields: 'weightedFontFamily,fontSize',
+        fields: 'weightedFontFamily',
       },
     });
   }
@@ -285,9 +283,8 @@ function buildImage(ctx: BuildContext, element: DocsElement): void {
         range: { startIndex: linkStart + 1, endIndex: linkStart + linkText.length - 1 },
         textStyle: {
           link: { url: element.mermaidLiveUrl },
-          fontSize: { magnitude: 9, unit: 'PT' },
         },
-        fields: 'link,fontSize',
+        fields: 'link',
       },
     });
     ctx.index += linkText.length;
@@ -589,9 +586,8 @@ function applyElementFormatting(
           range: { startIndex: apiPara.textStartIndex, endIndex: styledEnd },
           textStyle: {
             weightedFontFamily: { fontFamily: 'Courier New' },
-            fontSize: { magnitude: 9, unit: 'PT' },
           },
-          fields: 'weightedFontFamily,fontSize',
+          fields: 'weightedFontFamily',
         },
       });
     }

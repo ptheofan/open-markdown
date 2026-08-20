@@ -69,11 +69,23 @@ export interface GDocsBody {
 }
 
 /** A Google Docs API document response (subset of fields we use). */
+/** One entry of the document's named-style table (NORMAL_TEXT, HEADING_1, …). */
+export interface GDocsNamedStyle {
+  namedStyleType?: string;
+  textStyle?: Record<string, unknown>;
+  paragraphStyle?: Record<string, unknown>;
+}
+
 export interface GDocsApiDocument {
   documentId?: string;
   title?: string;
   body?: GDocsBody;
   inlineObjects?: Record<string, unknown>;
+  /**
+   * The document's own style definitions. Read so the sync can match what the
+   * document already uses instead of imposing its own font and size.
+   */
+  namedStyles?: { styles?: GDocsNamedStyle[] };
 }
 
 // ── Application types ──────────────────────────────────────────────

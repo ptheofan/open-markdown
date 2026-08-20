@@ -13,6 +13,7 @@ import {
 } from '@main/services/GoogleDocsSyncService';
 import type { DocsBatchUpdateRequest } from '@main/services/GoogleDocsService';
 import type { GDocsApiDocument } from '@shared/types/google-docs';
+import { convertMarkdownToDocs } from '@main/services/MarkdownToDocsConverter';
 
 vi.mock('electron', () => ({
   app: { getPath: () => '/tmp/mock-userdata' },
@@ -103,5 +104,47 @@ describe('buildColumnWidthRequests', () => {
     expect(buildColumnWidthRequests(10, 2, [0, 0], 400)).toEqual([]);
     expect(buildColumnWidthRequests(10, 2, [-1, 2], 400)).toEqual([]);
     expect(buildColumnWidthRequests(10, 2, [NaN, 1], 400)).toEqual([]);
+  });
+});
+
+describe('spacing after tables', () => {
+  const types = (md: string): string[] =>
+    convertMarkdownToDocs(md).elements.map((e) => e.type);
+
+  const table = ['| A | B |', '| --- | --- |', '| 1 | 2 |'].join('\n');
+
+  it('separates a table from body text that follows it', () => {
+    expect(types(`${table}\n\nSome prose.\n`)).toEqual(['table', 'paragraph', 'paragraph']);
+
+    const [, spacer] = convertMarkdownToDocs(`${table}\n\nSome prose.\n`).elements;
+    expect(spacer!.runs).toEqual([]);
+  });
+
+  it('leaves headings alone, since they bring their own space', () => {
+    expect(types(`${table}\n\n## Heading\n`)).toEqual(['table', 'heading']);
+    expect(types(`${table}\n\n# Title\n`)).toEqual(['table', 'heading']);
+  });
+
+  it('adds nothing after a table that ends the document', () => {
+    expect(types(`${table}\n`)).toEqual(['table']);
+  });
+
+  it('adds nothing between two adjacent tables', () => {
+    expect(types(`${table}\n\n${table}\n`)).toEqual(['table', 'table']);
+  });
+
+  it('spaces every table that needs it', () => {
+    expect(types(`${table}\n\nOne.\n\n${table}\n\nTwo.\n`)).toEqual([
+      'table', 'paragraph', 'paragraph',
+      'table', 'paragraph', 'paragraph',
+    ]);
+  });
+
+  it('keeps table order intact for width matching', () => {
+    // applyTableColumnWidths pairs measurements with tables by order, so the
+    // spacer must not disturb the sequence of table elements.
+    const tables = convertMarkdownToDocs(`${table}\n\nOne.\n\n${table}\n\nTwo.\n`)
+      .elements.filter((e) => e.type === 'table');
+    expect(tables).toHaveLength(2);
   });
 });

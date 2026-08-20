@@ -245,8 +245,35 @@ function processTokens(tokens: Token[], listStack: Array<{ ordered: boolean }> =
   return elements;
 }
 
+/**
+ * Put an empty paragraph between a table and body text that follows it.
+ *
+ * Google Docs leaves no gap after a table, so a following paragraph butts
+ * straight against its border. Headings carry their own space-before and need
+ * no help, which is why only normal text gets a spacer.
+ *
+ * This belongs to the model rather than the insert path: the paragraph diff
+ * compares the document against these elements, so a blank line that existed
+ * only in the document would be treated as stray content and deleted on the
+ * next sync.
+ */
+function addSpacingAfterTables(elements: DocsElement[]): DocsElement[] {
+  const spaced: DocsElement[] = [];
+
+  for (let i = 0; i < elements.length; i++) {
+    const element = elements[i]!;
+    spaced.push(element);
+
+    if (element.type === 'table' && elements[i + 1]?.type === 'paragraph') {
+      spaced.push({ type: 'paragraph', runs: [] });
+    }
+  }
+
+  return spaced;
+}
+
 export function convertMarkdownToDocs(markdown: string): DocsDocument {
   const tokens = md.parse(markdown, {});
   const elements = processTokens(tokens);
-  return { elements };
+  return { elements: addSpacingAfterTables(elements) };
 }

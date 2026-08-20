@@ -16,8 +16,8 @@ import {
   createFindBar,
   createRecentFilesDropdown,
   createOpenExternalDropdown,
-  createGoogleDocsLinkDialog,
   createGoogleDocsButton,
+  createSyncProgressBar,
   createGoogleDocsConfirmDialog,
   Toast,
   type MarkdownViewer,
@@ -31,8 +31,8 @@ import {
   type FindBar,
   type RecentFilesDropdown,
   type OpenExternalDropdown,
-  type GoogleDocsLinkDialog,
   type GoogleDocsButton,
+  type SyncProgressBar,
   type GoogleDocsConfirmDialog,
 } from './renderer/components';
 import type { EditModeCallbacks } from './renderer/components/EditModeController';
@@ -98,7 +98,7 @@ class App {
   private recentFilesDropdown: RecentFilesDropdown | null = null;
   private openExternalDropdown: OpenExternalDropdown | null = null;
   private googleDocsButton: GoogleDocsButton | null = null;
-  private googleDocsLinkDialog: GoogleDocsLinkDialog | null = null;
+  private syncProgressBar: SyncProgressBar | null = null;
   private googleDocsConfirmDialog: GoogleDocsConfirmDialog | null = null;
 
   private state: AppState = {
@@ -259,22 +259,16 @@ class App {
     const gdocsSyncBtn = document.getElementById('gdocs-sync-btn') as HTMLButtonElement | null;
     if (gdocsSyncBtn) {
       this.googleDocsButton = createGoogleDocsButton(gdocsSyncBtn);
+      this.syncProgressBar = createSyncProgressBar();
       this.googleDocsButton.setCallbacks({
-        onLinkRequest: () => this.googleDocsLinkDialog?.show(),
+        onLinkRequest: () => { void this.handleGoogleDocsPickAndSync(); },
         onSignInRequest: () => { void this.handleGoogleDocsSignIn(); },
-        onSyncRequest: () => { void this.showSyncVerificationDialog(); },
+        onSyncRequest: () => { void this.handleGoogleDocsSync(); },
+        onShowProgressRequest: () => { this.syncProgressBar?.show(); },
       });
     }
 
     // Create Google Docs link dialog
-    const gdocsDialogEl = document.getElementById('gdocs-link-dialog');
-    if (gdocsDialogEl) {
-      this.googleDocsLinkDialog = createGoogleDocsLinkDialog(gdocsDialogEl);
-      this.googleDocsLinkDialog.setCallbacks({
-        onLink: (url: string) => { void this.handleGoogleDocsLinkAndSync(url); },
-      });
-    }
-
     // Create Google Docs confirm dialog
     const gdocsConfirmEl = document.getElementById('gdocs-confirm-dialog');
     if (gdocsConfirmEl) {
@@ -575,14 +569,27 @@ class App {
     );
     this.cleanupFunctions.push(cleanupGDocsAuth);
 
+    // Google Docs sync progress listener
+    const cleanupGDocsProgress = window.electronAPI.googleDocs.onSyncProgress((update) => {
+      // Only redraws when on screen; a dismissed bar still tracks the sync so
+      // reopening it shows where the sync is now, not where it was dismissed.
+      this.syncProgressBar?.update(update);
+    });
+    this.cleanupFunctions.push(cleanupGDocsProgress);
+
     // Google Docs sync status listener
     const cleanupGDocsSync = window.electronAPI.googleDocs.onSyncStatus(
       (status: { syncing: boolean; error?: string }) => {
         if (status.syncing) {
           this.googleDocsButton?.setState('syncing');
-        } else if (status.error) {
-          this.toast?.error(`Sync failed: ${status.error}`);
-          this.googleDocsButton?.setState('ready');
+          this.syncProgressBar?.show();
+        } else {
+          this.syncProgressBar?.finish();
+          // Recompute from the link store: a sync that dropped an unreachable
+          // link must leave the button offering 'link', not 'sync'. The error
+          // itself is reported by whoever invoked the sync, not here, so it is
+          // not toasted twice.
+          void this.updateGoogleDocsButtonState();
         }
       }
     );
@@ -887,7 +894,14 @@ class App {
   private async handleSaveAndExitEditMode(): Promise<void> {
     if (!this.markdownViewer) return;
 
-    // Save before exiting
+    // Commit whatever is still being typed BEFORE asking whether there is
+    // anything to save. The commit is what both updates the markdown and
+    // marks the document dirty, so checking first meant an edit the user
+    // never clicked away from looked like no change at all: nothing was
+    // written, exiting committed it into the view regardless, and the edit
+    // was gone the next time the file was opened.
+    this.markdownViewer.flushPendingEdits();
+
     if (this.state.hasUnsavedChanges) {
       await this.saveFile();
     }
@@ -1114,53 +1128,27 @@ class App {
   }
 
   /**
-   * Show the link dialog pre-filled with the current linked doc URL
-   * so the user can verify or change it before syncing.
+   * Link the current file to a Google Doc chosen in the Google Picker, then sync.
+   *
+   * The picker runs through Google's consent screen, so it signs the user in as
+   * a side effect -- there is no separate sign-in step to sequence here.
    */
-  private async showSyncVerificationDialog(): Promise<void> {
-    if (!this.state.currentFilePath) return;
-
-    let existingUrl = '';
-    try {
-      const link = await window.electronAPI.googleDocs.getLink(this.state.currentFilePath);
-      if (link?.docId) {
-        existingUrl = `https://docs.google.com/document/d/${link.docId}/edit`;
-      }
-    } catch {
-      // No link yet — dialog will show empty
-    }
-
-    this.googleDocsLinkDialog?.show(existingUrl);
-  }
-
-  /**
-   * Handle Google Docs link + sync: link the doc then immediately sync.
-   */
-  private async handleGoogleDocsLinkAndSync(url: string): Promise<void> {
+  private async handleGoogleDocsPickAndSync(): Promise<void> {
     if (!this.state.currentFilePath) return;
 
     try {
-      await window.electronAPI.googleDocs.link(this.state.currentFilePath, url);
-      this.googleDocsLinkDialog?.hide();
+      const link = await window.electronAPI.googleDocs.pickAndLink(this.state.currentFilePath);
       await this.updateGoogleDocsButtonState();
-
-      // Linking while signed out must not force a sync — it would fail with
-      // 'Not authenticated' and discard the 'needs-auth' state just computed
-      // above. Sign in first, and only sync once that actually succeeded.
-      const authState = await window.electronAPI.googleDocs.getAuthStatus();
-      if (!authState.isAuthenticated) {
-        await this.handleGoogleDocsSignIn();
-        const reauthed = await window.electronAPI.googleDocs.getAuthStatus();
-        if (!reauthed.isAuthenticated) {
-          this.googleDocsButton?.setState('needs-auth');
-          return;
-        }
+      if (!link) {
+        // Either the user closed the picker, or Google returned no selection.
+        // Say so rather than appearing to do nothing at all.
+        this.toast?.success('No document selected — nothing was linked.');
+        return;
       }
-
       await this.handleGoogleDocsSync();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to link';
-      this.googleDocsLinkDialog?.showError(message);
+      this.toast?.error(message);
     }
   }
 
@@ -1284,6 +1272,7 @@ class App {
       } else {
         console.error('Google Docs sync error result:', result);
         this.toast?.error(result.error ?? 'Sync failed');
+        await this.updateGoogleDocsButtonState();
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Sync failed';
@@ -1316,10 +1305,10 @@ class App {
 
       console.error('Google Docs sync exception:', error);
       this.toast?.error(message);
-      this.googleDocsButton?.setState('ready');
+      await this.updateGoogleDocsButtonState();
       return;
     }
-    this.googleDocsButton?.setState('ready');
+    await this.updateGoogleDocsButtonState();
   }
 
   /**
@@ -1440,7 +1429,7 @@ class App {
     this.recentFilesDropdown?.destroy();
     this.openExternalDropdown?.destroy();
     this.googleDocsButton?.destroy();
-    this.googleDocsLinkDialog?.destroy();
+    this.syncProgressBar?.destroy();
     this.googleDocsConfirmDialog?.destroy();
   }
 }

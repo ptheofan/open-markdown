@@ -4,7 +4,7 @@ import { getGoogleAuthService } from '@main/services/GoogleAuthService';
 import { getGoogleDocsLinkStore } from '@main/services/GoogleDocsLinkStore';
 import { createGoogleDocsService } from '@main/services/GoogleDocsService';
 import { createGoogleDocsSyncService } from '@main/services/GoogleDocsSyncService';
-import type { TableColumnWidths, MermaidDiagramData } from '@shared/types/google-docs';
+import type { TableColumnWidths, MermaidDiagramData, GoogleDocsSyncResult } from '@shared/types/google-docs';
 
 function sendToAllWindows(channel: string, data: unknown): void {
   const windows = BrowserWindow.getAllWindows();
@@ -17,10 +17,28 @@ function sendToAllWindows(channel: string, data: unknown): void {
 
 let authChangeCleanup: (() => void) | null = null;
 
+/** A document the app can no longer reach: the link can never work again. */
+function isGone(status: number | undefined): boolean {
+  return status === 404 || status === 403;
+}
+
 export function registerGoogleDocsHandlers(): void {
   const authService = getGoogleAuthService();
   const linkStore = getGoogleDocsLinkStore();
   const docsService = createGoogleDocsService(() => authService.getAccessToken());
+
+  /**
+   * Forget a link whose document we can no longer reach -- typically one
+   * carried over from the old paste-a-URL flow, which granted no per-file
+   * access. Without this the button keeps offering a sync that can only fail.
+   */
+  const dropDeadLink = async (filePath: string): Promise<GoogleDocsSyncResult> => {
+    await linkStore.removeLink(filePath);
+    const error =
+      'That Google Doc is no longer accessible. Link this file again to pick a document.';
+    sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, { syncing: false });
+    return { success: false, error };
+  };
   const syncService = createGoogleDocsSyncService(docsService, linkStore);
 
   // Auth status
@@ -47,16 +65,14 @@ export function registerGoogleDocsHandlers(): void {
     sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_AUTH_CHANGE, state);
   });
 
-  // Link file to doc
+  // Pick a doc through the Google Picker and link the file to it.
+  // Picking is what grants this app drive.file access to that document, so
+  // there is no way to link a document without going through it.
   ipcMain.handle(
-    IPC_CHANNELS.GOOGLE_DOCS.LINK,
-    async (_event, filePath: string, docUrl: string) => {
-      const docId = authService.extractDocId(docUrl);
-      if (!docId) {
-        throw new Error(
-          'Invalid Google Docs URL. Expected format: https://docs.google.com/document/d/...',
-        );
-      }
+    IPC_CHANNELS.GOOGLE_DOCS.PICK_AND_LINK,
+    async (_event, filePath: string) => {
+      const docId = await authService.pickDocument();
+      if (!docId) return null; // user cancelled or picked nothing
       await linkStore.setLink(filePath, docId);
       return linkStore.getLink(filePath);
     },
@@ -89,15 +105,38 @@ export function registerGoogleDocsHandlers(): void {
         if (!link) return { success: false, error: 'File not linked to Google Docs' };
         console.warn('[SYNC] Calling syncService.sync...');
         sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, { syncing: true });
-        const result = await syncService.sync(filePath, link.docId, markdownContent, mermaidDiagrams, tableWidths);
+        const result = await syncService.sync(
+          filePath,
+          link.docId,
+          markdownContent,
+          mermaidDiagrams,
+          tableWidths,
+          (update) => sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_PROGRESS, update),
+        );
         console.warn('[SYNC] Result:', JSON.stringify(result));
+
+        // The sync service reports API failures rather than throwing, so an
+        // unreachable document arrives here as a result, not an exception.
+        if (!result.success && isGone(result.status)) {
+          return await dropDeadLink(filePath);
+        }
+
         sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, { syncing: false });
         return result;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const stack = error instanceof Error ? error.stack : '';
         console.error('Google Docs sync error:', message, '\n', stack);
-        sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, { syncing: false, error: message });
+
+        // A document we cannot reach is a link that can never work again --
+        // typically one carried over from the old paste-a-URL flow, which
+        // granted no per-file access. Drop it so the next attempt picks a
+        // document instead of retrying a doomed sync forever.
+        if (isGone((error as { status?: number }).status)) {
+          return await dropDeadLink(filePath);
+        }
+
+        sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, { syncing: false });
         return { success: false, error: message };
       }
     },
@@ -123,7 +162,7 @@ export function registerGoogleDocsHandlers(): void {
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Sync failed';
         console.error('Google Docs overwrite sync error:', error);
-        sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, { syncing: false, error: message });
+        sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, { syncing: false });
         return { success: false, error: message };
       }
     },
@@ -134,7 +173,7 @@ export function unregisterGoogleDocsHandlers(): void {
   ipcMain.removeHandler(IPC_CHANNELS.GOOGLE_DOCS.AUTH_STATUS);
   ipcMain.removeHandler(IPC_CHANNELS.GOOGLE_DOCS.AUTH_SIGN_IN);
   ipcMain.removeHandler(IPC_CHANNELS.GOOGLE_DOCS.AUTH_SIGN_OUT);
-  ipcMain.removeHandler(IPC_CHANNELS.GOOGLE_DOCS.LINK);
+  ipcMain.removeHandler(IPC_CHANNELS.GOOGLE_DOCS.PICK_AND_LINK);
   ipcMain.removeHandler(IPC_CHANNELS.GOOGLE_DOCS.UNLINK);
   ipcMain.removeHandler(IPC_CHANNELS.GOOGLE_DOCS.GET_LINK);
   ipcMain.removeHandler(IPC_CHANNELS.GOOGLE_DOCS.SYNC);

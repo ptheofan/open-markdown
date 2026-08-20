@@ -101,6 +101,8 @@ export type {
   DocsDocument,
   MermaidDiagramData,
   TableColumnWidths,
+  SyncPhase,
+  SyncProgressUpdate,
 } from './google-docs';
 
 // Diff types

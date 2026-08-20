@@ -71,7 +71,7 @@ Desktop apps are public clients. PKCE replaces the client secret.
 
 - **Flow:** App opens system browser → Google consent screen → redirect to `http://localhost:<port>/callback` → app captures auth code → exchanges for tokens using PKCE verifier
 - **Scopes:**
-  - `https://www.googleapis.com/auth/documents` — read/write docs
+  - ~~`https://www.googleapis.com/auth/documents`~~ — superseded: linking goes through the Google Picker, so only per-file `drive.file` access is requested
   - `https://www.googleapis.com/auth/drive.file` — upload mermaid images (scoped to app-created files only)
 - **Token storage:** Encrypted via Electron `safeStorage` API, stored in user data directory
 - **Token refresh:** Automatic via refresh token before expiry

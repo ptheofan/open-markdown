@@ -30,6 +30,7 @@ import type {
   GoogleAuthState,
   GoogleDocLink,
   GoogleDocsSyncResult,
+  SyncProgressUpdate,
   TableColumnWidths,
   MermaidDiagramData,
 } from '@shared/types';
@@ -363,8 +364,8 @@ const electronAPI: ElectronAPI = {
       return ipcRenderer.invoke(IPC_CHANNELS.GOOGLE_DOCS.AUTH_SIGN_OUT);
     },
 
-    link: (filePath: string, docUrl: string): Promise<GoogleDocLink> => {
-      return ipcRenderer.invoke(IPC_CHANNELS.GOOGLE_DOCS.LINK, filePath, docUrl);
+    pickAndLink: (filePath: string): Promise<GoogleDocLink | null> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.GOOGLE_DOCS.PICK_AND_LINK, filePath);
     },
 
     unlink: (filePath: string): Promise<void> => {
@@ -401,6 +402,23 @@ const electronAPI: ElectronAPI = {
 
       return () => {
         ipcRenderer.removeListener(IPC_CHANNELS.GOOGLE_DOCS.ON_AUTH_CHANGE, handler);
+      };
+    },
+
+    onSyncProgress: (
+      callback: (update: SyncProgressUpdate) => void
+    ): (() => void) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        update: SyncProgressUpdate
+      ): void => {
+        callback(update);
+      };
+
+      ipcRenderer.on(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_PROGRESS, handler);
+
+      return () => {
+        ipcRenderer.removeListener(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_PROGRESS, handler);
       };
     },
 

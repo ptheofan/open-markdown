@@ -14,12 +14,15 @@ vi.mock('electron', () => ({
   shell: { openExternal: vi.fn().mockResolvedValue(undefined) },
 }));
 
+import { shell } from 'electron';
 import {
   GoogleAuthService,
   createGoogleAuthService,
   getGoogleAuthService,
   resetGoogleAuthService,
 } from '@main/services/GoogleAuthService';
+
+const originalFetch = globalThis.fetch;
 
 describe('GoogleAuthService', () => {
   let service: GoogleAuthService;
@@ -34,6 +37,77 @@ describe('GoogleAuthService', () => {
   afterEach(async () => {
     service.destroy();
     await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  describe('pickDocument', () => {
+    /**
+     * Drives the real loopback callback server the same way Google does:
+     * redirect back with an authorization code plus the ids the user picked.
+     */
+    async function respondOnCallback(query: string): Promise<void> {
+      const openExternal = vi.mocked(shell.openExternal);
+      // Wait for the flow to open the browser so we know the port.
+      for (let i = 0; i < 200 && openExternal.mock.calls.length === 0; i++) {
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      const authUrl = new URL(String(openExternal.mock.calls[0]?.[0]));
+      const redirectUri = authUrl.searchParams.get('redirect_uri');
+      if (!redirectUri) throw new Error('no redirect_uri in auth url');
+      await fetch(`${redirectUri}?${query}`);
+    }
+
+    beforeEach(() => {
+      vi.mocked(shell.openExternal).mockClear();
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: string | URL | Request) => {
+          const url = input instanceof Request ? input.url : input.toString();
+          // Let the loopback callback request go to the real server.
+          if (url.startsWith('http://localhost:')) {
+            return originalFetch(url);
+          }
+          if (url.includes('oauth2.googleapis.com/token')) {
+            return new Response(
+              JSON.stringify({
+                access_token: 'picked-access',
+                refresh_token: 'picked-refresh',
+                expires_in: 3600,
+              }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } }
+            );
+          }
+          if (url.includes('userinfo')) {
+            return new Response(JSON.stringify({ email: 'picker@example.com' }), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            });
+          }
+          throw new Error(`unexpected fetch: ${url}`);
+        })
+      );
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('should return the document id the user picked', async () => {
+      const pending = service.pickDocument();
+      await respondOnCallback('code=auth-code&picked_file_ids=PICKED_DOC_ID');
+      await expect(pending).resolves.toBe('PICKED_DOC_ID');
+    });
+
+    it('should return the first id when the callback carries several', async () => {
+      const pending = service.pickDocument();
+      await respondOnCallback('code=auth-code&picked_file_ids=FIRST_ID,SECOND_ID');
+      await expect(pending).resolves.toBe('FIRST_ID');
+    });
+
+    it('should return null when the user picks nothing', async () => {
+      const pending = service.pickDocument();
+      await respondOnCallback('code=auth-code');
+      await expect(pending).resolves.toBeNull();
+    });
   });
 
   describe('initial state', () => {
@@ -99,8 +173,33 @@ describe('GoogleAuthService', () => {
       const result = service.generateAuthUrl();
       const url = new URL(result.url);
       const scope = url.searchParams.get('scope');
-      expect(scope).toContain('https://www.googleapis.com/auth/documents');
       expect(scope).toContain('https://www.googleapis.com/auth/drive.file');
+      // The sensitive all-your-documents scope must never be requested.
+      expect(scope).not.toContain('https://www.googleapis.com/auth/documents');
+    });
+
+    it('should not trigger the picker on a plain sign-in', () => {
+      const result = service.generateAuthUrl();
+      const url = new URL(result.url);
+      expect(url.searchParams.get('trigger_onepick')).toBeNull();
+    });
+
+    it('should trigger the picker when asked to pick a document', () => {
+      const result = service.generateAuthUrl(undefined, { pickDocument: true });
+      const url = new URL(result.url);
+      expect(url.searchParams.get('trigger_onepick')).toBe('true');
+      // The picker rides on the normal consent flow, so this must survive.
+      expect(url.searchParams.get('prompt')).toBe('consent');
+    });
+
+    it('should request drive.file alone when picking, with no other scope', () => {
+      // Google: "Only the drive.file scope is permitted [for the desktop
+      // picker] and it can't be combined with any other scope." Sending
+      // 'email' alongside it silently suppresses the picker and degrades to
+      // an ordinary consent screen.
+      const result = service.generateAuthUrl(undefined, { pickDocument: true });
+      const scopes = (new URL(result.url).searchParams.get('scope') ?? '').split(' ').filter(Boolean);
+      expect(scopes).toEqual(['https://www.googleapis.com/auth/drive.file']);
     });
 
     it('should use default client ID when none is set', () => {
@@ -127,46 +226,6 @@ describe('GoogleAuthService', () => {
       const result1 = service.generateAuthUrl();
       const result2 = service.generateAuthUrl();
       expect(result1.codeVerifier).not.toBe(result2.codeVerifier);
-    });
-  });
-
-  describe('extractDocId', () => {
-    it('should extract doc ID from standard Google Docs URL', () => {
-      const url =
-        'https://docs.google.com/document/d/1aBcDeFgHiJkLmNoPqRsTuVwXyZ/edit';
-      expect(service.extractDocId(url)).toBe('1aBcDeFgHiJkLmNoPqRsTuVwXyZ');
-    });
-
-    it('should extract doc ID from URL without /edit', () => {
-      const url =
-        'https://docs.google.com/document/d/1aBcDeFgHiJkLmNoPqRsTuVwXyZ';
-      expect(service.extractDocId(url)).toBe('1aBcDeFgHiJkLmNoPqRsTuVwXyZ');
-    });
-
-    it('should extract doc ID from URL with query parameters', () => {
-      const url =
-        'https://docs.google.com/document/d/1aBcDeFgHiJkLmNoPqRsTuVwXyZ/edit?usp=sharing';
-      expect(service.extractDocId(url)).toBe('1aBcDeFgHiJkLmNoPqRsTuVwXyZ');
-    });
-
-    it('should extract doc ID with hyphens and underscores', () => {
-      const url =
-        'https://docs.google.com/document/d/1aB_c-DeFg/edit';
-      expect(service.extractDocId(url)).toBe('1aB_c-DeFg');
-    });
-
-    it('should return null for non-Google-Docs URLs', () => {
-      expect(service.extractDocId('https://google.com')).toBeNull();
-      expect(service.extractDocId('https://example.com/document/d/123')).toBe('123');
-    });
-
-    it('should return null for invalid URLs', () => {
-      expect(service.extractDocId('not-a-url')).toBeNull();
-      expect(service.extractDocId('')).toBeNull();
-    });
-
-    it('should return null for Google Docs URL without doc ID', () => {
-      expect(service.extractDocId('https://docs.google.com/document/d/')).toBeNull();
     });
   });
 

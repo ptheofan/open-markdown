@@ -624,6 +624,85 @@ button:focus:not(:focus-visible) {
 }
 
 /* ===========================================
+   Sync Progress Snackbar
+   =========================================== */
+
+.sync-progress {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10001;
+  width: min(420px, calc(100vw - 40px));
+  padding: 12px 14px;
+  border-radius: 8px;
+  background-color: var(--toolbar-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-color);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+  font-size: 13px;
+}
+
+.sync-progress-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sync-progress-title {
+  font-weight: 600;
+  flex: 1;
+}
+
+.sync-progress-pct {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.sync-progress-close {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.sync-progress-close:hover {
+  background-color: var(--hover-bg);
+  color: var(--text-color);
+}
+
+.sync-progress-track {
+  margin: 8px 0 6px;
+  height: 4px;
+  border-radius: 2px;
+  background-color: var(--hover-bg);
+  overflow: hidden;
+}
+
+.sync-progress-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 2px;
+  background-color: var(--link-color);
+  transition: width 0.25s ease;
+}
+
+.sync-progress-label {
+  color: var(--text-muted);
+}
+
+/* The sync button stays clickable while syncing so a dismissed progress bar
+   can be reopened; this makes it read as busy without being disabled. */
+#gdocs-sync-btn.is-syncing {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+/* ===========================================
    Preferences Panel
    =========================================== */
 

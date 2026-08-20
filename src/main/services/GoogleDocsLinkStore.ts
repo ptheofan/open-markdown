@@ -77,10 +77,57 @@ export class GoogleDocsLinkStore {
     }
   }
 
+  /**
+   * Fingerprint of the converted document as it stood at the last successful
+   * sync. Lets an unchanged document be recognised before any API work.
+   */
+  async getModelFingerprint(docId: string): Promise<string | null> {
+    const p = path.join(this.baselineDir, `${docId}.model`);
+    try {
+      return (await fs.readFile(p, 'utf-8')).trim();
+    } catch {
+      return null;
+    }
+  }
+
+  async saveModelFingerprint(docId: string, fingerprint: string): Promise<void> {
+    await fs.writeFile(path.join(this.baselineDir, `${docId}.model`), fingerprint, 'utf-8');
+  }
+
+  /**
+   * Drive file ids for diagram images already uploaded for this document,
+   * keyed by a hash of the image bytes. Re-uploading an identical diagram on
+   * every sync is pure latency: the bytes are the same and Drive already has
+   * them.
+   */
+  async loadImageCache(docId: string): Promise<Record<string, string>> {
+    const cachePath = path.join(this.baselineDir, `${docId}.images.json`);
+    try {
+      return JSON.parse(await fs.readFile(cachePath, 'utf-8')) as Record<string, string>;
+    } catch {
+      return {};
+    }
+  }
+
+  async saveImageCache(docId: string, cache: Record<string, string>): Promise<void> {
+    const cachePath = path.join(this.baselineDir, `${docId}.images.json`);
+    await fs.writeFile(cachePath, JSON.stringify(cache), 'utf-8');
+  }
+
   async deleteBaseline(docId: string): Promise<void> {
     const baselinePath = path.join(this.baselineDir, `${docId}.baseline.txt`);
     try {
       await fs.unlink(baselinePath);
+    } catch {
+      // ignore if not found
+    }
+    try {
+      await fs.unlink(path.join(this.baselineDir, `${docId}.images.json`));
+    } catch {
+      // ignore if not found
+    }
+    try {
+      await fs.unlink(path.join(this.baselineDir, `${docId}.model`));
     } catch {
       // ignore if not found
     }

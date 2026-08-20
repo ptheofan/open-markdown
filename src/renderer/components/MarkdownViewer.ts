@@ -309,9 +309,25 @@ export class MarkdownViewer {
    */
   getCurrentMarkdown(): string {
     if (this.isEditMode && this.editModeController) {
+      // Whoever asks for the current markdown is about to persist or send it,
+      // and the user may still be typing in an open editor. Commit that first:
+      // otherwise the document is written as it was before the last edit, the
+      // view shows the edit anyway once the editor closes, and the change is
+      // silently lost when the file is reopened.
+      this.editModeController.flushPendingEdits();
       return this.editModeController.getMarkdown();
     }
     return this.state.content;
+  }
+
+  /**
+   * Commit any edit the user is still typing, so callers can then ask whether
+   * the document is dirty. No-op outside edit mode.
+   */
+  flushPendingEdits(): void {
+    if (this.isEditMode && this.editModeController) {
+      this.editModeController.flushPendingEdits();
+    }
   }
 
   /**

@@ -9,6 +9,15 @@ import type { GDocsApiDocument } from '@shared/types/google-docs';
 type TokenProvider = () => Promise<string>;
 
 const DOCS_API_BASE = 'https://docs.googleapis.com/v1/documents';
+
+/** An error from a Google API call, carrying the HTTP status. */
+export interface GoogleApiError extends Error {
+  status: number;
+}
+
+function apiError(message: string, status: number): GoogleApiError {
+  return Object.assign(new Error(message), { status });
+}
 const DRIVE_UPLOAD_URL =
   'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
 
@@ -78,8 +87,9 @@ export class GoogleDocsService {
     });
     if (!response.ok) {
       const error = (await response.json()) as GoogleApiErrorResponse;
-      throw new Error(
+      throw apiError(
         error.error?.message ?? `API error: ${response.status} ${response.statusText}`,
+        response.status,
       );
     }
     return (await response.json()) as GDocsApiDocument;
@@ -103,8 +113,9 @@ export class GoogleDocsService {
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`[DocsAPI] batchUpdate failed (${response.status}):`, errorText);
-      throw new Error(
+      throw apiError(
         `Google Docs API error (${response.status}): ${errorText}`,
+        response.status,
       );
     }
     return (await response.json()) as DocsBatchUpdateResponse;
@@ -143,7 +154,7 @@ export class GoogleDocsService {
     });
     if (!response.ok) {
       const error = (await response.json()) as GoogleApiErrorResponse;
-      throw new Error(error.error?.message ?? `Upload failed: ${response.status}`);
+      throw apiError(error.error?.message ?? `Upload failed: ${response.status}`, response.status);
     }
     const result = (await response.json()) as DriveFileResponse;
     const fileId = result.id;

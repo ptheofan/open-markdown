@@ -279,3 +279,47 @@ describe('generateParagraphDiffOperations', () => {
     }
   });
 });
+
+describe('character-level deletes inside a modified paragraph', () => {
+  /** Apply the emitted requests to a string, the way the Docs API would. */
+  function applyToText(text: string, requests: TestDocsRequest[], base: number): string {
+    let out = text;
+    for (const r of requests) {
+      if (r.deleteContentRange) {
+        const { startIndex, endIndex } = r.deleteContentRange.range;
+        out = out.slice(0, startIndex - base) + out.slice(endIndex - base);
+      } else if (r.insertText) {
+        const at = r.insertText.location.index - base;
+        out = out.slice(0, at) + r.insertText.text + out.slice(at);
+      }
+    }
+    return out;
+  }
+
+  it('deletes every removed character, leaving no stray markup behind', () => {
+    // A document that once received literal markdown, now being corrected.
+    const oldText = 'attribute **Testt2 **schema';
+    const newText = 'attribute Testt2 schema';
+
+    const requests = generateParagraphDiffOperations(
+      [makePara(oldText, 1)],
+      [makeElem('paragraph', newText)],
+      1 + oldText.length + 1,
+    ) as TestDocsRequest[];
+
+    expect(applyToText(oldText, requests, 1)).toBe(newText);
+  });
+
+  it('does not clip a delete that removes a single character', () => {
+    const oldText = 'ab';
+    const newText = 'b';
+
+    const requests = generateParagraphDiffOperations(
+      [makePara(oldText, 1)],
+      [makeElem('paragraph', newText)],
+      1 + oldText.length + 1,
+    ) as TestDocsRequest[];
+
+    expect(applyToText(oldText, requests, 1)).toBe(newText);
+  });
+});

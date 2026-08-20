@@ -28,6 +28,24 @@ function escapeText(text: string): string {
   return text.replace(ESCAPE_RE, '\\$1');
 }
 
+/**
+ * Wrap content in an inline delimiter, keeping any leading or trailing
+ * whitespace *outside* the markers.
+ *
+ * CommonMark will not close emphasis on a delimiter preceded by whitespace,
+ * so `**word **` is not bold at all -- it renders as literal asterisks. The
+ * browser hands us exactly that shape routinely, because double-clicking a
+ * word selects its trailing space and the resulting <strong> spans it.
+ */
+function delimit(inner: string, marker: string): string {
+  const match = /^(\s*)([\s\S]*?)(\s*)$/.exec(inner);
+  if (!match) return `${marker}${inner}${marker}`;
+  const [, lead = '', core, trail = ''] = match;
+  // Nothing but whitespace: `** **` is not emphasis either, so emit it bare.
+  if (!core) return inner;
+  return `${lead}${marker}${core}${marker}${trail}`;
+}
+
 function serializeNode(node: Node): string {
   if (node.nodeType === Node.TEXT_NODE) {
     return escapeText(node.textContent ?? '');
@@ -40,13 +58,13 @@ function serializeNode(node: Node): string {
   switch (el.tagName) {
     case 'STRONG':
     case 'B':
-      return `**${inner}**`;
+      return delimit(inner, '**');
     case 'EM':
     case 'I':
-      return `*${inner}*`;
+      return delimit(inner, '*');
     case 'DEL':
     case 'S':
-      return `~~${inner}~~`;
+      return delimit(inner, '~~');
     case 'CODE':
       return `\`${el.textContent ?? ''}\``;
     case 'A': {

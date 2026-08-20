@@ -103,6 +103,21 @@ export interface GoogleDocsSyncResult {
   success: boolean;
   error?: string;
   externalEditsDetected?: boolean;
+  /** HTTP status when the failure came from a Google API call. */
+  status?: number;
+  /** Nothing had changed on either side; no API work was done. */
+  unchanged?: boolean;
+}
+
+/** Which stage of a sync is running. */
+export type SyncPhase = 'reading' | 'converting' | 'diagrams' | 'applying' | 'tables' | 'done';
+
+/** A point in a sync's progress, as reported to the UI. */
+export interface SyncProgressUpdate {
+  /** 0-100, monotonically rising across a single sync. */
+  percent: number;
+  /** What is happening right now, e.g. "Uploading diagram 3 of 5". */
+  label: string;
 }
 
 /** Auth state exposed to renderer */

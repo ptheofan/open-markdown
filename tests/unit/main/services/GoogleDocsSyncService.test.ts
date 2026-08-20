@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createGoogleDocsSyncService } from '@main/services/GoogleDocsSyncService';
+import {
+  syncProgressPercent, imageCacheKey, modelFingerprint, createGoogleDocsSyncService } from '@main/services/GoogleDocsSyncService';
 
 // Mock the converter module
 vi.mock('@main/services/MarkdownToDocsConverter', () => ({
@@ -18,6 +19,10 @@ describe('GoogleDocsSyncService', () => {
 
   const mockLinkStore = {
     loadBaseline: vi.fn(),
+    loadImageCache: vi.fn().mockResolvedValue({}),
+    getModelFingerprint: vi.fn().mockResolvedValue(null),
+    saveModelFingerprint: vi.fn(),
+    saveImageCache: vi.fn(),
     saveBaseline: vi.fn(),
     updateLastSynced: vi.fn(),
     getLink: vi.fn(),
@@ -35,6 +40,168 @@ describe('GoogleDocsSyncService', () => {
       mockDocsService as unknown as Parameters<typeof createGoogleDocsSyncService>[0],
       mockLinkStore as unknown as Parameters<typeof createGoogleDocsSyncService>[1],
     );
+  });
+
+  describe('unchanged document', () => {
+    const diagrams = [
+      { code: 'graph A', pngBase64: 'AAA', liveUrl: 'https://mermaid.live/a' },
+    ];
+
+    function docSaying(text: string): void {
+      mockLinkStore.loadBaseline.mockResolvedValue(text);
+      mockDocsService.extractPlainText.mockReturnValue(text);
+      mockDocsService.getDocument.mockResolvedValue({ body: { content: [{ endIndex: 1 }] } });
+      mockDocsService.batchUpdate.mockResolvedValue({});
+      mockDocsService.uploadImage.mockResolvedValue('file-id');
+      vi.mocked(convertMarkdownToDocs).mockReturnValue({
+        elements: [{ type: 'paragraph', runs: [{ text: 'Hello' }] }],
+      });
+    }
+
+    it('does no work at all when nothing changed since the last sync', async () => {
+      docSaying('Hello');
+      // Fingerprint recorded by the previous sync of this exact content.
+      mockLinkStore.getModelFingerprint.mockResolvedValue(
+        modelFingerprint({ elements: [{ type: 'paragraph', runs: [{ text: 'Hello' }] }] }),
+      );
+
+      const result = await syncService.sync('/file.md', 'doc-1', 'Hello', diagrams);
+
+      expect(result.success).toBe(true);
+      expect(mockDocsService.batchUpdate).not.toHaveBeenCalled();
+      expect(mockDocsService.uploadImage).not.toHaveBeenCalled();
+    });
+
+    it('still syncs when the markdown changed', async () => {
+      docSaying('Hello');
+      mockLinkStore.getModelFingerprint.mockResolvedValue('fingerprint-of-something-else');
+
+      await syncService.sync('/file.md', 'doc-1', 'Hello', diagrams);
+
+      expect(mockDocsService.batchUpdate).toHaveBeenCalled();
+    });
+
+    it('still syncs when the document was edited in Google Docs', async () => {
+      docSaying('Hello');
+      mockDocsService.extractPlainText.mockReturnValue('Hello, edited by someone else');
+      mockLinkStore.getModelFingerprint.mockResolvedValue(
+        modelFingerprint({ elements: [{ type: 'paragraph', runs: [{ text: 'Hello' }] }] }),
+      );
+
+      const result = await syncService.sync('/file.md', 'doc-1', 'Hello', diagrams);
+
+      expect(result.externalEditsDetected).toBe(true);
+    });
+  });
+
+  describe('diagram upload reuse', () => {
+    function setupTwoDiagrams(): void {
+      mockLinkStore.loadBaseline.mockResolvedValue(null);
+      mockDocsService.getDocument.mockResolvedValue({ body: { content: [{ endIndex: 1 }] } });
+      mockDocsService.extractPlainText.mockReturnValue('');
+      mockDocsService.batchUpdate.mockResolvedValue({});
+      mockDocsService.uploadImage.mockResolvedValue('file-id');
+      vi.mocked(convertMarkdownToDocs).mockReturnValue({
+        elements: [
+          { type: 'image', code: 'graph A' },
+          { type: 'image', code: 'graph B' },
+        ],
+      });
+    }
+
+    const diagrams = [
+      { code: 'graph A', pngBase64: 'AAA', liveUrl: 'https://mermaid.live/a' },
+      { code: 'graph B', pngBase64: 'BBB', liveUrl: 'https://mermaid.live/b' },
+    ];
+
+    it('uploads diagrams that have never been seen', async () => {
+      setupTwoDiagrams();
+      mockLinkStore.loadImageCache.mockResolvedValue({});
+
+      await syncService.sync('/file.md', 'doc-1', 'x', diagrams);
+
+      expect(mockDocsService.uploadImage).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not re-upload a diagram whose image is unchanged', async () => {
+      setupTwoDiagrams();
+      // Both diagrams were uploaded by an earlier sync and are byte-identical.
+      mockLinkStore.loadImageCache.mockResolvedValue({
+        [imageCacheKey('AAA')]: 'existing-a',
+        [imageCacheKey('BBB')]: 'existing-b',
+      });
+
+      await syncService.sync('/file.md', 'doc-1', 'x', diagrams);
+
+      expect(mockDocsService.uploadImage).not.toHaveBeenCalled();
+    });
+
+    it('uploads only the diagram that actually changed', async () => {
+      setupTwoDiagrams();
+      mockLinkStore.loadImageCache.mockResolvedValue({
+        [imageCacheKey('AAA')]: 'existing-a',
+      });
+
+      await syncService.sync('/file.md', 'doc-1', 'x', diagrams);
+
+      expect(mockDocsService.uploadImage).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('progress reporting', () => {
+    it('reports a rising sequence that ends at 100', async () => {
+      mockLinkStore.loadBaseline.mockResolvedValue(null);
+      mockDocsService.getDocument.mockResolvedValue({ body: { content: [{ endIndex: 1 }] } });
+      mockDocsService.extractPlainText.mockReturnValue('');
+      mockDocsService.batchUpdate.mockResolvedValue({});
+      vi.mocked(convertMarkdownToDocs).mockReturnValue({
+        elements: [{ type: 'paragraph', runs: [{ text: 'Hello' }] }],
+      });
+
+      const seen: { percent: number; label: string }[] = [];
+      await syncService.sync('/file.md', 'doc-123', '# Hello', undefined, undefined, (u) =>
+        seen.push(u)
+      );
+
+      expect(seen.length).toBeGreaterThan(0);
+      expect(seen.map((u) => u.percent)).toEqual(
+        [...seen.map((u) => u.percent)].sort((a, b) => a - b)
+      );
+      expect(seen[seen.length - 1]?.percent).toBe(100);
+      expect(seen.every((u) => u.label.trim().length > 0)).toBe(true);
+    });
+
+    it('names each diagram as it uploads so the slow part is legible', async () => {
+      mockLinkStore.loadBaseline.mockResolvedValue(null);
+      mockDocsService.getDocument.mockResolvedValue({ body: { content: [{ endIndex: 1 }] } });
+      mockDocsService.extractPlainText.mockReturnValue('');
+      mockDocsService.batchUpdate.mockResolvedValue({});
+      mockDocsService.uploadImage.mockResolvedValue('file-id');
+      mockLinkStore.loadImageCache.mockResolvedValue({}); // nothing uploaded before
+      vi.mocked(convertMarkdownToDocs).mockReturnValue({
+        elements: [
+          { type: 'image', code: 'graph A' },
+          { type: 'image', code: 'graph B' },
+        ],
+      });
+
+      const seen: { percent: number; label: string }[] = [];
+      await syncService.sync(
+        '/file.md',
+        'doc-123',
+        'x',
+        [
+          { code: 'graph A', pngBase64: 'AAA', liveUrl: 'https://mermaid.live/a' },
+          { code: 'graph B', pngBase64: 'BBB', liveUrl: 'https://mermaid.live/b' },
+        ],
+        undefined,
+        (u) => seen.push(u)
+      );
+
+      const labels = seen.map((u) => u.label);
+      expect(labels).toContain('Uploading diagram 1 of 2');
+      expect(labels).toContain('Uploading diagram 2 of 2');
+    });
   });
 
   describe('first sync (no baseline)', () => {
@@ -123,7 +290,7 @@ describe('GoogleDocsSyncService', () => {
       expect(hasDeleteOrInsert).toBe(true);
     });
 
-    it('should still apply formatting when text is unchanged', async () => {
+    it('sends nothing when text and formatting are both unchanged', async () => {
       const text = 'Hello world\n';
       mockLinkStore.loadBaseline.mockResolvedValue(text);
       mockDocsService.getDocument.mockResolvedValue({
@@ -144,8 +311,36 @@ describe('GoogleDocsSyncService', () => {
 
       const result = await syncService.sync('/file.md', 'doc-123', 'Hello world');
       expect(result.success).toBe(true);
-      // Even when text is identical, formatting is reapplied to ensure
-      // paragraph styles are correct (e.g. if a paragraph was changed to a heading)
+      // Nothing differs, so nothing is sent. Re-applying formatting to every
+      // paragraph regardless is what made a large document slow to sync.
+      expect(mockDocsService.batchUpdate).not.toHaveBeenCalled();
+    });
+
+    it('still applies formatting when a paragraph became a heading', async () => {
+      const text = 'Hello world\n';
+      mockLinkStore.loadBaseline.mockResolvedValue(text);
+      mockDocsService.getDocument.mockResolvedValue({
+        body: {
+          content: [{
+            paragraph: {
+              elements: [{ textRun: { content: text } }],
+              paragraphStyle: { namedStyleType: 'NORMAL_TEXT' },
+            },
+            startIndex: 1,
+            endIndex: 13,
+          }],
+        },
+      });
+      mockDocsService.extractPlainText.mockReturnValue(text);
+      mockDocsService.batchUpdate.mockResolvedValue({});
+
+      // Same text, but now a heading -- a formatting-only change that the
+      // text diff cannot see and which must still reach the document.
+      vi.mocked(convertMarkdownToDocs).mockReturnValue({
+        elements: [{ type: 'heading', headingLevel: 1, runs: [{ text: 'Hello world' }] }],
+      });
+
+      await syncService.sync('/file.md', 'doc-123', '# Hello world');
       expect(mockDocsService.batchUpdate).toHaveBeenCalled();
     });
   });
@@ -165,3 +360,48 @@ describe('GoogleDocsSyncService', () => {
     });
   });
 });
+
+
+describe('syncProgressPercent', () => {
+  it('reports a rising percentage across the fixed phases', () => {
+    expect(syncProgressPercent({ phase: 'reading' })).toBe(10);
+    expect(syncProgressPercent({ phase: 'converting' })).toBe(20);
+    expect(syncProgressPercent({ phase: 'applying' })).toBe(85);
+    expect(syncProgressPercent({ phase: 'done' })).toBe(100);
+  });
+
+  it('spreads diagram uploads across their band so the slow part visibly moves', () => {
+    // 5 diagrams: the band is 25..70, so each finished upload advances it.
+    expect(syncProgressPercent({ phase: 'diagrams', index: 0, total: 5 })).toBe(25);
+    expect(syncProgressPercent({ phase: 'diagrams', index: 5, total: 5 })).toBe(70);
+    const third = syncProgressPercent({ phase: 'diagrams', index: 3, total: 5 });
+    expect(third).toBeGreaterThan(25);
+    expect(third).toBeLessThan(70);
+  });
+
+  it('spreads table inserts across their band', () => {
+    expect(syncProgressPercent({ phase: 'tables', index: 0, total: 2 })).toBe(90);
+    expect(syncProgressPercent({ phase: 'tables', index: 2, total: 2 })).toBe(100);
+  });
+
+  it('never divides by zero when there is nothing to count', () => {
+    expect(syncProgressPercent({ phase: 'diagrams', index: 0, total: 0 })).toBe(70);
+  });
+
+  it('never goes backwards or leaves 0..100', () => {
+    const seen = [
+      syncProgressPercent({ phase: 'reading' }),
+      syncProgressPercent({ phase: 'converting' }),
+      syncProgressPercent({ phase: 'diagrams', index: 1, total: 2 }),
+      syncProgressPercent({ phase: 'applying' }),
+      syncProgressPercent({ phase: 'tables', index: 1, total: 2 }),
+      syncProgressPercent({ phase: 'done' }),
+    ];
+    expect(seen).toEqual([...seen].sort((a, b) => a - b));
+    for (const p of seen) {
+      expect(p).toBeGreaterThanOrEqual(0);
+      expect(p).toBeLessThanOrEqual(100);
+    }
+  });
+});
+

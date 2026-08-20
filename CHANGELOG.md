@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Sync progress snackbar**: a bar at the bottom of the window reporting what a Google Docs sync is doing and how far along it is. Diagram uploads and table inserts each advance it, so the slowest part of a sync visibly moves instead of appearing to hang. Dismiss it with the ✕; clicking the spinning sync button brings it back, still tracking the sync in progress.
+
+### Fixed
+
+- **Syncing no longer leaves stray characters behind when a paragraph changes.** Every delete had one character trimmed off its range to avoid removing a paragraph's trailing newline, but character-level deletes inside a paragraph have no newline to trim — so the last character of every removed run survived. Correcting `**bold**` markers left a lone `*` in the document.
+
+### Changed
+
+- **Syncing now only sends what actually changed.** Formatting was re-applied to every paragraph on every sync — a paragraph-style request, one request per text run, and a colour reset, for the whole document — which on a large file meant thousands of no-op requests and dominated sync time. Paragraphs whose formatting already matches are now left untouched. A sync where nothing changed at all is detected up front and does no API work beyond reading the document.
+- **Diagrams are only uploaded when they change.** Each rendered image is remembered by a hash of its bytes, so an unchanged diagram reuses the file already in Drive instead of uploading a duplicate on every sync.
+
+### Fixed
+
+- **Saving straight from an open editor no longer loses the edit.** Text being typed only reaches the document when the editor commits, and committing is also what marks the document as changed. Save checked "is there anything to change?" before that happened, so an edit the user never clicked away from looked like no change at all: nothing was written to disk, exiting edit mode committed it into the view anyway, and the change was gone the next time the file was opened. Pending edits are now committed before the document is read or judged unchanged.
+- **Bolding a word mid-sentence no longer leaves literal asterisks.** Selecting a word by double-click takes its trailing space with it, so the editor wrapped `Testt2 ` rather than `Testt2` and wrote `**Testt2 **`. A closing `**` preceded by a space is not a valid CommonMark closer, so the markers survived as text instead of becoming bold. Emphasis markers are now placed inside any surrounding whitespace, for bold, italic and strikethrough alike.
+
+### Changed
+
+- **Linking a file to a Google Doc now goes through Google's own file picker** instead of pasting a document URL. Picking a document is what grants access to it, so the app no longer needs the sensitive `documents` scope ("see, edit, create and delete all your Google Docs documents") and requests only per-file `drive.file` access.
+
+### Removed
+
+- The "paste a Google Doc URL" dialog. A pasted address cannot grant per-file access, so it no longer has a way to work.
+
+### Migration
+
+- Existing links created by pasting a URL will stop working, and signing in again is required. Re-link the affected files through the picker.
+
 ## [1.5.0] - 2026-08-20
 
 ### Added

@@ -8,6 +8,8 @@
  * anything else so source is never silently mangled.
  */
 
+import { delimit, escapeText } from '@shared/markdown/inlineMarks';
+
 /**
  * Serialize the inline children of `root` to a markdown string.
  */
@@ -17,33 +19,6 @@ export function serializeInline(root: HTMLElement): string {
     out += serializeNode(node);
   });
   return out;
-}
-
-/** Characters that, appearing literally in rendered text, would be re-parsed
- *  as markdown syntax. Block-level characters (#, -, etc.) are intentionally
- *  not escaped — they are inert inside inline content. */
-const ESCAPE_RE = /([\\`*_~[\]])/g;
-
-function escapeText(text: string): string {
-  return text.replace(ESCAPE_RE, '\\$1');
-}
-
-/**
- * Wrap content in an inline delimiter, keeping any leading or trailing
- * whitespace *outside* the markers.
- *
- * CommonMark will not close emphasis on a delimiter preceded by whitespace,
- * so `**word **` is not bold at all -- it renders as literal asterisks. The
- * browser hands us exactly that shape routinely, because double-clicking a
- * word selects its trailing space and the resulting <strong> spans it.
- */
-function delimit(inner: string, marker: string): string {
-  const match = /^(\s*)([\s\S]*?)(\s*)$/.exec(inner);
-  if (!match) return `${marker}${inner}${marker}`;
-  const [, lead = '', core, trail = ''] = match;
-  // Nothing but whitespace: `** **` is not emphasis either, so emit it bare.
-  if (!core) return inner;
-  return `${lead}${marker}${core}${marker}${trail}`;
 }
 
 function serializeNode(node: Node): string {

@@ -62,6 +62,7 @@ describe('placing a newly added structural element', () => {
     mockDocsService.extractPlainText.mockReturnValue(PLAIN);
     await linkStore.saveBaseline('doc-1', PLAIN);
     await linkStore.setLink('/test/file.md', 'doc-1');
+    await linkStore.updateLastSynced('/test/file.md', '2026-01-01T00:00:00.000Z');
   });
 
   afterEach(async () => {

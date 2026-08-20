@@ -721,7 +721,16 @@ export class GoogleDocsSyncService {
     try {
       this.report('Reading the Google Doc', 'reading');
       console.warn('[SyncService] Step 1: Loading baseline...');
-      const baseline = await this.linkStore.loadBaseline(docId);
+      // Baselines are keyed by document, but "has this file ever synced here"
+      // is a fact about the (file, document) pair. Two files can point at one
+      // Doc; without this, the second one inherits the first one's baseline,
+      // skips the first-sync guard, and overwrites the Doc without asking.
+      // lastSyncedAt is null until a file completes a sync of its own.
+      const link = this.linkStore.getLink(filePath);
+      const neverSyncedThisFile = link != null && link.lastSyncedAt == null;
+      const baseline = neverSyncedThisFile
+        ? null
+        : await this.linkStore.loadBaseline(docId);
       console.warn('[SyncService] Step 2: Reading current doc from API...');
       const currentDoc = await this.docsService.getDocument(docId);
       console.warn('[SyncService] Step 3: Extracting plain text for external-edit check...');

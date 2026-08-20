@@ -54,6 +54,7 @@ describe('Structural element sync', () => {
       const baselineText = 'Title\nOld A\nOld B\n';
       await linkStore.saveBaseline('doc-123', baselineText);
       await linkStore.setLink('/test/file.md', 'doc-123');
+      await linkStore.updateLastSynced('/test/file.md', '2026-01-01T00:00:00.000Z');
 
       // Current API doc has: paragraph, table with "Old A\nOld B\n", paragraph
       const apiDocWithTable = {
@@ -135,6 +136,7 @@ describe('Structural element sync', () => {
       const baselineText = 'Hello\nCol\nCell A\nCell B\n';
       await linkStore.saveBaseline('doc-123', baselineText);
       await linkStore.setLink('/test/file.md', 'doc-123');
+      await linkStore.updateLastSynced('/test/file.md', '2026-01-01T00:00:00.000Z');
 
       const apiDoc = {
         body: {
@@ -217,6 +219,7 @@ describe('Structural element sync', () => {
       const baselineText = 'Title\n\nEdit in Mermaid Live\n';
       await linkStore.saveBaseline('doc-123', baselineText);
       await linkStore.setLink('/test/file.md', 'doc-123');
+      await linkStore.updateLastSynced('/test/file.md', '2026-01-01T00:00:00.000Z');
 
       // API doc has: paragraph + image paragraph + link paragraph
       const apiDoc = {

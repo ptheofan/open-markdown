@@ -194,6 +194,21 @@ describe('deciding what a sync should do', () => {
     expect(mockDocsService.batchUpdate).not.toHaveBeenCalled();
   });
 
+  it('does not inherit another file\'s baseline for the same Doc', async () => {
+    // Two files can point at one Doc. Baselines are keyed by docId, so a file
+    // that has never synced would otherwise pick up the other file's baseline,
+    // skip the first-sync guard entirely, and overwrite the Doc without asking.
+    // lastSyncedAt is the per-file signal: null means this file never synced.
+    mockLinkStore.getLink.mockReturnValue({ docId: 'doc-1', lastSyncedAt: null });
+    mockLinkStore.loadBaseline.mockResolvedValue('Intro paragraph\nSecond paragraph\n');
+    mockDocsService.extractPlainText.mockReturnValue('Intro paragraph\nSecond paragraph\n');
+
+    const result = await syncService.sync('/a-brand-new-file.md', 'doc-1', 'markdown');
+
+    expect(result.conflict).toBe('both');
+    expect(mockDocsService.batchUpdate).not.toHaveBeenCalled();
+  });
+
   it('still populates a Doc that is genuinely empty on first link', async () => {
     mockLinkStore.loadBaseline.mockResolvedValue(null);
     mockDocsService.getDocument.mockResolvedValue({ body: { content: [{ endIndex: 2 }] } });

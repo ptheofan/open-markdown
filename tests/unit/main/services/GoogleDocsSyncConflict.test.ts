@@ -326,6 +326,30 @@ describe('carrying out the user\'s choice', () => {
     expect(updates.at(-1)).toEqual({ percent: 100, label: 'Done' });
   });
 
+  it('records nothing when the local file could not be written', async () => {
+    // Recording a sync the file never received would make the next sync read
+    // the stale file, decide the local side changed, and push it back over the
+    // collaborator's edits.
+    const result = await syncService.resolve('/file.md', 'doc-1', 'pull', SNAPSHOT, {
+      writeLocal: () => Promise.resolve(false),
+    });
+
+    expect(result.success).toBe(false);
+    expect(mockLinkStore.saveBaseline).not.toHaveBeenCalled();
+    expect(mockLinkStore.saveModelFingerprint).not.toHaveBeenCalled();
+  });
+
+  it('writes the file before touching the Doc, so a failed push self-heals', async () => {
+    const order: string[] = [];
+
+    await syncService.resolve('/file.md', 'doc-1', 'merge', 'Intro EDITED\n\nOld second text\n', {
+      writeLocal: () => { order.push('file'); return Promise.resolve(true); },
+    });
+    if (mockDocsService.batchUpdate.mock.calls.length > 0) order.push('doc');
+
+    expect(order).toEqual(['file', 'doc']);
+  });
+
   it('says plainly that a merge needs a previous sync to compare against', async () => {
     mockLinkStore.loadMarkdownSnapshots.mockResolvedValue(null);
 

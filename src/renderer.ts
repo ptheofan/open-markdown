@@ -1385,20 +1385,16 @@ class App {
   }
 
   /**
-   * Write markdown pulled from the Doc to disk and show it.
+   * Show markdown that the main process already wrote to disk.
    *
-   * The file watcher will also see this write, but its handler ignores changes
-   * while edit mode is open, so the viewer is re-rendered here directly.
+   * The write happens in main, before it records the sync, so the file can
+   * never end up behind what we have recorded. The watcher also sees that
+   * write, but its handler ignores changes while edit mode is open, so the
+   * viewer is re-rendered here directly.
    */
   private async applyPulledMarkdown(markdown: string): Promise<void> {
     const filePath = this.state.currentFilePath;
     if (!filePath) return;
-
-    const written = await window.electronAPI.file.write(filePath, markdown);
-    if (!written.success) {
-      this.toast?.error(written.error ?? 'Could not write the file');
-      return;
-    }
 
     await this.markdownViewer?.render(markdown, filePath);
     this.state.hasUnsavedChanges = false;

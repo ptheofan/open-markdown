@@ -717,6 +717,17 @@ export class GoogleDocsSyncService {
       tableWidths?: TableColumnWidths[];
       resolutions?: SyncConflictChoice[];
       onProgress?: (update: SyncProgressUpdate) => void;
+      /**
+       * Write new content to the local markdown file, reporting success.
+       *
+       * The local write always goes first. Recording a sync the file never
+       * received would leave the next sync reading stale content, deciding the
+       * local side had changed, and pushing it back over the Doc -- undoing
+       * the very edits we just pulled in. Doing the file first means a later
+       * failure leaves local ahead of the Doc, which the next sync heals by
+       * pushing.
+       */
+      writeLocal?: (markdown: string) => Promise<boolean>;
     } = {},
   ): Promise<GoogleDocsResolveResult> {
     this.progress = options.onProgress;
@@ -746,6 +757,9 @@ export class GoogleDocsSyncService {
             remote,
           }).blocks)
           : remote;
+        if (options.writeLocal && !(await options.writeLocal(merged))) {
+          return { success: false, error: 'Could not write the local file' };
+        }
         // The Doc already holds this content, so there is nothing to push.
         await this.recordSynced(filePath, docId, merged, currentDoc, remote);
         return { success: true, markdown: merged };
@@ -773,6 +787,9 @@ export class GoogleDocsSyncService {
       const merged = joinBlocks(
         applyResolutions(outcome.blocks, outcome.conflicts, options.resolutions ?? []),
       );
+      if (options.writeLocal && !(await options.writeLocal(merged))) {
+        return { success: false, error: 'Could not write the local file' };
+      }
       this.report('Applying changes', 'applying');
       // The merged text carries the local-only edits too, so the Doc needs it.
       const pushed = await this.syncForceOverwrite(

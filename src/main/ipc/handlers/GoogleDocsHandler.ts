@@ -4,6 +4,7 @@ import { getGoogleAuthService } from '@main/services/GoogleAuthService';
 import { getGoogleDocsLinkStore } from '@main/services/GoogleDocsLinkStore';
 import { createGoogleDocsService } from '@main/services/GoogleDocsService';
 import { createGoogleDocsSyncService } from '@main/services/GoogleDocsSyncService';
+import { getFileService } from '@main/services/FileService';
 import type { TableColumnWidths, MermaidDiagramData, GoogleDocsSyncResult, SyncResolveMode, SyncConflictChoice } from '@shared/types/google-docs';
 
 function sendToAllWindows(channel: string, data: unknown): void {
@@ -167,6 +168,10 @@ export function registerGoogleDocsHandlers(): void {
           onProgress: (update) => sendToAllWindows(
             IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_PROGRESS, update,
           ),
+          writeLocal: async (content) => {
+            const written = await getFileService().writeFile(filePath, content);
+            return written.success;
+          },
         });
         if (!result.success && isGone(result.status)) {
           return await dropDeadLink(filePath);

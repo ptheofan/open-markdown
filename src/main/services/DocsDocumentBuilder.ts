@@ -7,6 +7,7 @@
  */
 import type { DocsDocument, DocsElement, DocsTextRun, GDocsApiDocument } from '@shared/types/google-docs';
 import type { DocsBatchUpdateRequest } from '@main/services/GoogleDocsService';
+import { highlightCode } from '@main/services/CodeHighlighter';
 
 interface BuildContext {
   index: number;
@@ -120,6 +121,81 @@ function buildHeading(ctx: BuildContext, element: DocsElement): void {
   ctx.index += fullText.length;
 }
 
+/** Background of the shaded code block — light enough for the token colours. */
+const CODE_BLOCK_BACKGROUND = { red: 0.965, green: 0.973, blue: 0.980 };
+
+/**
+ * Styling for a code block whose text occupies `bodyLength` characters starting
+ * at `startIndex`.
+ *
+ * The Docs API cannot insert a real code block — that is an editor-only
+ * building block with no API surface — so this approximates one: a shaded
+ * paragraph, monospace text, and syntax colours we compute ourselves.
+ *
+ * Shared by the initial insert and the formatting-reapply pass so the two can
+ * never drift apart.
+ */
+export function buildCodeBlockStyleRequests(
+  startIndex: number,
+  bodyLength: number,
+  code: string,
+  language: string | undefined,
+): DocsBatchUpdateRequest[] {
+  const requests: DocsBatchUpdateRequest[] = [];
+  if (bodyLength <= 0) return requests;
+
+  // The trailing newline belongs to the paragraph, not the styled text.
+  const styledEnd = startIndex + bodyLength;
+
+  requests.push({
+    updateParagraphStyle: {
+      range: { startIndex, endIndex: styledEnd },
+      paragraphStyle: {
+        namedStyleType: 'NORMAL_TEXT',
+        shading: { backgroundColor: { color: { rgbColor: CODE_BLOCK_BACKGROUND } } },
+      },
+      fields: 'namedStyleType,shading',
+    },
+  });
+
+  requests.push({
+    updateTextStyle: {
+      range: { startIndex, endIndex: styledEnd },
+      textStyle: { weightedFontFamily: { fontFamily: 'Courier New' } },
+      fields: 'weightedFontFamily',
+    },
+  });
+
+  // Clear first, then paint. Reapplying over previously coloured text would
+  // otherwise leave stale colours on spans that are no longer tokens.
+  requests.push({
+    updateTextStyle: {
+      range: { startIndex, endIndex: styledEnd },
+      textStyle: { foregroundColor: {} },
+      fields: 'foregroundColor',
+    },
+  });
+
+  let offset = 0;
+  for (const span of highlightCode(code, language)) {
+    const spanStart = startIndex + offset;
+    const spanEnd = Math.min(spanStart + span.text.length, styledEnd);
+    offset += span.text.length;
+
+    if (!span.color || spanEnd <= spanStart) continue;
+
+    requests.push({
+      updateTextStyle: {
+        range: { startIndex: spanStart, endIndex: spanEnd },
+        textStyle: { foregroundColor: { color: { rgbColor: span.color } } },
+        fields: 'foregroundColor',
+      },
+    });
+  }
+
+  return requests;
+}
+
 function buildCodeBlock(ctx: BuildContext, element: DocsElement): void {
   const code = element.code ?? '';
   // Ensure code ends with newline
@@ -133,27 +209,9 @@ function buildCodeBlock(ctx: BuildContext, element: DocsElement): void {
     },
   });
 
-  // Apply monospace font to entire code block (exclude trailing newline for style)
-  const styledEnd = startIndex + fullText.length - 1;
-  if (styledEnd > startIndex) {
-    ctx.requests.push({
-      updateTextStyle: {
-        range: { startIndex, endIndex: styledEnd },
-        textStyle: {
-          weightedFontFamily: { fontFamily: 'Courier New' },
-        },
-        fields: 'weightedFontFamily',
-      },
-    });
-  }
-
-  ctx.requests.push({
-    updateParagraphStyle: {
-      range: { startIndex, endIndex: startIndex + fullText.length },
-      paragraphStyle: { namedStyleType: 'NORMAL_TEXT' },
-      fields: 'namedStyleType',
-    },
-  });
+  ctx.requests.push(
+    ...buildCodeBlockStyleRequests(startIndex, fullText.length - 1, code, element.language),
+  );
 
   ctx.index += fullText.length;
 }
@@ -497,14 +555,6 @@ function applyElementFormatting(
         fields: 'namedStyleType',
       },
     });
-  } else if (elem.type === 'code_block') {
-    requests.push({
-      updateParagraphStyle: {
-        range: { startIndex: apiPara.startIndex, endIndex: apiPara.endIndex },
-        paragraphStyle: { namedStyleType: 'NORMAL_TEXT' },
-        fields: 'namedStyleType',
-      },
-    });
   } else if (elem.type === 'list_item') {
     const bulletPreset = elem.listOrdered
       ? 'NUMBERED_DECIMAL_ALPHA_ROMAN'
@@ -574,24 +624,6 @@ function applyElementFormatting(
     }
   }
 
-  // Code block: apply monospace to entire text (excluding trailing newline,
-  // consistent with buildCodeBlock which styles up to fullText.length - 1)
-  if (elem.type === 'code_block') {
-    const codeText = (elem.code ?? '').replace(/\n$/, '');
-    const styledEnd = apiPara.textStartIndex + codeText.length;
-    if (styledEnd > apiPara.textStartIndex) {
-      requests.push({
-        updateTextStyle: {
-          range: { startIndex: apiPara.textStartIndex, endIndex: styledEnd },
-          textStyle: {
-            weightedFontFamily: { fontFamily: 'Courier New' },
-          },
-          fields: 'weightedFontFamily',
-        },
-      });
-    }
-  }
-
   // Reset foreground color to prevent bleeding
   requests.push({
     updateTextStyle: {
@@ -606,6 +638,33 @@ function applyElementFormatting(
 // a match.  Structural gaps (table cells, image-adjacent paragraphs)
 // are typically 1-5 paragraphs wide.
 const LOOKAHEAD_WINDOW = 10;
+
+/**
+ * Find the consecutive API paragraphs that together hold a code block.
+ *
+ * Inserting a block of code writes one string containing newlines, which Docs
+ * splits into a paragraph per line. Matching therefore accumulates paragraphs
+ * until their joined text equals the block, and gives up as soon as it has
+ * overshot — the block cannot span more text than it contains.
+ */
+function matchCodeBlockParagraphs(
+  apiParas: ApiParagraph[],
+  from: number,
+  elemText: string,
+): { startIdx: number; endIdx: number } | null {
+  const searchEnd = Math.min(from + LOOKAHEAD_WINDOW, apiParas.length);
+
+  for (let startIdx = from; startIdx < searchEnd; startIdx++) {
+    let joined = '';
+    for (let endIdx = startIdx; endIdx < apiParas.length; endIdx++) {
+      joined += apiParas[endIdx]!.text;
+      const candidate = joined.replace(/\n$/, '');
+      if (candidate === elemText) return { startIdx, endIdx };
+      if (candidate.length >= elemText.length) break;
+    }
+  }
+  return null;
+}
 
 /**
  * Build formatting-only requests by matching API paragraphs to model
@@ -633,6 +692,31 @@ export function buildFormattingFromApiDoc(apiDoc: GDocsApiDocument, docsDoc: Doc
 
     const elem = modelElements[modelIdx]!;
     const elemText = getLeafText(elem);
+
+    // A code block is one model element but N API paragraphs — one per line —
+    // so it can never equal a single paragraph's text. Match the whole span and
+    // style it in one go, otherwise multi-line blocks silently go unformatted.
+    if (elem.type === 'code_block') {
+      const span = matchCodeBlockParagraphs(apiParas, apiIdx, elemText);
+      if (!span) continue;
+
+      const first = apiParas[span.startIdx]!;
+      const last = apiParas[span.endIdx]!;
+      // endIndex includes the paragraph's trailing newline; styling stops short.
+      const bodyLength = last.endIndex - 1 - first.textStartIndex;
+
+      requests.push(
+        ...buildCodeBlockStyleRequests(
+          first.textStartIndex,
+          bodyLength,
+          elem.code ?? '',
+          elem.language,
+        ),
+      );
+
+      apiIdx = span.endIdx + 1;
+      continue;
+    }
 
     // Try to find a matching API paragraph starting at apiIdx
     let matchOffset = -1;

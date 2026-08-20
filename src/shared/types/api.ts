@@ -85,7 +85,7 @@ export const IPC_CHANNELS = {
     AUTH_STATUS: 'google-docs:auth-status',
     AUTH_SIGN_IN: 'google-docs:auth-sign-in',
     AUTH_SIGN_OUT: 'google-docs:auth-sign-out',
-    LINK: 'google-docs:link',
+    PICK_AND_LINK: 'google-docs:pick-and-link',
     UNLINK: 'google-docs:unlink',
     GET_LINK: 'google-docs:get-link',
     SYNC: 'google-docs:sync',
@@ -298,7 +298,8 @@ export interface GoogleDocsAPI {
   getAuthStatus: () => Promise<GoogleAuthState>;
   signIn: () => Promise<GoogleAuthState>;
   signOut: () => Promise<void>;
-  link: (filePath: string, docUrl: string) => Promise<GoogleDocLink>;
+  /** Opens the Google Picker. Resolves null if the user picked nothing. */
+  pickAndLink: (filePath: string) => Promise<GoogleDocLink | null>;
   unlink: (filePath: string) => Promise<void>;
   getLink: (filePath: string) => Promise<GoogleDocLink | null>;
   sync: (filePath: string, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[], tableWidths?: TableColumnWidths[]) => Promise<GoogleDocsSyncResult>;

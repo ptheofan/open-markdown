@@ -47,16 +47,14 @@ export function registerGoogleDocsHandlers(): void {
     sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_AUTH_CHANGE, state);
   });
 
-  // Link file to doc
+  // Pick a doc through the Google Picker and link the file to it.
+  // Picking is what grants this app drive.file access to that document, so
+  // there is no way to link a document without going through it.
   ipcMain.handle(
-    IPC_CHANNELS.GOOGLE_DOCS.LINK,
-    async (_event, filePath: string, docUrl: string) => {
-      const docId = authService.extractDocId(docUrl);
-      if (!docId) {
-        throw new Error(
-          'Invalid Google Docs URL. Expected format: https://docs.google.com/document/d/...',
-        );
-      }
+    IPC_CHANNELS.GOOGLE_DOCS.PICK_AND_LINK,
+    async (_event, filePath: string) => {
+      const docId = await authService.pickDocument();
+      if (!docId) return null; // user cancelled or picked nothing
       await linkStore.setLink(filePath, docId);
       return linkStore.getLink(filePath);
     },
@@ -134,7 +132,7 @@ export function unregisterGoogleDocsHandlers(): void {
   ipcMain.removeHandler(IPC_CHANNELS.GOOGLE_DOCS.AUTH_STATUS);
   ipcMain.removeHandler(IPC_CHANNELS.GOOGLE_DOCS.AUTH_SIGN_IN);
   ipcMain.removeHandler(IPC_CHANNELS.GOOGLE_DOCS.AUTH_SIGN_OUT);
-  ipcMain.removeHandler(IPC_CHANNELS.GOOGLE_DOCS.LINK);
+  ipcMain.removeHandler(IPC_CHANNELS.GOOGLE_DOCS.PICK_AND_LINK);
   ipcMain.removeHandler(IPC_CHANNELS.GOOGLE_DOCS.UNLINK);
   ipcMain.removeHandler(IPC_CHANNELS.GOOGLE_DOCS.GET_LINK);
   ipcMain.removeHandler(IPC_CHANNELS.GOOGLE_DOCS.SYNC);

@@ -16,7 +16,6 @@ import {
   createFindBar,
   createRecentFilesDropdown,
   createOpenExternalDropdown,
-  createGoogleDocsLinkDialog,
   createGoogleDocsButton,
   createGoogleDocsConfirmDialog,
   Toast,
@@ -31,7 +30,6 @@ import {
   type FindBar,
   type RecentFilesDropdown,
   type OpenExternalDropdown,
-  type GoogleDocsLinkDialog,
   type GoogleDocsButton,
   type GoogleDocsConfirmDialog,
 } from './renderer/components';
@@ -98,7 +96,6 @@ class App {
   private recentFilesDropdown: RecentFilesDropdown | null = null;
   private openExternalDropdown: OpenExternalDropdown | null = null;
   private googleDocsButton: GoogleDocsButton | null = null;
-  private googleDocsLinkDialog: GoogleDocsLinkDialog | null = null;
   private googleDocsConfirmDialog: GoogleDocsConfirmDialog | null = null;
 
   private state: AppState = {
@@ -260,21 +257,13 @@ class App {
     if (gdocsSyncBtn) {
       this.googleDocsButton = createGoogleDocsButton(gdocsSyncBtn);
       this.googleDocsButton.setCallbacks({
-        onLinkRequest: () => this.googleDocsLinkDialog?.show(),
+        onLinkRequest: () => { void this.handleGoogleDocsPickAndSync(); },
         onSignInRequest: () => { void this.handleGoogleDocsSignIn(); },
-        onSyncRequest: () => { void this.showSyncVerificationDialog(); },
+        onSyncRequest: () => { void this.handleGoogleDocsSync(); },
       });
     }
 
     // Create Google Docs link dialog
-    const gdocsDialogEl = document.getElementById('gdocs-link-dialog');
-    if (gdocsDialogEl) {
-      this.googleDocsLinkDialog = createGoogleDocsLinkDialog(gdocsDialogEl);
-      this.googleDocsLinkDialog.setCallbacks({
-        onLink: (url: string) => { void this.handleGoogleDocsLinkAndSync(url); },
-      });
-    }
-
     // Create Google Docs confirm dialog
     const gdocsConfirmEl = document.getElementById('gdocs-confirm-dialog');
     if (gdocsConfirmEl) {
@@ -1114,53 +1103,22 @@ class App {
   }
 
   /**
-   * Show the link dialog pre-filled with the current linked doc URL
-   * so the user can verify or change it before syncing.
+   * Link the current file to a Google Doc chosen in the Google Picker, then sync.
+   *
+   * The picker runs through Google's consent screen, so it signs the user in as
+   * a side effect -- there is no separate sign-in step to sequence here.
    */
-  private async showSyncVerificationDialog(): Promise<void> {
-    if (!this.state.currentFilePath) return;
-
-    let existingUrl = '';
-    try {
-      const link = await window.electronAPI.googleDocs.getLink(this.state.currentFilePath);
-      if (link?.docId) {
-        existingUrl = `https://docs.google.com/document/d/${link.docId}/edit`;
-      }
-    } catch {
-      // No link yet — dialog will show empty
-    }
-
-    this.googleDocsLinkDialog?.show(existingUrl);
-  }
-
-  /**
-   * Handle Google Docs link + sync: link the doc then immediately sync.
-   */
-  private async handleGoogleDocsLinkAndSync(url: string): Promise<void> {
+  private async handleGoogleDocsPickAndSync(): Promise<void> {
     if (!this.state.currentFilePath) return;
 
     try {
-      await window.electronAPI.googleDocs.link(this.state.currentFilePath, url);
-      this.googleDocsLinkDialog?.hide();
+      const link = await window.electronAPI.googleDocs.pickAndLink(this.state.currentFilePath);
       await this.updateGoogleDocsButtonState();
-
-      // Linking while signed out must not force a sync — it would fail with
-      // 'Not authenticated' and discard the 'needs-auth' state just computed
-      // above. Sign in first, and only sync once that actually succeeded.
-      const authState = await window.electronAPI.googleDocs.getAuthStatus();
-      if (!authState.isAuthenticated) {
-        await this.handleGoogleDocsSignIn();
-        const reauthed = await window.electronAPI.googleDocs.getAuthStatus();
-        if (!reauthed.isAuthenticated) {
-          this.googleDocsButton?.setState('needs-auth');
-          return;
-        }
-      }
-
+      if (!link) return; // user closed the picker without choosing
       await this.handleGoogleDocsSync();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to link';
-      this.googleDocsLinkDialog?.showError(message);
+      this.toast?.error(message);
     }
   }
 
@@ -1440,7 +1398,6 @@ class App {
     this.recentFilesDropdown?.destroy();
     this.openExternalDropdown?.destroy();
     this.googleDocsButton?.destroy();
-    this.googleDocsLinkDialog?.destroy();
     this.googleDocsConfirmDialog?.destroy();
   }
 }

@@ -50,13 +50,14 @@
 
     <h2>Google Docs synchronisation (optional)</h2>
     <p>If you choose to sign in with Google, the app connects to Google&rsquo;s APIs on your behalf using OAuth 2.0. We never see your Google password &mdash; sign-in happens in your browser, on Google&rsquo;s own pages.</p>
+    <p>To link a file, you choose the target document in <strong>Google&rsquo;s own file picker</strong>, which runs on Google&rsquo;s pages and not inside the app. Picking a document is what grants the app access to it, one document at a time. The app never sees the rest of your Drive, and cannot browse or search it.</p>
 
     <h3>What the app is permitted to do</h3>
     <ul>
-      <li><code>documents</code> &mdash; read and write the content of Google Docs, so a linked document can be updated to match your local file.</li>
-      <li><code>drive.file</code> &mdash; create and manage files the app itself creates in your Drive, used for images embedded in a synced document.</li>
+      <li><code>drive.file</code> &mdash; see and edit <strong>only the specific files you hand to this app</strong>: the document you choose in Google&rsquo;s own file picker, and the images the app uploads for a synced document. It grants no access to anything else in your Drive.</li>
       <li><code>email</code> &mdash; read your account&rsquo;s email address, shown in the app so you can see which account is connected.</li>
     </ul>
+    <p>The app deliberately does <strong>not</strong> request <code>documents</code>, the broader scope that would let it &ldquo;see, edit, create and delete all your Google Docs documents&rdquo;. It cannot open a document you have not picked, even if it knows the document&rsquo;s address.</p>
 
     <h3>What is sent, and to whom</h3>
     <p>When you sync a file, its contents &mdash; text, formatting, tables, and images &mdash; are sent to <strong>Google&rsquo;s servers only</strong>, and written into the Google Doc you linked. The data goes from your device to Google directly. It does not pass through any system of ours, because we do not have one.</p>

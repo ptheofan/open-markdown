@@ -29,8 +29,12 @@ function deobfuscate(encoded: string): string {
 const DEFAULT_CLIENT_ID = deobfuscate(__GOOGLE_OAUTH_CLIENT_ID_ENC__);
 const DEFAULT_CLIENT_SECRET = deobfuscate(__GOOGLE_OAUTH_CLIENT_SECRET_ENC__);
 
+// drive.file grants per-file access: only documents the app creates or the
+// user hands it through the Google Picker. The broader auth/documents scope
+// ("see, edit, create and delete ALL your Google Docs") is deliberately not
+// requested -- it is a sensitive scope requiring Google verification, and
+// per-file access is enough once linking goes through the Picker.
 const SCOPES = [
-  'https://www.googleapis.com/auth/documents',
   'https://www.googleapis.com/auth/drive.file',
   'email',
 ];
@@ -105,7 +109,10 @@ export class GoogleAuthService {
    * Generate a Google OAuth2 authorization URL with PKCE.
    * Optionally override the client ID for this request.
    */
-  generateAuthUrl(clientId?: string): { url: string; codeVerifier: string } {
+  generateAuthUrl(
+    clientId?: string,
+    options?: { pickDocument?: boolean }
+  ): { url: string; codeVerifier: string } {
     const codeVerifier = generateCodeVerifier();
     const codeChallenge = generateCodeChallenge(codeVerifier);
     const activeClientId = clientId ?? this.getActiveClientId();
@@ -120,6 +127,14 @@ export class GoogleAuthService {
       access_type: 'offline',
       prompt: 'consent',
     });
+
+    // The desktop Google Picker is not a JavaScript widget: it rides on this
+    // same consent redirect. Adding trigger_onepick makes Google show the file
+    // picker after consent and hand the chosen ids back on the callback as
+    // picked_file_ids, which is what grants drive.file access to them.
+    if (options?.pickDocument) {
+      params.set('trigger_onepick', 'true');
+    }
 
     return {
       url: `${AUTH_ENDPOINT}?${params.toString()}`,
@@ -150,7 +165,7 @@ export class GoogleAuthService {
 
     // Wait for the authorization code from the callback server
     console.warn('[GoogleAuth] Waiting for callback...');
-    const code = await this.waitForCallback();
+    const { code } = await this.waitForCallback();
     console.warn('[GoogleAuth] Got auth code, exchanging for tokens...');
 
     // Exchange the code for tokens
@@ -174,6 +189,45 @@ export class GoogleAuthService {
     console.warn('[GoogleAuth] Tokens saved. Auth state:', this.getAuthState());
 
     return this.getAuthState();
+  }
+
+  /**
+   * Let the user choose a Google Doc through the Google Picker.
+   *
+   * The desktop Picker is a redirect flow rather than an embedded widget: the
+   * consent page is reopened with trigger_onepick, and Google appends the
+   * chosen ids to our loopback callback. Completing it is what grants this app
+   * drive.file access to the chosen document, so the resulting tokens replace
+   * the stored ones.
+   *
+   * Returns the picked document id, or null if the user picked nothing.
+   */
+  async pickDocument(): Promise<string | null> {
+    await this.initialize();
+    if (!this.callbackServer) {
+      this.startCallbackServerSync();
+    }
+
+    const { url, codeVerifier } = this.generateAuthUrl(undefined, { pickDocument: true });
+    await shell.openExternal(url);
+
+    const { code, pickedFileIds } = await this.waitForCallback();
+
+    // Exchange regardless of the outcome: the code is single-use and the fresh
+    // grant is what carries access to the document just picked.
+    const activeClientId = this.getActiveClientId();
+    const tokenResponse = await this.exchangeCode(code, codeVerifier, activeClientId);
+    const email = this.tokens?.email ?? (await this.fetchUserEmail(tokenResponse.access_token));
+
+    this.tokens = {
+      access_token: tokenResponse.access_token,
+      refresh_token: tokenResponse.refresh_token,
+      expires_at: Date.now() + tokenResponse.expires_in * 1000,
+      email,
+    };
+    await this.saveTokens();
+
+    return pickedFileIds[0] ?? null;
   }
 
   /**
@@ -229,13 +283,6 @@ export class GoogleAuthService {
     return this.customClientId ?? DEFAULT_CLIENT_ID;
   }
 
-  // ── URL parsing ───────────────────────────────────────────
-
-  extractDocId(url: string): string | null {
-    const match = url.match(/\/document\/d\/([a-zA-Z0-9_-]+)/);
-    return match?.[1] ?? null;
-  }
-
   // ── Cleanup ───────────────────────────────────────────────
 
   destroy(): void {
@@ -270,8 +317,8 @@ export class GoogleAuthService {
    * Wait for the OAuth callback to arrive with an authorization code.
    * Returns a promise that resolves with the code.
    */
-  private waitForCallback(): Promise<string> {
-    return new Promise<string>((resolve, reject) => {
+  private waitForCallback(): Promise<{ code: string; pickedFileIds: string[] }> {
+    return new Promise<{ code: string; pickedFileIds: string[] }>((resolve, reject) => {
       if (!this.callbackServer) {
         reject(new Error('Callback server not running'));
         return;
@@ -298,6 +345,11 @@ export class GoogleAuthService {
 
         const code = reqUrl.searchParams.get('code');
         const error = reqUrl.searchParams.get('error');
+        // Present only when the flow was started with trigger_onepick.
+        const pickedFileIds = (reqUrl.searchParams.get('picked_file_ids') ?? '')
+          .split(',')
+          .map((id) => id.trim())
+          .filter((id) => id.length > 0);
 
         if (error) {
           res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -317,7 +369,7 @@ export class GoogleAuthService {
           );
           clearTimeout(timeout);
           this.stopCallbackServer();
-          resolve(code);
+          resolve({ code, pickedFileIds });
         }
       };
 

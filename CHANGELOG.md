@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Linking a file to a Google Doc now goes through Google's own file picker** instead of pasting a document URL. Picking a document is what grants access to it, so the app no longer needs the sensitive `documents` scope ("see, edit, create and delete all your Google Docs documents") and requests only per-file `drive.file` access.
+
+### Removed
+
+- The "paste a Google Doc URL" dialog. A pasted address cannot grant per-file access, so it no longer has a way to work.
+
+### Migration
+
+- Existing links created by pasting a URL will stop working, and signing in again is required. Re-link the affected files through the picker.
+
 ## [1.5.0] - 2026-08-20
 
 ### Added

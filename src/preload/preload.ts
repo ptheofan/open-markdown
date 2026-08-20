@@ -363,8 +363,8 @@ const electronAPI: ElectronAPI = {
       return ipcRenderer.invoke(IPC_CHANNELS.GOOGLE_DOCS.AUTH_SIGN_OUT);
     },
 
-    link: (filePath: string, docUrl: string): Promise<GoogleDocLink> => {
-      return ipcRenderer.invoke(IPC_CHANNELS.GOOGLE_DOCS.LINK, filePath, docUrl);
+    pickAndLink: (filePath: string): Promise<GoogleDocLink | null> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.GOOGLE_DOCS.PICK_AND_LINK, filePath);
     },
 
     unlink: (filePath: string): Promise<void> => {

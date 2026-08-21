@@ -109,7 +109,7 @@ describe('Structural element sync', () => {
       // Markdown with changed table
       const markdown = '# Title\n\n| Col |\n|---|\n| New A |\n| New B |';
 
-      const result = await syncService.sync('/test/file.md', 'doc-123', markdown);
+      const result = await syncService.syncForceOverwrite('/test/file.md', 'doc-123', markdown);
       expect(result.success).toBe(true);
 
       // A row was added and the columns still line up, so the table is resized
@@ -193,7 +193,7 @@ describe('Structural element sync', () => {
       // Same content — table hasn't changed
       const markdown = 'Hello\n\n| Col |\n|---|\n| Cell A |\n| Cell B |';
 
-      const result = await syncService.sync('/test/file.md', 'doc-123', markdown);
+      const result = await syncService.syncForceOverwrite('/test/file.md', 'doc-123', markdown);
       expect(result.success).toBe(true);
 
       // Should NOT have any deleteContentRange for the table
@@ -271,7 +271,7 @@ describe('Structural element sync', () => {
         liveUrl: 'https://mermaid.live/edit#pako:NEW',
       }];
 
-      const result = await syncService.sync(
+      const result = await syncService.syncForceOverwrite(
         '/test/file.md',
         'doc-123',
         markdown,

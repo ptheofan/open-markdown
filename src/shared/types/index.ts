@@ -105,6 +105,7 @@ export type {
   SyncProgressUpdate,
   SyncConflictKind,
   SyncResolveMode,
+  SyncDirection,
   SyncChangeKind,
   SyncChange,
   SyncConflictChoice,

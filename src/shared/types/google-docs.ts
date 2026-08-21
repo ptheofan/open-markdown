@@ -134,12 +134,24 @@ export interface GoogleDocLink {
 export type SyncConflictKind = 'both' | 'remote-only';
 
 /**
- * The two halves of resolving a sync.
+ * Which way the user asked to sync.
+ *
+ * The direction names the intent and sets every change's default: a pull
+ * makes the file say what the Doc says, a push the reverse. It is not a
+ * read-only lock on the other side -- keeping one of your own blocks during
+ * a pull sends that block to the Doc, because an apply that left the two
+ * sides holding different content would make the next sync blind to the
+ * difference. The snapshots record what both sides agree on, so a divergence
+ * baked into them can never be found again.
+ */
+export type SyncDirection = 'push' | 'pull';
+
+/**
+ * The two halves of carrying out a sync.
  *
  * 'preview' computes every difference and hands it back without touching
  * either side; 'apply' takes the markdown the user settled on and makes both
- * the file and the Doc hold it. Direction is no longer a mode -- "use the
- * Doc" and "use the file" are just every change set one way in the preview.
+ * the file and the Doc hold it.
  */
 export type SyncResolveMode = 'preview' | 'apply';
 
@@ -195,6 +207,17 @@ export interface GoogleDocsResolveResult extends GoogleDocsSyncResult {
    * The review screen substitutes into this to preview a different choice.
    */
   blocks?: string[];
+  /**
+   * The chosen direction has nothing to carry: a pull where the Doc has not
+   * moved, or a push where the file has not. Reported rather than applied
+   * silently, so the user gets an answer either way.
+   */
+  nothingToDo?: boolean;
+  /**
+   * Something of the user's is at stake -- their own edits during a pull, the
+   * Doc's during a push -- so the defaults must not be applied unseen.
+   */
+  needsReview?: boolean;
 }
 
 /** Which stage of a sync is running. */

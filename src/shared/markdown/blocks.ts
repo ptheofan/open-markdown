@@ -119,6 +119,15 @@ export function joinBlocks(blocks: string[]): string {
  * `choices` is positional: one entry per change, in the order reported. A
  * missing entry leaves the change at its default.
  */
+export function chooseSide(change: SyncChange, choice: SyncConflictChoice): string {
+  if (choice === 'both') {
+    // One side may hold nothing -- "keep both" of a block only one side has
+    // is just that block, not a stray blank.
+    return [change.local, change.remote].filter((side) => side.trim() !== '').join('\n\n');
+  }
+  return choice === 'remote' ? change.remote : change.local;
+}
+
 export function applyResolutions(
   blocks: string[],
   changes: SyncChange[],
@@ -126,16 +135,7 @@ export function applyResolutions(
 ): string[] {
   const out = [...blocks];
   changes.forEach((change, i) => {
-    const choice = choices[i] ?? change.choice;
-    if (choice === 'both') {
-      // One side may hold nothing -- "keep both" of a block only one side has
-      // is just that block, not a stray blank.
-      out[change.index] = [change.local, change.remote]
-        .filter((side) => side.trim() !== '')
-        .join('\n\n');
-      return;
-    }
-    out[change.index] = choice === 'remote' ? change.remote : change.local;
+    out[change.index] = chooseSide(change, choices[i] ?? change.choice);
   });
   return out;
 }

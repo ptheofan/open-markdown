@@ -2326,177 +2326,191 @@ button:focus:not(:focus-visible) {
   background: #22c55e;
 }
 
-/* ── Sync review dialog ───────────────────────────────────────────── */
+/* ── Sync merge view ──────────────────────────────────────────────── */
 
-.sync-review-overlay {
+.sync-merge-overlay {
   position: fixed;
   inset: 0;
   z-index: 10002;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
-  background-color: rgba(0, 0, 0, 0.45);
+  padding: 20px;
+  background-color: rgba(0, 0, 0, 0.5);
 }
 
-.sync-review {
+.sync-merge {
   display: flex;
   flex-direction: column;
-  width: min(1040px, 100%);
-  max-height: 100%;
-  padding: 20px 22px;
+  width: min(1400px, 100%);
+  height: 100%;
+  padding: 16px 18px;
   border-radius: 10px;
   background-color: var(--toolbar-bg);
   border: 1px solid var(--border-color);
   color: var(--text-color);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
   font-size: 13px;
 }
 
-.sync-review-title {
-  margin: 0 0 8px;
-  font-size: 16px;
-}
-
-.sync-review-body {
-  margin: 0 0 12px;
-  opacity: 0.85;
-  line-height: 1.5;
-}
-
-.sync-review-bulk {
+.sync-merge-head {
   display: flex;
   align-items: center;
   gap: 8px;
   padding-bottom: 12px;
-  margin-bottom: 12px;
   border-bottom: 1px solid var(--border-color);
 }
 
-.sync-review-bulk-label {
+.sync-merge-title {
+  margin: 0;
+  font-size: 15px;
+}
+
+.sync-merge-summary,
+.sync-merge-bulk-label {
   opacity: 0.7;
 }
 
-/* The list scrolls against the preview, which stays put: the point of the
-   screen is watching the result change as each choice is made. */
-.sync-review-panes {
-  display: grid;
-  grid-template-columns: 1.35fr 1fr;
-  gap: 16px;
-  min-height: 0;
+.sync-merge-spacer {
   flex: 1;
 }
 
-@media (max-width: 860px) {
-  .sync-review-panes {
-    grid-template-columns: 1fr;
-  }
-}
-
-.sync-review-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  overflow-y: auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.sync-review-change {
-  padding: 12px;
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
-}
-
-/* A block both sides rewrote has no safe default, so it is marked out. */
-.sync-review-change-conflict {
-  border-color: var(--warning-border, #d97706);
-}
-
-.sync-review-change-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 8px;
-  font-size: 12px;
-  opacity: 0.75;
-}
-
-.sync-review-kind {
-  font-weight: 600;
-}
-
-.sync-review-pair {
+/* Column heads sit outside the scroller so they stay put while it moves.
+   Same five tracks as the rows, so the labels line up with their panes. */
+.sync-merge-colheads,
+.sync-merge-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-bottom: 10px;
+  grid-template-columns: 1fr 2rem 1fr 2rem 1fr;
+  gap: 8px;
 }
 
-@media (max-width: 560px) {
-  .sync-review-pair {
-    grid-template-columns: 1fr;
-  }
-}
-
-.sync-review-side-title {
-  margin: 0 0 6px;
-  font-size: 12px;
+.sync-merge-colheads {
+  padding: 10px 0 6px;
+  font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  opacity: 0.7;
+  letter-spacing: 0.05em;
+  opacity: 0.65;
 }
 
-.sync-review-local,
-.sync-review-remote,
-.sync-review-preview-text {
-  margin: 0;
-  padding: 10px;
-  overflow: auto;
-  border-radius: 6px;
+/* One scroller for all three panes: they are aligned by row, so scrolling
+   them together is what keeps a difference next to its counterpart. */
+.sync-merge-grid {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   border: 1px solid var(--border-color);
-  background-color: var(--code-bg, rgba(127, 127, 127, 0.08));
-  font-family: var(--code-font, monospace);
+  border-radius: 8px;
+}
+
+.sync-merge-row {
+  align-items: stretch;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.sync-merge-row:last-child {
+  border-bottom: none;
+}
+
+/* An unchanged row is context, not a decision. */
+.sync-merge-row-same {
+  opacity: 0.55;
+}
+
+.sync-merge-row-current {
+  outline: 2px solid var(--accent-color, #2563eb);
+  outline-offset: -2px;
+}
+
+.sync-merge-row-local-only .sync-merge-left,
+.sync-merge-row-conflict .sync-merge-left {
+  border-left: 3px solid var(--accent-color, #2563eb);
+}
+
+.sync-merge-row-remote-only .sync-merge-right,
+.sync-merge-row-conflict .sync-merge-right {
+  border-left: 3px solid #16a34a;
+}
+
+/* A block both sides rewrote has no safe default. */
+.sync-merge-row-conflict {
+  background-color: rgba(217, 119, 6, 0.09);
+}
+
+.sync-merge-cell {
+  margin: 0;
+  padding: 6px 8px;
+  min-width: 0;
+  overflow-x: auto;
+  border-radius: 4px;
+  background-color: var(--code-bg, rgba(127, 127, 127, 0.07));
   font-size: 12px;
   line-height: 1.45;
+}
+
+pre.sync-merge-cell {
+  font-family: var(--code-font, monospace);
   white-space: pre-wrap;
   word-break: break-word;
 }
 
-.sync-review-local,
-.sync-review-remote {
-  max-height: 180px;
+/* The result is rendered markdown -- reading the outcome as source is what
+   the preview exists to avoid. */
+.sync-merge-result > :first-child { margin-top: 0; }
+.sync-merge-result > :last-child { margin-bottom: 0; }
+
+.sync-merge-result h1,
+.sync-merge-result h2,
+.sync-merge-result h3,
+.sync-merge-result h4 {
+  font-size: 1.15em;
+  margin: 0.3em 0;
 }
 
-.sync-review-choices {
+.sync-merge-result table {
+  border-collapse: collapse;
+}
+
+.sync-merge-result th,
+.sync-merge-result td {
+  border: 1px solid var(--border-color);
+  padding: 2px 6px;
+}
+
+.sync-merge-gutter {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
 }
 
-.sync-review-choices .btn[aria-pressed='true'] {
+.sync-merge-arrow {
+  width: 22px;
+  height: 20px;
+  padding: 0;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.sync-merge-arrow:hover {
+  background-color: var(--code-bg, rgba(127, 127, 127, 0.15));
+}
+
+.sync-merge-arrow[aria-pressed='true'] {
   background-color: var(--accent-color, #2563eb);
   border-color: var(--accent-color, #2563eb);
   color: #fff;
 }
 
-.sync-review-preview {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.sync-review-preview-text {
-  flex: 1;
-  min-height: 0;
-}
-
-.sync-review-actions {
+.sync-merge-actions {
   display: flex;
   justify-content: flex-end;
-  flex-wrap: wrap;
   gap: 8px;
-  padding-top: 16px;
+  padding-top: 12px;
 }

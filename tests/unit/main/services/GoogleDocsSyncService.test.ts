@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
-  syncProgressPercent, imageCacheKey, modelFingerprint, createGoogleDocsSyncService } from '@main/services/GoogleDocsSyncService';
+  syncProgressPercent, imageCacheKey, createGoogleDocsSyncService } from '@main/services/GoogleDocsSyncService';
 
 // Mock the converter module
 vi.mock('@main/services/MarkdownToDocsConverter', () => ({
@@ -44,56 +44,77 @@ describe('GoogleDocsSyncService', () => {
     );
   });
 
-  describe('unchanged document', () => {
+  describe('when a direction has nothing to carry', () => {
     const diagrams = [
       { code: 'graph A', pngBase64: 'AAA', liveUrl: 'https://mermaid.live/a' },
     ];
 
-    function docSaying(text: string): void {
-      mockLinkStore.loadBaseline.mockResolvedValue(text);
+    /** A Doc holding `text`, with both sides agreeing on `agreed` at last sync. */
+    function docSaying(text: string, agreed: string): void {
+      mockLinkStore.loadBaseline.mockResolvedValue(agreed);
       mockDocsService.extractPlainText.mockReturnValue(text);
-      mockDocsService.getDocument.mockResolvedValue({ body: { content: [{ endIndex: 1 }] } });
+      mockDocsService.getDocument.mockResolvedValue(text === ''
+        ? { body: { content: [{ endIndex: 1 }] } }
+        : {
+          body: {
+            content: [{
+              startIndex: 1,
+              endIndex: text.length + 1,
+              paragraph: { elements: [{ textRun: { content: `${text}\n` } }] },
+            }],
+          },
+        });
       mockDocsService.batchUpdate.mockResolvedValue({});
       mockDocsService.uploadImage.mockResolvedValue('file-id');
+      mockLinkStore.getLink.mockReturnValue({ docId: 'doc-1', lastSyncedAt: '2026-01-01T00:00:00Z' });
+      // Both snapshots hold what the two sides agreed on last time, so a Doc
+      // now saying something else is a change the preview must find.
+      mockLinkStore.loadMarkdownSnapshots.mockResolvedValue({ local: agreed, remote: agreed });
       vi.mocked(convertMarkdownToDocs).mockReturnValue({
         elements: [{ type: 'paragraph', runs: [{ text: 'Hello' }] }],
       });
     }
 
-    it('does no work at all when nothing changed since the last sync', async () => {
-      docSaying('Hello');
-      // Fingerprint recorded by the previous sync of this exact content.
-      mockLinkStore.getModelFingerprint.mockResolvedValue(
-        modelFingerprint({ elements: [{ type: 'paragraph', runs: [{ text: 'Hello' }] }] }),
-      );
+    it('says so, and does no work, when neither side has moved', async () => {
+      docSaying('Hello', 'Hello');
 
-      const result = await syncService.sync('/file.md', 'doc-1', 'Hello', diagrams);
+      const push = await syncService.resolve('/file.md', 'doc-1', 'preview', 'push', 'Hello');
+      const pull = await syncService.resolve('/file.md', 'doc-1', 'preview', 'pull', 'Hello');
 
-      expect(result.success).toBe(true);
+      expect(push.nothingToDo).toBe(true);
+      expect(pull.nothingToDo).toBe(true);
       expect(mockDocsService.batchUpdate).not.toHaveBeenCalled();
       expect(mockDocsService.uploadImage).not.toHaveBeenCalled();
     });
 
-    it('still syncs when the markdown changed', async () => {
-      docSaying('Hello');
-      mockLinkStore.getModelFingerprint.mockResolvedValue('fingerprint-of-something-else');
+    it('still pushes when the markdown changed', async () => {
+      docSaying('Hello', 'Hello');
+      // The converter is mocked, so the model is what decides -- changing only
+      // the markdown string would leave the Doc and the model identical.
+      vi.mocked(convertMarkdownToDocs).mockReturnValue({
+        elements: [{ type: 'paragraph', runs: [{ text: 'Hello changed' }] }],
+      });
 
-      await syncService.sync('/file.md', 'doc-1', 'Hello', diagrams);
+      await syncService.syncForceOverwrite('/file.md', 'doc-1', 'Hello changed', diagrams);
 
       expect(mockDocsService.batchUpdate).toHaveBeenCalled();
     });
 
-    it('stops to ask when only the document was edited in Google Docs', async () => {
-      docSaying('Hello');
-      mockDocsService.extractPlainText.mockReturnValue('Hello, edited by someone else');
-      // Fingerprint matches, so the markdown is exactly what we last pushed.
-      mockLinkStore.getModelFingerprint.mockResolvedValue(
-        modelFingerprint({ elements: [{ type: 'paragraph', runs: [{ text: 'Hello' }] }] }),
-      );
+    it('has nothing to push when only the Doc was edited', async () => {
+      docSaying('Hello, edited by someone else', 'Hello');
 
-      const result = await syncService.sync('/file.md', 'doc-1', 'Hello', diagrams);
+      const result = await syncService.resolve('/file.md', 'doc-1', 'preview', 'push', 'Hello');
 
-      expect(result.conflict).toBe('remote-only');
+      expect(result.nothingToDo).toBe(true);
+    });
+
+    it('pulls that same Doc edit without stopping to ask', async () => {
+      docSaying('Hello, edited by someone else', 'Hello');
+
+      const result = await syncService.resolve('/file.md', 'doc-1', 'preview', 'pull', 'Hello');
+
+      expect(result.nothingToDo).toBe(false);
+      expect(result.needsReview).toBe(false);
     });
   });
 
@@ -121,7 +142,7 @@ describe('GoogleDocsSyncService', () => {
       setupTwoDiagrams();
       mockLinkStore.loadImageCache.mockResolvedValue({});
 
-      await syncService.sync('/file.md', 'doc-1', 'x', diagrams);
+      await syncService.syncForceOverwrite('/file.md', 'doc-1', 'x', diagrams);
 
       expect(mockDocsService.uploadImage).toHaveBeenCalledTimes(2);
     });
@@ -134,7 +155,7 @@ describe('GoogleDocsSyncService', () => {
         [imageCacheKey('BBB')]: 'existing-b',
       });
 
-      await syncService.sync('/file.md', 'doc-1', 'x', diagrams);
+      await syncService.syncForceOverwrite('/file.md', 'doc-1', 'x', diagrams);
 
       expect(mockDocsService.uploadImage).not.toHaveBeenCalled();
     });
@@ -145,7 +166,7 @@ describe('GoogleDocsSyncService', () => {
         [imageCacheKey('AAA')]: 'existing-a',
       });
 
-      await syncService.sync('/file.md', 'doc-1', 'x', diagrams);
+      await syncService.syncForceOverwrite('/file.md', 'doc-1', 'x', diagrams);
 
       expect(mockDocsService.uploadImage).toHaveBeenCalledTimes(1);
     });
@@ -162,9 +183,9 @@ describe('GoogleDocsSyncService', () => {
       });
 
       const seen: { percent: number; label: string }[] = [];
-      await syncService.sync('/file.md', 'doc-123', '# Hello', undefined, undefined, (u) =>
-        seen.push(u)
-      );
+      await syncService.resolve('/file.md', 'doc-123', 'apply', 'push', '# Hello', {
+        onProgress: (u) => seen.push(u),
+      });
 
       expect(seen.length).toBeGreaterThan(0);
       expect(seen.map((u) => u.percent)).toEqual(
@@ -189,17 +210,13 @@ describe('GoogleDocsSyncService', () => {
       });
 
       const seen: { percent: number; label: string }[] = [];
-      await syncService.sync(
-        '/file.md',
-        'doc-123',
-        'x',
-        [
+      await syncService.resolve('/file.md', 'doc-123', 'apply', 'push', 'x', {
+        mermaidDiagrams: [
           { code: 'graph A', pngBase64: 'AAA', liveUrl: 'https://mermaid.live/a' },
           { code: 'graph B', pngBase64: 'BBB', liveUrl: 'https://mermaid.live/b' },
         ],
-        undefined,
-        (u) => seen.push(u)
-      );
+        onProgress: (u) => seen.push(u),
+      });
 
       const labels = seen.map((u) => u.label);
       expect(labels).toContain('Uploading diagram 1 of 2');
@@ -220,7 +237,7 @@ describe('GoogleDocsSyncService', () => {
         elements: [{ type: 'paragraph', runs: [{ text: 'Hello' }] }],
       });
 
-      const result = await syncService.sync('/file.md', 'doc-123', '# Hello');
+      const result = await syncService.syncForceOverwrite('/file.md', 'doc-123', '# Hello');
       expect(result.success).toBe(true);
       expect(mockDocsService.batchUpdate).toHaveBeenCalled();
       expect(mockLinkStore.saveBaseline).toHaveBeenCalled();
@@ -240,9 +257,10 @@ describe('GoogleDocsSyncService', () => {
         elements: [{ type: 'paragraph', runs: [{ text: 'new content' }] }],
       });
 
-      const result = await syncService.sync('/file.md', 'doc-123', 'new content');
-      expect(result.success).toBe(false);
-      expect(result.conflict).toBe('both');
+      const result = await syncService.resolve(
+        '/file.md', 'doc-123', 'preview', 'push', 'new content',
+      );
+      expect(result.needsReview).toBe(true);
       expect(mockDocsService.batchUpdate).not.toHaveBeenCalled();
     });
   });
@@ -280,7 +298,7 @@ describe('GoogleDocsSyncService', () => {
         elements: [{ type: 'paragraph', runs: [{ text: 'Hello universe' }] }],
       });
 
-      const result = await syncService.sync('/file.md', 'doc-123', 'Hello universe');
+      const result = await syncService.syncForceOverwrite('/file.md', 'doc-123', 'Hello universe');
       expect(result.success).toBe(true);
       expect(mockDocsService.batchUpdate).toHaveBeenCalled();
 
@@ -312,7 +330,7 @@ describe('GoogleDocsSyncService', () => {
         elements: [{ type: 'paragraph', runs: [{ text: 'Hello world' }] }],
       });
 
-      const result = await syncService.sync('/file.md', 'doc-123', 'Hello world');
+      const result = await syncService.syncForceOverwrite('/file.md', 'doc-123', 'Hello world');
       expect(result.success).toBe(true);
       // Nothing differs, so nothing is sent. Re-applying formatting to every
       // paragraph regardless is what made a large document slow to sync.
@@ -343,7 +361,7 @@ describe('GoogleDocsSyncService', () => {
         elements: [{ type: 'heading', headingLevel: 1, runs: [{ text: 'Hello world' }] }],
       });
 
-      await syncService.sync('/file.md', 'doc-123', '# Hello world');
+      await syncService.syncForceOverwrite('/file.md', 'doc-123', '# Hello world');
       expect(mockDocsService.batchUpdate).toHaveBeenCalled();
     });
   });
@@ -357,7 +375,7 @@ describe('GoogleDocsSyncService', () => {
         elements: [{ type: 'paragraph', runs: [{ text: 'Hello' }] }],
       });
 
-      const result = await syncService.sync('/file.md', 'doc-123', 'Hello');
+      const result = await syncService.syncForceOverwrite('/file.md', 'doc-123', 'Hello');
       expect(result.success).toBe(false);
       expect(result.error).toBeDefined();
     });

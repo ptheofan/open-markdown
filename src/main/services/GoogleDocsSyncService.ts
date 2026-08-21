@@ -8,7 +8,7 @@
 import { diffChars, diffArrays } from 'diff';
 import { convertMarkdownToDocs } from '@main/services/MarkdownToDocsConverter';
 import { convertDocsToMarkdown } from '@main/services/DocsToMarkdownConverter';
-import { threeWayMerge, twoWayReview } from '@main/services/ThreeWayMerge';
+import { threeWayMerge, twoWayReview, applyResolutions } from '@main/services/ThreeWayMerge';
 import {
   buildInsertRequests,
   CODE_FONT_FAMILY,
@@ -33,6 +33,9 @@ import type {
   MermaidDiagramData,
   SyncPhase,
   SyncResolveMode,
+  SyncDirection,
+  SyncChangeKind,
+  SyncConflictChoice,
   SyncProgressUpdate,
   TableColumnWidths,
 } from '@shared/types/google-docs';
@@ -712,86 +715,6 @@ export class GoogleDocsSyncService {
   }
 
   /**
-   * Main sync method — performs three-way diffing to detect external edits
-   * and apply minimal changes.
-   */
-  async sync(filePath: string, docId: string, markdown: string, mermaidDiagrams?: MermaidDiagramData[], tableWidths?: TableColumnWidths[], onProgress?: (update: SyncProgressUpdate) => void): Promise<GoogleDocsSyncResult> {
-    this.progress = onProgress;
-    try {
-      this.report('Reading the Google Doc', 'reading');
-      console.warn('[SyncService] Step 1: Loading baseline...');
-      // Baselines are keyed by document, but "has this file ever synced here"
-      // is a fact about the (file, document) pair. Two files can point at one
-      // Doc; without this, the second one inherits the first one's baseline,
-      // skips the first-sync guard, and overwrites the Doc without asking.
-      // lastSyncedAt is null until a file completes a sync of its own.
-      const link = this.linkStore.getLink(filePath);
-      const neverSyncedThisFile = link != null && link.lastSyncedAt == null;
-      const baseline = neverSyncedThisFile
-        ? null
-        : await this.linkStore.loadBaseline(docId);
-      console.warn('[SyncService] Step 2: Reading current doc from API...');
-      const currentDoc = await this.docsService.getDocument(docId);
-      console.warn('[SyncService] Step 3: Extracting plain text for external-edit check...');
-      const theirs = this.docsService.extractPlainText(currentDoc);
-      this.report('Converting your markdown', 'converting');
-      console.warn('[SyncService] Step 4: Converting markdown...');
-      const docsDoc = convertMarkdownToDocs(markdown);
-      // Nothing changed on either side? Then there is nothing to upload, diff
-      // or reformat. Checked before the diagrams, so an unchanged document
-      // costs one document read rather than a full rebuild.
-      const fingerprint = modelFingerprint(docsDoc);
-      const lastFingerprint = await this.linkStore.getModelFingerprint(docId);
-      if (lastFingerprint === fingerprint && baseline !== null && baseline === theirs) {
-        console.warn('[SyncService] Nothing changed since the last sync -- skipping');
-        return { success: true, unchanged: true };
-      }
-
-      console.warn('[SyncService] Step 5: Processing mermaid diagrams...');
-      await this.processMermaidDiagrams(docId, docsDoc, mermaidDiagrams);
-      this.applyTableColumnWidths(docsDoc, tableWidths);
-
-      // Reaching here means at least one side moved, so both flags matter.
-      const localChanged = lastFingerprint !== fingerprint;
-
-      if (baseline === null) {
-        // Never synced to this Doc. An empty one is ours to fill; one that
-        // already holds content may hold comments with it, and wiping those
-        // is exactly what this feature exists to avoid.
-        if (isBodyEmpty(currentDoc)) {
-          console.warn('[SyncService] First sync into an empty doc -> fullPopulate');
-          const populated = await this.fullPopulate(docId, filePath, docsDoc, markdown);
-          if (populated.success) await this.linkStore.saveModelFingerprint(docId, fingerprint);
-          return populated;
-        }
-        console.warn('[SyncService] First sync into a doc that already has content -> ask');
-        return { success: false, conflict: 'both' };
-      }
-
-      if (baseline !== theirs) {
-        console.warn('[SyncService] Doc changed since last sync; local changed: %s', localChanged);
-        // With no local change there is nothing to reconcile -- the user only
-        // has to say whether to take the Doc's version.
-        return { success: false, conflict: localChanged ? 'both' : 'remote-only' };
-      }
-
-      this.report('Applying changes', 'applying');
-      console.warn('[SyncService] Applying paragraph-level diff...');
-      const diffed = await this.applyDiff(docId, filePath, currentDoc, docsDoc, markdown);
-      if (diffed.success) await this.linkStore.saveModelFingerprint(docId, fingerprint);
-      return diffed;
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      const stack = err instanceof Error ? err.stack : '';
-      console.error('[SyncService] ERROR:', message, '\n', stack);
-      return { success: false, error: message, status: (err as { status?: number }).status };
-    } finally {
-      this.report('Done', 'done');
-      this.progress = undefined;
-    }
-  }
-
-  /**
    * Push the local markdown over a Doc that has also changed, making the Doc
    * match the file.
    *
@@ -838,15 +761,19 @@ export class GoogleDocsSyncService {
    * hands them back without touching either side. `apply` takes the markdown
    * the user settled on and makes both sides hold it.
    *
-   * Direction is not a mode. "Use the Doc" and "use the file" are every change
-   * set one way in the review screen, so they need no separate code path --
-   * and apply always goes through `applyDiff`, never a clear-and-rebuild, so
-   * the Doc's comments survive whichever way the user leans.
+   * The direction sets each difference's default and names the intent. It is
+   * deliberately not a read-only lock on the other side: an apply must leave
+   * the two sides holding the same content, because the snapshots record what
+   * both sides agree on, and a divergence baked into them is invisible to
+   * every later sync -- the file would keep an edit the Doc never receives,
+   * with nothing left to notice it. Applying still goes through `applyDiff`,
+   * never a clear-and-rebuild, so the Doc's comments survive either way.
    */
   async resolve(
     filePath: string,
     docId: string,
     mode: SyncResolveMode,
+    direction: SyncDirection,
     markdown: string,
     options: {
       mermaidDiagrams?: MermaidDiagramData[];
@@ -868,8 +795,8 @@ export class GoogleDocsSyncService {
     this.progress = options.onProgress;
     try {
       if (mode === 'apply') {
-        // `markdown` is what the user approved in the review screen, so there
-        // is nothing left to decide -- write it, then make the Doc match.
+        // `markdown` is what the user approved, so there is nothing left to
+        // decide -- write it, then make the Doc match.
         if (options.writeLocal && !(await options.writeLocal(markdown))) {
           return { success: false, error: 'Could not write the local file' };
         }
@@ -883,7 +810,16 @@ export class GoogleDocsSyncService {
       this.report('Reading the Google Doc', 'reading');
       const currentDoc = await this.docsService.getDocument(docId);
       const remote = convertDocsToMarkdown(currentDoc);
-      const snapshots = await this.linkStore.loadMarkdownSnapshots(docId);
+      // Snapshots are keyed by document, but "has this file ever synced here"
+      // is a fact about the (file, document) pair. Two files can point at one
+      // Doc; without this the second inherits the first one's baseline, gets a
+      // three-way merge against a document it has never seen, and every one of
+      // its own blocks reads as unchanged.
+      const link = this.linkStore.getLink(filePath);
+      const neverSyncedThisFile = link != null && link.lastSyncedAt == null;
+      const snapshots = neverSyncedThisFile
+        ? null
+        : await this.linkStore.loadMarkdownSnapshots(docId);
 
       // With snapshots, each side is diffed against its own dialect and the
       // lossiness cancels. Without them -- a first sync into a Doc that
@@ -898,7 +834,27 @@ export class GoogleDocsSyncService {
         })
         : twoWayReview(markdown, remote);
 
-      return { success: true, changes: outcome.changes, blocks: outcome.blocks };
+      // The direction is every difference's default, so accepting the preview
+      // wholesale makes the target say exactly what the source says.
+      const preferred: SyncConflictChoice = direction === 'pull' ? 'remote' : 'local';
+      const changes = outcome.changes.map((change) => ({ ...change, choice: preferred }));
+      const blocks = applyResolutions(
+        outcome.blocks, outcome.changes, changes.map((change) => change.choice),
+      );
+
+      // A pull carries what the Doc changed, a push what the file did. What
+      // the *other* side changed is what makes the defaults worth seeing
+      // before they are applied -- accepting them wholesale would revert it.
+      const carried: SyncChangeKind = direction === 'pull' ? 'remote-only' : 'local-only';
+      const atStake: SyncChangeKind = direction === 'pull' ? 'local-only' : 'remote-only';
+
+      return {
+        success: true,
+        changes,
+        blocks,
+        nothingToDo: !changes.some((c) => c.kind === carried || c.kind === 'conflict'),
+        needsReview: changes.some((c) => c.kind === atStake || c.kind === 'conflict'),
+      };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return { success: false, error: message, status: (err as { status?: number }).status };

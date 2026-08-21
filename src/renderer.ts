@@ -4,6 +4,7 @@
  */
 import './index.css';
 
+import { joinBlocks } from '@shared/markdown/blocks';
 import {
   createMarkdownViewer,
   createDropZone,
@@ -65,6 +66,7 @@ import type {
   GoogleAuthState,
   GoogleDocsResolveResult,
   SyncChange,
+  SyncDirection,
   SyncResolveMode,
 } from '@shared/types/google-docs';
 import type { MermaidPlugin } from '@plugins/builtin/MermaidPlugin';
@@ -263,12 +265,15 @@ class App {
     // Create Google Docs button
     const gdocsSyncBtn = document.getElementById('gdocs-sync-btn') as HTMLButtonElement | null;
     if (gdocsSyncBtn) {
-      this.googleDocsButton = createGoogleDocsButton(gdocsSyncBtn);
+      this.googleDocsButton = createGoogleDocsButton(
+        gdocsSyncBtn,
+        document.getElementById('gdocs-pull-btn') as HTMLButtonElement | null,
+      );
       this.syncProgressBar = createSyncProgressBar();
       this.googleDocsButton.setCallbacks({
         onLinkRequest: () => { void this.handleGoogleDocsPickAndSync(); },
         onSignInRequest: () => { void this.handleGoogleDocsSignIn(); },
-        onSyncRequest: () => { void this.handleGoogleDocsSync(); },
+        onSyncRequest: (direction) => { void this.handleGoogleDocsSync(direction); },
         onShowProgressRequest: () => { this.syncProgressBar?.show(); },
       });
     }
@@ -1146,7 +1151,7 @@ class App {
         this.toast?.success('No document selected — nothing was linked.');
         return;
       }
-      await this.handleGoogleDocsSync();
+      await this.handleGoogleDocsSync('push');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to link';
       this.toast?.error(message);
@@ -1235,9 +1240,19 @@ class App {
   }
 
   /**
-   * Handle Google Docs sync
+   * Carry a sync in the direction the user asked for.
+   *
+   * Two trips to the main process. 'preview' works out every difference and
+   * touches nothing; 'apply' writes the markdown that came out of it. In
+   * between, the merge view opens only when something of the user's is at
+   * stake -- their own edits during a pull, the Doc's during a push. When the
+   * chosen direction has nothing to carry, that is said out loud rather than
+   * passing for success.
    */
-  private async handleGoogleDocsSync(allowReauth = true): Promise<void> {
+  private async handleGoogleDocsSync(
+    direction: SyncDirection,
+    allowReauth = true,
+  ): Promise<void> {
     if (!this.state.currentFilePath) return;
 
     const content = this.markdownViewer?.getState().content;
@@ -1250,25 +1265,7 @@ class App {
       const mermaidData = await this.extractMermaidData();
       const tableWidths = this.extractTableColumnWidths();
 
-      const result = await window.electronAPI.googleDocs.sync(
-        this.state.currentFilePath,
-        content,
-        mermaidData.length > 0 ? mermaidData : undefined,
-        tableWidths.length > 0 ? tableWidths : undefined,
-      );
-
-      if (result.conflict) {
-        this.googleDocsButton?.setState('ready');
-        await this.handleSyncConflict(content, mermaidData, tableWidths);
-        return;
-      } else if (result.success) {
-        this.toast?.success('Synced to Google Docs');
-        await this.updateGoogleDocsButtonState();
-      } else {
-        console.error('Google Docs sync error result:', result);
-        this.toast?.error(result.error ?? 'Sync failed');
-        await this.updateGoogleDocsButtonState();
-      }
+      await this.runSync(direction, content, mermaidData, tableWidths);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Sync failed';
 
@@ -1291,7 +1288,7 @@ class App {
             return;
           }
           // Retry sync after successful re-auth
-          await this.handleGoogleDocsSync(false);
+          await this.handleGoogleDocsSync(direction, false);
         } catch {
           this.googleDocsButton?.setState('needs-auth');
         }
@@ -1306,22 +1303,15 @@ class App {
     await this.updateGoogleDocsButtonState();
   }
 
-  /**
-   * Show every difference, then apply what the user settled on.
-   *
-   * Two trips to the main process: 'preview' works out the differences without
-   * touching either side, 'apply' writes the approved markdown to the file and
-   * edits the Doc to match. Both kinds of stop -- only the Doc moved, or both
-   * did -- land on the same screen, because "use my file" is a legitimate
-   * answer either way.
-   */
-  private async handleSyncConflict(
+  /** Preview, review if anything is at stake, then apply. */
+  private async runSync(
+    direction: SyncDirection,
     content: string,
     mermaidData?: MermaidDiagramData[],
     tableWidths?: TableColumnWidths[],
   ): Promise<void> {
-    this.googleDocsButton?.setState('syncing');
-    const preview = await this.resolveSync('preview', content, mermaidData, tableWidths);
+    const noun = direction === 'pull' ? 'pull' : 'push';
+    const preview = await this.resolveSync('preview', direction, content, mermaidData, tableWidths);
     if (preview === null) return;
     if (!preview.success) {
       this.toast?.error(preview.error ?? 'Sync failed');
@@ -1329,17 +1319,21 @@ class App {
       return;
     }
 
+    if (preview.nothingToDo === true) {
+      this.toast?.success(`Nothing to ${noun}`);
+      await this.updateGoogleDocsButtonState();
+      return;
+    }
+
     const changes = preview.changes ?? [];
     const blocks = preview.blocks ?? [];
-    // The Doc moved in a way that reverse-converts to the same markdown -- a
-    // formatting-only edit, say. Nothing to ask about; applying settles it.
-    const merged = changes.length === 0
-      ? content
-      : await this.reviewChanges(changes, blocks);
+    const merged = preview.needsReview === true
+      ? await this.reviewChanges(changes, blocks, content)
+      : joinBlocks(blocks);
     if (merged == null) return;
 
     this.googleDocsButton?.setState('syncing');
-    const applied = await this.resolveSync('apply', merged, mermaidData, tableWidths);
+    const applied = await this.resolveSync('apply', direction, merged, mermaidData, tableWidths);
     if (applied === null) return;
     if (!applied.success) {
       this.toast?.error(applied.error ?? 'Sync failed');
@@ -1350,21 +1344,23 @@ class App {
     if (applied.markdown != null && applied.markdown !== content) {
       await this.applyPulledMarkdown(applied.markdown);
     }
-    this.toast?.success('Synced with Google Docs');
+    this.toast?.success(direction === 'pull' ? 'Pulled from Google Docs' : 'Pushed to Google Docs');
     await this.updateGoogleDocsButtonState();
   }
 
-  /** Hand the differences to the review screen, with the button idle. */
+  /** Hand the differences to the merge view, with the button idle. */
   private async reviewChanges(
     changes: SyncChange[],
     blocks: string[],
+    original: string,
   ): Promise<string | null> {
     this.googleDocsButton?.setState('ready');
-    return (await this.syncReviewDialog?.review(changes, blocks)) ?? null;
+    return (await this.syncReviewDialog?.review(changes, blocks, original)) ?? null;
   }
 
   private async resolveSync(
     mode: SyncResolveMode,
+    direction: SyncDirection,
     content: string,
     mermaidData?: MermaidDiagramData[],
     tableWidths?: TableColumnWidths[],
@@ -1374,6 +1370,7 @@ class App {
       return await window.electronAPI.googleDocs.syncResolve(
         this.state.currentFilePath,
         mode,
+        direction,
         content,
         mermaidData && mermaidData.length > 0 ? mermaidData : undefined,
         tableWidths && tableWidths.length > 0 ? tableWidths : undefined,

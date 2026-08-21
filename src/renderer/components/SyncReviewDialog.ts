@@ -1,81 +1,117 @@
 /**
- * SyncReviewDialog - shows every difference between a file and its Google Doc
- * and lets the user settle each one before anything is written.
+ * SyncReviewDialog - a three-pane merge view for a file and its Google Doc.
  *
- * The merge already knows every hunk; the old dialog only surfaced the ones it
- * could not settle by itself, so changes were applied that the user never saw
- * and could not decline. This screen shows all of them, with a live preview of
- * the result, and returns the markdown the user approved.
+ * Laid out the way a desktop merge tool is: your file on the left, the Doc on
+ * the right, the result in the middle, one row per block so the three sides
+ * stay aligned. Gutter arrows push a side into the result; the result renders
+ * as markdown, because reading the outcome as source defeats the point of
+ * previewing it.
  *
- * Direction is not a separate mode any more: "use the Doc" and "use this file"
- * are the bulk buttons, which set every change one way.
+ * Every difference is shown, including the ones with an obvious default. The
+ * merge has always known them all -- it used to apply the one-sided ones
+ * silently, which meant changes were made that the user never saw and could
+ * not decline.
  *
- * Builds its own DOM the way SyncProgressBar does, so no markup lives in
- * index.html waiting to fall out of step with the code.
+ * Direction is not a mode: the whole-file buttons set every row one way, and
+ * that is all "use the Doc" and "use my file" ever were.
  */
-import type { SyncChange, SyncChangeKind, SyncConflictChoice } from '@shared/types/google-docs';
-import { applyResolutions, joinBlocks } from '@shared/markdown/blocks';
+import MarkdownIt from 'markdown-it';
+import type { SyncChange, SyncConflictChoice } from '@shared/types/google-docs';
+import { applyResolutions, chooseSide, joinBlocks, splitBlocks } from '@shared/markdown/blocks';
 
 export interface SyncReviewDialog {
   /**
-   * Walk the user through every difference.
+   * Show the merge and wait for the user to settle it.
    *
    * Resolves with the markdown they approved, or null if they backed out.
+   * `original` is returned verbatim when the result matches it, so accepting
+   * your own side throughout does not reformat the file.
    */
-  review(changes: SyncChange[], blocks: string[]): Promise<string | null>;
+  review(changes: SyncChange[], blocks: string[], original?: string): Promise<string | null>;
   destroy(): void;
 }
 
-const KIND_LABEL: Record<SyncChangeKind, string> = {
-  conflict: 'Both sides changed this',
-  'local-only': 'Only this file changed',
-  'remote-only': 'Only the Doc changed',
-};
+/**
+ * html:false is the security boundary. The right-hand text is written by
+ * anyone who can edit the Doc, so any markup in it is escaped rather than
+ * parsed, and markdown-it refuses javascript: URLs on its own.
+ */
+const md = new MarkdownIt({ html: false, linkify: false, breaks: false });
 
 /** Shown when a side has nothing at this position, so the pane is never blank. */
 const ABSENT = '(nothing here)';
+
+const KIND_LABEL: Record<SyncChange['kind'], string> = {
+  conflict: 'Both sides changed this',
+  'local-only': 'Changed here only',
+  'remote-only': 'Changed in the Doc only',
+};
 
 class SyncReviewDialogImpl implements SyncReviewDialog {
   private overlay: HTMLElement | null = null;
   private onKeyDown: ((e: KeyboardEvent) => void) | null = null;
 
-  review(changes: SyncChange[], blocks: string[]): Promise<string | null> {
+  review(changes: SyncChange[], blocks: string[], original?: string): Promise<string | null> {
     return new Promise((resolve) => {
       const choices: SyncConflictChoice[] = changes.map((change) => change.choice);
-      const overlay = this.open(this.shell(changes));
+      /** Block index -> position in `changes`, for the rows that are changes. */
+      const changeAt = new Map(changes.map((change, i) => [change.index, i]));
+      const overlay = this.open(this.shell(changes, blocks, changeAt));
 
-      // The Doc's text is written by anyone who can edit it, so it reaches the
-      // DOM only ever as text -- never as markup.
-      changes.forEach((change, i) => {
-        const row = overlay.querySelector(`[data-change="${i}"]`);
-        if (!row) return;
-        const local = row.querySelector('.sync-review-local');
-        const remote = row.querySelector('.sync-review-remote');
-        if (local) local.textContent = change.local === '' ? ABSENT : change.local;
-        if (remote) remote.textContent = change.remote === '' ? ABSENT : change.remote;
+      // Every cell is filled here, never in the markup: the right-hand text is
+      // written by whoever can edit the Doc.
+      overlay.querySelectorAll<HTMLElement>('[data-block]').forEach((row) => {
+        const index = Number(row.dataset['block']);
+        const i = changeAt.get(index);
+        const change = i == null ? null : changes[i];
+        const left = change ? change.local : blocks[index] ?? '';
+        const right = change ? change.remote : blocks[index] ?? '';
+        const leftCell = row.querySelector('.sync-merge-left');
+        const rightCell = row.querySelector('.sync-merge-right');
+        if (leftCell) leftCell.textContent = left === '' ? ABSENT : left;
+        if (rightCell) rightCell.textContent = right === '' ? ABSENT : right;
+        if (change == null) {
+          const result = row.querySelector('.sync-merge-result');
+          const text = blocks[index] ?? '';
+          if (result) result.innerHTML = text.trim() === '' ? '' : md.render(text);
+        }
       });
 
-      const paint = (): void => {
-        const preview = overlay.querySelector('.sync-review-preview-text');
-        if (preview) preview.textContent = joinBlocks(applyResolutions(blocks, changes, choices));
-        overlay.querySelectorAll<HTMLElement>('[data-choice]').forEach((button) => {
-          const row = button.closest<HTMLElement>('[data-change]');
-          const at = Number(row?.dataset['change'] ?? -1);
-          button.setAttribute('aria-pressed', String(button.dataset['choice'] === choices[at]));
+      const rowOf = (i: number): HTMLElement | null =>
+        overlay.querySelector<HTMLElement>(`[data-change="${i}"]`);
+
+      const paintRow = (i: number): void => {
+        const row = rowOf(i);
+        const change = changes[i];
+        if (!row || !change) return;
+        const chosen = chooseSide(change, choices[i] ?? change.choice);
+        const result = row.querySelector('.sync-merge-result');
+        if (result) result.innerHTML = chosen.trim() === '' ? '' : md.render(chosen);
+        row.dataset['choice'] = choices[i] ?? change.choice;
+        row.querySelectorAll<HTMLElement>('[data-accept]').forEach((button) => {
+          button.setAttribute('aria-pressed', String(button.dataset['accept'] === choices[i]));
         });
       };
+
+      const merged = (): string => joinBlocks(applyResolutions(blocks, changes, choices));
 
       const finish = (value: string | null): void => {
         this.close();
         resolve(value);
       };
 
+      let at = -1;
+      const jump = (step: number): void => {
+        if (changes.length === 0) return;
+        at = (at + step + changes.length) % changes.length;
+        rowOf(at)?.scrollIntoView?.({ block: 'center' });
+        overlay.querySelectorAll('.sync-merge-row-current').forEach((el) => el.classList.remove('sync-merge-row-current'));
+        rowOf(at)?.classList.add('sync-merge-row-current');
+      };
+
       overlay.addEventListener('click', (event) => {
         const target = event.target as HTMLElement | null;
-        if (target === overlay) {
-          finish(null);
-          return;
-        }
+        if (target === overlay) return finish(null);
 
         const button = target?.closest<HTMLElement>('button');
         if (!button) return;
@@ -83,22 +119,30 @@ class SyncReviewDialogImpl implements SyncReviewDialog {
         const bulk = button.dataset['bulk'];
         if (bulk != null) {
           choices.fill(bulk as SyncConflictChoice);
-          paint();
+          changes.forEach((_, i) => paintRow(i));
           return;
         }
 
-        const choice = button.dataset['choice'];
-        if (choice != null) {
-          const at = Number(button.closest<HTMLElement>('[data-change]')?.dataset['change'] ?? -1);
-          if (at >= 0) choices[at] = choice as SyncConflictChoice;
-          paint();
+        const accept = button.dataset['accept'];
+        if (accept != null) {
+          const i = Number(button.closest<HTMLElement>('[data-change]')?.dataset['change'] ?? -1);
+          if (i >= 0) {
+            choices[i] = accept as SyncConflictChoice;
+            paintRow(i);
+          }
           return;
         }
+
+        const nav = button.dataset['nav'];
+        if (nav != null) return jump(nav === 'prev' ? -1 : 1);
 
         const action = button.dataset['action'];
         if (action === 'cancel') finish(null);
         else if (action === 'apply') {
-          finish(joinBlocks(applyResolutions(blocks, changes, choices)));
+          const result = merged();
+          // Accepting your own side everywhere must not rewrite the file just
+          // because the merge re-joins blocks with blank lines between them.
+          finish(original != null && joinBlocks(splitBlocks(original)) === result ? original : result);
         }
       });
 
@@ -108,7 +152,7 @@ class SyncReviewDialogImpl implements SyncReviewDialog {
       };
       document.addEventListener('keydown', this.onKeyDown);
 
-      paint();
+      changes.forEach((_, i) => paintRow(i));
     });
   }
 
@@ -116,64 +160,79 @@ class SyncReviewDialogImpl implements SyncReviewDialog {
     this.close();
   }
 
-  /** The whole screen's markup. Carries no user text -- that is set after. */
-  private shell(changes: SyncChange[]): string {
-    const rows = changes.map((change, i) => `
-      <li class="sync-review-change sync-review-change-${change.kind}" data-change="${i}">
-        <header class="sync-review-change-head">
-          <span class="sync-review-count">Change ${i + 1} of ${changes.length}</span>
-          <span class="sync-review-kind">${KIND_LABEL[change.kind]}</span>
-        </header>
-        <div class="sync-review-pair">
-          <div class="sync-review-side">
-            <h4 class="sync-review-side-title">This file</h4>
-            <pre class="sync-review-local"></pre>
-          </div>
-          <div class="sync-review-side">
-            <h4 class="sync-review-side-title">Google Doc</h4>
-            <pre class="sync-review-remote"></pre>
-          </div>
-        </div>
-        <div class="sync-review-choices">
-          <button type="button" class="btn" data-choice="local" aria-pressed="false">Use this file</button>
-          <button type="button" class="btn" data-choice="remote" aria-pressed="false">Use the Doc</button>
-          <button type="button" class="btn" data-choice="both" aria-pressed="false">Keep both</button>
-        </div>
-      </li>`).join('');
+  /**
+   * The whole document as aligned rows.
+   *
+   * Carries no user text: every cell is filled with textContent afterwards,
+   * or rendered through markdown-it with html disabled.
+   */
+  private shell(changes: SyncChange[], blocks: string[], changeAt: Map<number, number>): string {
+    const conflicts = changes.filter((c) => c.kind === 'conflict').length;
+    const summary = [
+      changes.length === 1 ? '1 change' : `${changes.length} changes`,
+      conflicts > 0 ? `${conflicts} needing a decision` : null,
+    ].filter(Boolean).join(' · ');
 
-    const count = changes.length === 1 ? '1 difference' : `${changes.length} differences`;
+    const rows = blocks.map((_, index) => {
+      const i = changeAt.get(index);
+      if (i == null) {
+        return `<div class="sync-merge-row sync-merge-row-same" data-block="${index}">
+          <pre class="sync-merge-cell sync-merge-left"></pre>
+          <div class="sync-merge-gutter"></div>
+          <div class="sync-merge-cell sync-merge-result sync-merge-result-plain"></div>
+          <div class="sync-merge-gutter"></div>
+          <pre class="sync-merge-cell sync-merge-right"></pre>
+        </div>`;
+      }
+      const change = changes[i];
+      const kind = change?.kind ?? 'conflict';
+      return `<div class="sync-merge-row sync-merge-row-${kind}" data-block="${index}" data-change="${i}"
+        title="${KIND_LABEL[kind]}">
+        <pre class="sync-merge-cell sync-merge-left"></pre>
+        <div class="sync-merge-gutter">
+          <button type="button" class="sync-merge-arrow" data-accept="local" aria-pressed="false"
+            title="Use this file's version">&raquo;</button>
+          <button type="button" class="sync-merge-arrow sync-merge-arrow-both" data-accept="both" aria-pressed="false"
+            title="Keep both">&plusmn;</button>
+        </div>
+        <div class="sync-merge-cell sync-merge-result"></div>
+        <div class="sync-merge-gutter">
+          <button type="button" class="sync-merge-arrow" data-accept="remote" aria-pressed="false"
+            title="Use the Doc's version">&laquo;</button>
+        </div>
+        <pre class="sync-merge-cell sync-merge-right"></pre>
+      </div>`;
+    }).join('');
 
     return `
-      <h2 class="sync-review-title">Review changes</h2>
-      <p class="sync-review-body">
-        ${count} between this file and its Google Doc. Applying settles both sides.
-      </p>
-      <div class="sync-review-bulk">
-        <span class="sync-review-bulk-label">Apply to all:</span>
+      <header class="sync-merge-head">
+        <h2 class="sync-merge-title">Merge with Google Doc</h2>
+        <span class="sync-merge-summary">${summary}</span>
+        <span class="sync-merge-spacer"></span>
+        <button type="button" class="btn btn-quiet" data-nav="prev" title="Previous change">&#9650;</button>
+        <button type="button" class="btn btn-quiet" data-nav="next" title="Next change">&#9660;</button>
+        <span class="sync-merge-bulk-label">Whole file:</span>
         <button type="button" class="btn btn-quiet" data-bulk="local">Use this file</button>
         <button type="button" class="btn btn-quiet" data-bulk="remote">Use the Doc</button>
+      </header>
+      <div class="sync-merge-colheads">
+        <span>This file</span><span></span><span>Result</span><span></span><span>Google Doc</span>
       </div>
-      <div class="sync-review-panes">
-        <ol class="sync-review-list">${rows}</ol>
-        <section class="sync-review-preview">
-          <h3 class="sync-review-side-title">Result</h3>
-          <pre class="sync-review-preview-text"></pre>
-        </section>
-      </div>
-      <div class="sync-review-actions">
+      <div class="sync-merge-grid">${rows}</div>
+      <footer class="sync-merge-actions">
         <button type="button" class="btn btn-quiet" data-action="cancel">Cancel</button>
         <button type="button" class="btn btn-primary" data-action="apply">Apply to both</button>
-      </div>
+      </footer>
     `;
   }
 
   private open(html: string): HTMLElement {
     this.close();
     const overlay = document.createElement('div');
-    overlay.className = 'sync-review-overlay';
+    overlay.className = 'sync-merge-overlay';
     overlay.setAttribute('role', 'dialog');
     overlay.setAttribute('aria-modal', 'true');
-    overlay.innerHTML = `<div class="sync-review">${html}</div>`;
+    overlay.innerHTML = `<div class="sync-merge">${html}</div>`;
     document.body.appendChild(overlay);
     this.overlay = overlay;
     return overlay;

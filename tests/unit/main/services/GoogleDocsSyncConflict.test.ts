@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createGoogleDocsSyncService, modelFingerprint } from '@main/services/GoogleDocsSyncService';
+import { createGoogleDocsSyncService } from '@main/services/GoogleDocsSyncService';
 import type { DocsBatchUpdateRequest } from '@main/services/GoogleDocsService';
 import type { GDocsApiDocument } from '@shared/types/google-docs';
 
@@ -118,7 +118,7 @@ describe('pushing to a Doc that also changed', () => {
   });
 });
 
-describe('deciding what a sync should do', () => {
+describe('deciding what a direction should do', () => {
   const mockDocsService = {
     getDocument: vi.fn(),
     batchUpdate: vi.fn(),
@@ -143,9 +143,9 @@ describe('deciding what a sync should do', () => {
     deleteBaseline: vi.fn(),
   };
 
-  const localModel = {
-    elements: [{ type: 'paragraph' as const, runs: [{ text: 'Second paragraph edited' }] }],
-  };
+  // Both sides held this at the last sync. The Doc now reads
+  // "Intro paragraph / Second paragraph", so the collaborator rewrote block 2.
+  const SNAPSHOT = 'Intro paragraph\n\nOld second text\n';
 
   let syncService: ReturnType<typeof createGoogleDocsSyncService>;
 
@@ -157,68 +157,101 @@ describe('deciding what a sync should do', () => {
     );
     mockDocsService.getDocument.mockResolvedValue(remoteDoc());
     mockDocsService.batchUpdate.mockResolvedValue({});
-    vi.mocked(convertMarkdownToDocs).mockReturnValue(localModel);
+    mockLinkStore.getLink.mockReturnValue({ docId: 'doc-1', lastSyncedAt: '2026-01-01T00:00:00Z' });
+    mockLinkStore.loadMarkdownSnapshots.mockResolvedValue({ local: SNAPSHOT, remote: SNAPSHOT });
+    vi.mocked(convertMarkdownToDocs).mockReturnValue({
+      elements: [{ type: 'paragraph', runs: [{ text: 'whatever' }] }],
+    });
   });
 
-  it('asks how to reconcile when both sides changed', async () => {
-    mockLinkStore.loadBaseline.mockResolvedValue('Intro paragraph\nOld second text\n');
-    mockDocsService.extractPlainText.mockReturnValue('Intro paragraph\nSecond paragraph\n');
-    mockLinkStore.getModelFingerprint.mockResolvedValue('fingerprint-of-older-markdown');
+  const preview = (direction: 'push' | 'pull', markdown: string, file = '/file.md'): Promise<
+    Awaited<ReturnType<typeof syncService.resolve>>
+  > => syncService.resolve(file, 'doc-1', 'preview', direction, markdown);
 
-    const result = await syncService.sync('/file.md', 'doc-1', 'markdown');
+  it('says there is nothing to push when only the Doc moved', async () => {
+    const result = await preview('push', SNAPSHOT);
 
-    expect(result.conflict).toBe('both');
+    expect(result.nothingToDo).toBe(true);
     expect(mockDocsService.batchUpdate).not.toHaveBeenCalled();
   });
 
-  it('reports a doc-only change separately, since there is nothing to resolve', async () => {
-    mockLinkStore.loadBaseline.mockResolvedValue('Intro paragraph\nOld second text\n');
-    mockDocsService.extractPlainText.mockReturnValue('Intro paragraph\nSecond paragraph\n');
-    // The local markdown is byte-for-byte what we pushed last time.
-    mockLinkStore.getModelFingerprint.mockResolvedValue(modelFingerprint(localModel));
+  it('pulls a Doc-only change without asking, since nothing of the user\'s is at stake', async () => {
+    const result = await preview('pull', SNAPSHOT);
 
-    const result = await syncService.sync('/file.md', 'doc-1', 'markdown');
+    expect(result.nothingToDo).toBe(false);
+    expect(result.needsReview).toBe(false);
+  });
 
-    expect(result.conflict).toBe('remote-only');
+  it('says there is nothing to pull when only the file moved', async () => {
+    mockLinkStore.loadMarkdownSnapshots.mockResolvedValue({
+      local: SNAPSHOT,
+      remote: 'Intro paragraph\n\nSecond paragraph\n',
+    });
+
+    const result = await preview('pull', 'Intro EDITED\n\nOld second text\n');
+
+    expect(result.nothingToDo).toBe(true);
+  });
+
+  it('pushes a file-only change without asking', async () => {
+    mockLinkStore.loadMarkdownSnapshots.mockResolvedValue({
+      local: SNAPSHOT,
+      remote: 'Intro paragraph\n\nSecond paragraph\n',
+    });
+
+    const result = await preview('push', 'Intro EDITED\n\nOld second text\n');
+
+    expect(result.nothingToDo).toBe(false);
+    expect(result.needsReview).toBe(false);
+  });
+
+  it('stops to ask when both sides moved, whichever way is asked for', async () => {
+    const local = 'Intro EDITED\n\nOld second text\n';
+
+    expect((await preview('push', local)).needsReview).toBe(true);
+    expect((await preview('pull', local)).needsReview).toBe(true);
     expect(mockDocsService.batchUpdate).not.toHaveBeenCalled();
   });
 
-  it('does not wipe a Doc that already had content when it is first linked', async () => {
-    // No baseline: this file has never been synced to this Doc.
-    mockLinkStore.loadBaseline.mockResolvedValue(null);
-    mockDocsService.extractPlainText.mockReturnValue('Intro paragraph\nSecond paragraph\n');
+  it('defaults every difference to the Doc on a pull and the file on a push', async () => {
+    const local = 'Intro EDITED\n\nOld second text\n';
 
-    const result = await syncService.sync('/file.md', 'doc-1', 'markdown');
-
-    expect(result.conflict).toBe('both');
-    expect(mockDocsService.batchUpdate).not.toHaveBeenCalled();
+    expect((await preview('pull', local)).changes?.every((c) => c.choice === 'remote')).toBe(true);
+    expect((await preview('push', local)).changes?.every((c) => c.choice === 'local')).toBe(true);
   });
 
-  it('does not inherit another file\'s baseline for the same Doc', async () => {
-    // Two files can point at one Doc. Baselines are keyed by docId, so a file
-    // that has never synced would otherwise pick up the other file's baseline,
-    // skip the first-sync guard entirely, and overwrite the Doc without asking.
-    // lastSyncedAt is the per-file signal: null means this file never synced.
+  it('does not push over a Doc that already had content when first linked', async () => {
+    // The data-loss guard. No snapshots means no shared history, so the whole
+    // Doc is a difference and the user has to see it before anything is written.
     mockLinkStore.getLink.mockReturnValue({ docId: 'doc-1', lastSyncedAt: null });
-    mockLinkStore.loadBaseline.mockResolvedValue('Intro paragraph\nSecond paragraph\n');
-    mockDocsService.extractPlainText.mockReturnValue('Intro paragraph\nSecond paragraph\n');
 
-    const result = await syncService.sync('/a-brand-new-file.md', 'doc-1', 'markdown');
+    const result = await preview('push', 'Something entirely different\n');
 
-    expect(result.conflict).toBe('both');
+    expect(result.needsReview).toBe(true);
     expect(mockDocsService.batchUpdate).not.toHaveBeenCalled();
   });
 
-  it('still populates a Doc that is genuinely empty on first link', async () => {
-    mockLinkStore.loadBaseline.mockResolvedValue(null);
+  it('does not inherit another file\'s snapshots for the same Doc', async () => {
+    // Two files can point at one Doc. Snapshots are keyed by docId, so a file
+    // that has never synced would otherwise be diffed against a history it was
+    // never part of -- and its own content would read as unchanged.
+    mockLinkStore.getLink.mockReturnValue({ docId: 'doc-1', lastSyncedAt: null });
+    mockLinkStore.loadMarkdownSnapshots.mockResolvedValue({ local: SNAPSHOT, remote: SNAPSHOT });
+
+    const result = await preview('push', 'A brand new file\n', '/a-brand-new-file.md');
+
+    expect(result.needsReview).toBe(true);
+    expect(mockLinkStore.loadMarkdownSnapshots).not.toHaveBeenCalled();
+  });
+
+  it('has nothing to review when the Doc is genuinely empty on first link', async () => {
+    mockLinkStore.getLink.mockReturnValue({ docId: 'doc-1', lastSyncedAt: null });
     mockDocsService.getDocument.mockResolvedValue({ body: { content: [{ endIndex: 2 }] } });
-    mockDocsService.extractPlainText.mockReturnValue('');
 
-    const result = await syncService.sync('/file.md', 'doc-1', 'markdown');
+    const result = await preview('push', 'Fresh content\n');
 
-    expect(result.success).toBe(true);
-    expect(result.conflict).toBeUndefined();
-    expect(mockDocsService.batchUpdate).toHaveBeenCalled();
+    expect(result.nothingToDo).toBe(false);
+    expect(result.needsReview).toBe(false);
   });
 });
 
@@ -263,6 +296,7 @@ describe('carrying out the user\'s choice', () => {
     mockDocsService.getDocument.mockResolvedValue(remoteDoc());
     mockDocsService.extractPlainText.mockReturnValue('Intro paragraph\nSecond paragraph\n');
     mockDocsService.batchUpdate.mockResolvedValue({});
+    mockLinkStore.getLink.mockReturnValue({ docId: 'doc-1', lastSyncedAt: '2026-01-01T00:00:00Z' });
     mockLinkStore.loadMarkdownSnapshots.mockResolvedValue({ local: SNAPSHOT, remote: SNAPSHOT });
     vi.mocked(convertMarkdownToDocs).mockReturnValue({
       elements: [{ type: 'paragraph', runs: [{ text: 'whatever' }] }],
@@ -271,13 +305,13 @@ describe('carrying out the user\'s choice', () => {
 
   it('preview reports every difference and writes nothing', async () => {
     const result = await syncService.resolve(
-      '/file.md', 'doc-1', 'preview', 'Intro EDITED\n\nOld second text\n',
+      '/file.md', 'doc-1', 'preview', 'push', 'Intro EDITED\n\nOld second text\n',
     );
 
     expect(result.success).toBe(true);
     expect(result.changes).toEqual([
       { index: 0, kind: 'local-only', local: 'Intro EDITED', remote: 'Intro paragraph', choice: 'local' },
-      { index: 1, kind: 'remote-only', local: 'Old second text', remote: 'Second paragraph', choice: 'remote' },
+      { index: 1, kind: 'remote-only', local: 'Old second text', remote: 'Second paragraph', choice: 'local' },
     ]);
     // Looking must never change anything.
     expect(mockDocsService.batchUpdate).not.toHaveBeenCalled();
@@ -285,7 +319,7 @@ describe('carrying out the user\'s choice', () => {
 
   it('preview marks a block both sides rewrote as a conflict', async () => {
     const result = await syncService.resolve(
-      '/file.md', 'doc-1', 'preview', 'Intro paragraph\n\nMy own second text\n',
+      '/file.md', 'doc-1', 'preview', 'push', 'Intro paragraph\n\nMy own second text\n',
     );
 
     expect(result.changes).toEqual([
@@ -306,7 +340,7 @@ describe('carrying out the user\'s choice', () => {
     // be reviewed rather than guessed at.
     mockLinkStore.loadMarkdownSnapshots.mockResolvedValue(null);
 
-    const result = await syncService.resolve('/file.md', 'doc-1', 'preview', 'Intro paragraph\n\nMine\n');
+    const result = await syncService.resolve('/file.md', 'doc-1', 'preview', 'push', 'Intro paragraph\n\nMine\n');
 
     expect(result.success).toBe(true);
     expect(result.changes).toEqual([
@@ -316,7 +350,7 @@ describe('carrying out the user\'s choice', () => {
 
   it('apply writes the approved markdown and edits the Doc to match', async () => {
     const result = await syncService.resolve(
-      '/file.md', 'doc-1', 'apply', 'Intro EDITED\n\nSecond paragraph\n',
+      '/file.md', 'doc-1', 'apply', 'push', 'Intro EDITED\n\nSecond paragraph\n',
     );
 
     expect(result.success).toBe(true);
@@ -329,7 +363,7 @@ describe('carrying out the user\'s choice', () => {
     // sync(). Without this the progress bar sits dark for the whole operation.
     const updates: Array<{ percent: number; label: string }> = [];
 
-    await syncService.resolve('/file.md', 'doc-1', 'apply', SNAPSHOT, {
+    await syncService.resolve('/file.md', 'doc-1', 'apply', 'push', SNAPSHOT, {
       onProgress: (u) => updates.push(u),
     });
 
@@ -341,7 +375,7 @@ describe('carrying out the user\'s choice', () => {
     // Recording a sync the file never received would make the next sync read
     // the stale file, decide the local side changed, and push it back over the
     // collaborator's edits.
-    const result = await syncService.resolve('/file.md', 'doc-1', 'apply', SNAPSHOT, {
+    const result = await syncService.resolve('/file.md', 'doc-1', 'apply', 'push', SNAPSHOT, {
       writeLocal: () => Promise.resolve(false),
     });
 
@@ -361,7 +395,7 @@ describe('carrying out the user\'s choice', () => {
       return Promise.resolve({});
     });
 
-    await syncService.resolve('/file.md', 'doc-1', 'apply', 'Intro EDITED\n\nSecond paragraph\n', {
+    await syncService.resolve('/file.md', 'doc-1', 'apply', 'push', 'Intro EDITED\n\nSecond paragraph\n', {
       writeLocal: () => { order.push('file'); return Promise.resolve(true); },
     });
 

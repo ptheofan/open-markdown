@@ -94,13 +94,12 @@ describe('GoogleDocsHandler', () => {
     expect(handleCalls).not.toContain('google-docs:link');
     expect(handleCalls).toContain('google-docs:unlink');
     expect(handleCalls).toContain('google-docs:get-link');
-    expect(handleCalls).toContain('google-docs:sync');
     expect(handleCalls).toContain('google-docs:sync-resolve');
   });
 
-  it('should register exactly 8 handlers', () => {
+  it('should register exactly 7 handlers', () => {
     registerGoogleDocsHandlers();
-    expect(vi.mocked(ipcMain.handle)).toHaveBeenCalledTimes(8);
+    expect(vi.mocked(ipcMain.handle)).toHaveBeenCalledTimes(7);
   });
 
   describe('pick-and-link', () => {
@@ -136,12 +135,12 @@ describe('GoogleDocsHandler', () => {
         .mock.calls.find((c) => c[0] === 'google-docs:sync-resolve');
       if (!entry) throw new Error('sync-resolve handler not registered');
       const fn = entry[1] as (...args: unknown[]) => Promise<unknown>;
-      return fn({}, '/notes/a.md', mode, markdown, undefined, undefined);
+      return fn({}, '/notes/a.md', mode, 'push', markdown, undefined, undefined);
     }
 
     /** Run whatever writeLocal callback the handler handed the sync service. */
     async function runWriteLocal(content: string): Promise<boolean | undefined> {
-      const options = mocks.syncService.resolve.mock.calls[0]?.[4] as
+      const options = mocks.syncService.resolve.mock.calls[0]?.[5] as
         { writeLocal?: (md: string) => Promise<boolean> } | undefined;
       return options?.writeLocal?.(content);
     }
@@ -156,7 +155,7 @@ describe('GoogleDocsHandler', () => {
     it('passes the chosen mode through to the sync service', async () => {
       await invokeResolve('preview');
       expect(mocks.syncService.resolve).toHaveBeenCalledWith(
-        '/notes/a.md', 'doc-1', 'preview', '# md', expect.any(Object),
+        '/notes/a.md', 'doc-1', 'preview', 'push', '# md', expect.any(Object),
       );
     });
 
@@ -201,25 +200,29 @@ describe('GoogleDocsHandler', () => {
       sent.calls.length = 0;
       mocks.linkStore.getLink.mockReturnValue({ docId: 'doc-1', lastSyncedAt: null });
       // Drive the callback the handler hands us, the way the service would.
-      mocks.syncService.sync.mockImplementation(
+      mocks.syncService.resolve.mockImplementation(
         (
           _f: string,
           _d: string,
+          _mode: string,
+          _dir: string,
           _m: string,
-          _mm: unknown,
-          _t: unknown,
-          onProgress?: (u: { percent: number; label: string }) => void,
+          options?: { onProgress?: (u: { percent: number; label: string }) => void },
         ) => {
-          onProgress?.({ percent: 25, label: 'Uploading diagram 1 of 2' });
-          onProgress?.({ percent: 70, label: 'Uploaded diagram 2 of 2' });
+          options?.onProgress?.({ percent: 25, label: 'Uploading diagram 1 of 2' });
+          options?.onProgress?.({ percent: 70, label: 'Uploaded diagram 2 of 2' });
           return Promise.resolve({ success: true });
         },
       );
 
       registerGoogleDocsHandlers();
-      const entry = vi.mocked(ipcMain.handle).mock.calls.find((c) => c[0] === 'google-docs:sync');
-      if (!entry) throw new Error('sync handler not registered');
-      await (entry[1] as (e: unknown, ...a: unknown[]) => Promise<unknown>)({}, '/a.md', '# x');
+      const entry = vi
+        .mocked(ipcMain.handle)
+        .mock.calls.find((c) => c[0] === 'google-docs:sync-resolve');
+      if (!entry) throw new Error('sync-resolve handler not registered');
+      await (entry[1] as (e: unknown, ...a: unknown[]) => Promise<unknown>)(
+        {}, '/a.md', 'apply', 'push', '# x',
+      );
 
       const progress = sent.calls.filter((c) => c.channel === 'google-docs:on-sync-progress');
       expect(progress.map((c) => c.payload)).toEqual([
@@ -232,16 +235,18 @@ describe('GoogleDocsHandler', () => {
   describe('sync with a document that is gone', () => {
     function invokeSync(filePath: string): Promise<unknown> {
       registerGoogleDocsHandlers();
-      const entry = vi.mocked(ipcMain.handle).mock.calls.find((c) => c[0] === 'google-docs:sync');
-      if (!entry) throw new Error('sync handler not registered');
+      const entry = vi
+        .mocked(ipcMain.handle)
+        .mock.calls.find((c) => c[0] === 'google-docs:sync-resolve');
+      if (!entry) throw new Error('sync-resolve handler not registered');
       const fn = entry[1] as (e: unknown, ...a: unknown[]) => Promise<unknown>;
-      return fn({}, filePath, '# hi');
+      return fn({}, filePath, 'apply', 'push', '# hi');
     }
 
     it('should drop the stale link when the document is not found', async () => {
       mocks.linkStore.getLink.mockReturnValue({ docId: 'GONE_DOC', lastSyncedAt: null });
       const notFound = Object.assign(new Error('Requested entity was not found.'), { status: 404 });
-      mocks.syncService.sync.mockRejectedValue(notFound);
+      mocks.syncService.resolve.mockRejectedValue(notFound);
 
       const result = (await invokeSync('/notes/a.md')) as { success: boolean; error: string };
 
@@ -255,7 +260,7 @@ describe('GoogleDocsHandler', () => {
       // result -- it does not throw -- so the returned result is the only
       // place the 404 is visible.
       mocks.linkStore.getLink.mockReturnValue({ docId: 'GONE_DOC', lastSyncedAt: null });
-      mocks.syncService.sync.mockResolvedValue({
+      mocks.syncService.resolve.mockResolvedValue({
         success: false,
         error: 'Requested entity was not found.',
         status: 404,
@@ -269,7 +274,7 @@ describe('GoogleDocsHandler', () => {
 
     it('should keep the link when the failure is not a missing document', async () => {
       mocks.linkStore.getLink.mockReturnValue({ docId: 'FINE_DOC', lastSyncedAt: null });
-      mocks.syncService.sync.mockRejectedValue(
+      mocks.syncService.resolve.mockRejectedValue(
         Object.assign(new Error('Backend error'), { status: 500 })
       );
 
@@ -290,7 +295,6 @@ describe('GoogleDocsHandler', () => {
     expect(removeCalls).toContain('google-docs:pick-and-link');
     expect(removeCalls).toContain('google-docs:unlink');
     expect(removeCalls).toContain('google-docs:get-link');
-    expect(removeCalls).toContain('google-docs:sync');
     expect(removeCalls).toContain('google-docs:sync-resolve');
   });
 });

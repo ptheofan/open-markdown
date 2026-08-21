@@ -129,7 +129,15 @@ export class GoogleDocsService {
       // back, or the report is unactionable.
       const at = /requests\[(\d+)\]/.exec(errorText)?.[1];
       const culprit = at != null ? requests[Number(at)] : undefined;
-      const detail = culprit != null ? ` Offending request: ${JSON.stringify(culprit)}` : '';
+      // The neighbours matter as much as the culprit: a bad range is usually
+      // a run that should have been split, and its siblings show where.
+      const around = at != null
+        ? requests.slice(Math.max(0, Number(at) - 2), Number(at) + 3)
+        : [];
+      const detail = culprit != null
+        ? ` Offending request: ${JSON.stringify(culprit)}`
+          + ` In context: ${JSON.stringify(around)}`
+        : '';
       console.error(`[DocsAPI] batchUpdate failed (${response.status}):`, errorText, detail);
       throw apiError(
         `Google Docs API error (${response.status}): ${errorText}${detail}`,

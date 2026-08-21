@@ -140,3 +140,34 @@ describe('MarkdownToDocsConverter', () => {
     expect(runs[0]).toEqual({ text: 'bold link', bold: true, link: 'https://example.com' });
   });
 });
+
+describe('a table written directly under the line above it', () => {
+  // Markdown in the wild routinely puts a table straight after a paragraph
+  // or a list item with no blank line between. A table cannot interrupt a
+  // paragraph in GFM, so the parser swallowed the whole thing as text: the
+  // Doc got a wall of pipe characters, and the paragraph diff then tried to
+  // write that over a region holding a real table, which Google rejects.
+  it('is a table even when a list item runs straight into it', () => {
+    const doc = convertMarkdownToDocs(
+      '1. **Cost estimate** (list prices)\n| Component | Spec |\n| --- | --- |\n| mongod | M30 |\n',
+    );
+
+    expect(doc.elements.map((e) => e.type)).toContain('table');
+  });
+
+  it('is a table even when a paragraph runs straight into it', () => {
+    const doc = convertMarkdownToDocs(
+      'Some prose about modules.\n| Module | Changes |\n| --- | --- |\n| a | b |\n',
+    );
+
+    expect(doc.elements.map((e) => e.type)).toContain('table');
+  });
+
+  it('leaves a line of pipes under a list item alone when no table follows', () => {
+    // Without the delimiter-row check this would be split off into its own
+    // element, breaking a list item that merely happens to contain a pipe.
+    const doc = convertMarkdownToDocs('- item | with a pipe\n| still the same item\n');
+
+    expect(doc.elements.map((e) => e.type)).toEqual(['list_item']);
+  });
+});

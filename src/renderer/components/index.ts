@@ -137,18 +137,17 @@ export {
   type GoogleDocsButtonCallbacks,
 } from './GoogleDocsButton';
 
-// GoogleDocsConfirmDialog
-export {
-  GoogleDocsConfirmDialog,
-  createGoogleDocsConfirmDialog,
-  type GoogleDocsConfirmDialogCallbacks,
-} from './GoogleDocsConfirmDialog';
-
 // GoogleDocsSettings
 export {
   GoogleDocsSettings,
   createGoogleDocsSettings,
 } from './GoogleDocsSettings';
+
+// SyncConflictDialog
+export {
+  createSyncConflictDialog,
+  type SyncConflictDialog,
+} from './SyncConflictDialog';
 
 // SyncProgressBar
 export {

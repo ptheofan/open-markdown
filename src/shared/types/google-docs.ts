@@ -37,12 +37,19 @@ interface GDocsParagraphElement {
   inlineObjectElement?: GDocsInlineObjectElement;
 }
 
+/** Present on a paragraph that Docs is rendering as a list item. */
+interface GDocsBullet {
+  listId?: string;
+  nestingLevel?: number;
+}
+
 interface GDocsParagraph {
   elements?: GDocsParagraphElement[];
   paragraphStyle?: Record<string, unknown>;
+  bullet?: GDocsBullet;
 }
 
-interface GDocsTableCell {
+export interface GDocsTableCell {
   content?: GDocsStructuralElement[];
 }
 
@@ -81,12 +88,37 @@ interface GDocsDocumentStyle {
   marginRight?: GDocsDimension;
 }
 
+/** An image (or other embed) referenced by an inlineObjectElement. */
+export interface GDocsInlineObject {
+  inlineObjectProperties?: {
+    embeddedObject?: {
+      title?: string;
+      description?: string;
+      imageProperties?: {
+        /** The URL we handed to insertInlineImage. Stable across reads,
+         *  unlike contentUri, which Google regenerates every fetch. */
+        sourceUri?: string;
+        contentUri?: string;
+      };
+    };
+  };
+}
+
+/** A list definition, which is where ordered-vs-bulleted actually lives. */
+export interface GDocsList {
+  listProperties?: {
+    nestingLevels?: Array<{ glyphType?: string; glyphSymbol?: string }>;
+  };
+}
+
 /** A Google Docs API document response (subset of fields we use). */
 export interface GDocsApiDocument {
   documentId?: string;
   title?: string;
   body?: GDocsBody;
-  inlineObjects?: Record<string, unknown>;
+  inlineObjects?: Record<string, GDocsInlineObject>;
+  /** Bullet presets, keyed by the listId a paragraph's bullet points at. */
+  lists?: Record<string, GDocsList>;
   documentStyle?: GDocsDocumentStyle;
 }
 
@@ -98,15 +130,47 @@ export interface GoogleDocLink {
   lastSyncedAt: string | null;
 }
 
+/** Why a sync stopped to ask the user. */
+export type SyncConflictKind = 'both' | 'remote-only';
+
+/** How the user chose to reconcile a two-sided change. */
+export type SyncResolveMode = 'push' | 'pull' | 'merge';
+
+/** One block both sides edited, which no algorithm can settle on its own. */
+export interface SyncConflict {
+  /** Position in the merged block list, used to apply the resolution. */
+  index: number;
+  /** The block as it stands in the local markdown file. */
+  local: string;
+  /** The block as it stands in the Google Doc. */
+  remote: string;
+}
+
+/** What the user picked for a single conflicting block. */
+export type SyncConflictChoice = 'local' | 'remote' | 'both';
+
 /** Result of a sync operation */
 export interface GoogleDocsSyncResult {
   success: boolean;
   error?: string;
-  externalEditsDetected?: boolean;
+  /**
+   * Set when the sync stopped to ask the user how to reconcile.
+   * 'both' -- the file and the Doc each changed since the last sync.
+   * 'remote-only' -- only the Doc changed, so there is nothing to resolve.
+   */
+  conflict?: SyncConflictKind;
   /** HTTP status when the failure came from a Google API call. */
   status?: number;
   /** Nothing had changed on either side; no API work was done. */
   unchanged?: boolean;
+}
+
+/** Result of resolving a two-sided change. */
+export interface GoogleDocsResolveResult extends GoogleDocsSyncResult {
+  /** New content for the local markdown file, when the choice changed it. */
+  markdown?: string;
+  /** Blocks the user must settle before a merge can finish. */
+  conflicts?: SyncConflict[];
 }
 
 /** Which stage of a sync is running. */

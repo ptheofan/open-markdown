@@ -4,7 +4,8 @@ import { getGoogleAuthService } from '@main/services/GoogleAuthService';
 import { getGoogleDocsLinkStore } from '@main/services/GoogleDocsLinkStore';
 import { createGoogleDocsService } from '@main/services/GoogleDocsService';
 import { createGoogleDocsSyncService } from '@main/services/GoogleDocsSyncService';
-import type { TableColumnWidths, MermaidDiagramData, GoogleDocsSyncResult } from '@shared/types/google-docs';
+import { getFileService } from '@main/services/FileService';
+import type { TableColumnWidths, MermaidDiagramData, GoogleDocsSyncResult, SyncResolveMode, SyncConflictChoice } from '@shared/types/google-docs';
 
 function sendToAllWindows(channel: string, data: unknown): void {
   const windows = BrowserWindow.getAllWindows();
@@ -142,26 +143,44 @@ export function registerGoogleDocsHandlers(): void {
     },
   );
 
-  // Sync confirm overwrite
+  // Reconcile a two-sided change the way the user chose. Merge takes two
+  // trips: the first reports the blocks it cannot settle, the second carries
+  // the user's answers.
   ipcMain.handle(
-    IPC_CHANNELS.GOOGLE_DOCS.SYNC_CONFIRM_OVERWRITE,
-    async (_event, filePath: string, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[], tableWidths?: TableColumnWidths[]) => {
+    IPC_CHANNELS.GOOGLE_DOCS.SYNC_RESOLVE,
+    async (
+      _event,
+      filePath: string,
+      mode: SyncResolveMode,
+      markdownContent: string,
+      mermaidDiagrams?: MermaidDiagramData[],
+      tableWidths?: TableColumnWidths[],
+      resolutions?: SyncConflictChoice[],
+    ) => {
       const link = linkStore.getLink(filePath);
       if (!link) return { success: false, error: 'File not linked to Google Docs' };
       sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, { syncing: true });
       try {
-        const result = await syncService.syncForceOverwrite(
-          filePath,
-          link.docId,
-          markdownContent,
+        const result = await syncService.resolve(filePath, link.docId, mode, markdownContent, {
           mermaidDiagrams,
           tableWidths,
-        );
+          resolutions,
+          onProgress: (update) => sendToAllWindows(
+            IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_PROGRESS, update,
+          ),
+          writeLocal: async (content) => {
+            const written = await getFileService().writeFile(filePath, content);
+            return written.success;
+          },
+        });
+        if (!result.success && isGone(result.status)) {
+          return await dropDeadLink(filePath);
+        }
         sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, { syncing: false });
         return result;
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Sync failed';
-        console.error('Google Docs overwrite sync error:', error);
+        console.error('Google Docs resolve error:', error);
         sendToAllWindows(IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_STATUS, { syncing: false });
         return { success: false, error: message };
       }
@@ -177,7 +196,7 @@ export function unregisterGoogleDocsHandlers(): void {
   ipcMain.removeHandler(IPC_CHANNELS.GOOGLE_DOCS.UNLINK);
   ipcMain.removeHandler(IPC_CHANNELS.GOOGLE_DOCS.GET_LINK);
   ipcMain.removeHandler(IPC_CHANNELS.GOOGLE_DOCS.SYNC);
-  ipcMain.removeHandler(IPC_CHANNELS.GOOGLE_DOCS.SYNC_CONFIRM_OVERWRITE);
+  ipcMain.removeHandler(IPC_CHANNELS.GOOGLE_DOCS.SYNC_RESOLVE);
 
   if (authChangeCleanup) {
     authChangeCleanup();

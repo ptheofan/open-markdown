@@ -24,6 +24,8 @@ describe('GoogleDocsSyncService', () => {
     saveModelFingerprint: vi.fn(),
     saveImageCache: vi.fn(),
     saveBaseline: vi.fn(),
+    saveMarkdownSnapshots: vi.fn(),
+    loadMarkdownSnapshots: vi.fn().mockResolvedValue(null),
     updateLastSynced: vi.fn(),
     getLink: vi.fn(),
     setLink: vi.fn(),
@@ -81,16 +83,17 @@ describe('GoogleDocsSyncService', () => {
       expect(mockDocsService.batchUpdate).toHaveBeenCalled();
     });
 
-    it('still syncs when the document was edited in Google Docs', async () => {
+    it('stops to ask when only the document was edited in Google Docs', async () => {
       docSaying('Hello');
       mockDocsService.extractPlainText.mockReturnValue('Hello, edited by someone else');
+      // Fingerprint matches, so the markdown is exactly what we last pushed.
       mockLinkStore.getModelFingerprint.mockResolvedValue(
         modelFingerprint({ elements: [{ type: 'paragraph', runs: [{ text: 'Hello' }] }] }),
       );
 
       const result = await syncService.sync('/file.md', 'doc-1', 'Hello', diagrams);
 
-      expect(result.externalEditsDetected).toBe(true);
+      expect(result.conflict).toBe('remote-only');
     });
   });
 
@@ -239,7 +242,7 @@ describe('GoogleDocsSyncService', () => {
 
       const result = await syncService.sync('/file.md', 'doc-123', 'new content');
       expect(result.success).toBe(false);
-      expect(result.externalEditsDetected).toBe(true);
+      expect(result.conflict).toBe('both');
       expect(mockDocsService.batchUpdate).not.toHaveBeenCalled();
     });
   });

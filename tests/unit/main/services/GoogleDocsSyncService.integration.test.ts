@@ -191,6 +191,7 @@ describe('GoogleDocsSyncService Integration', () => {
       const originalText = 'Hello world\n';
       await linkStore.saveBaseline('doc-123', originalText);
       await linkStore.setLink('/test/file.md', 'doc-123');
+      await linkStore.updateLastSynced('/test/file.md', '2026-01-01T00:00:00.000Z');
 
       // Current doc matches baseline (no external edits)
       mockDocsService.getDocument.mockResolvedValue({
@@ -234,6 +235,7 @@ describe('GoogleDocsSyncService Integration', () => {
       const text = 'Hello world\n';
       await linkStore.saveBaseline('doc-123', text);
       await linkStore.setLink('/test/file.md', 'doc-123');
+      await linkStore.updateLastSynced('/test/file.md', '2026-01-01T00:00:00.000Z');
 
       mockDocsService.getDocument.mockResolvedValue({
         body: {
@@ -268,6 +270,7 @@ describe('GoogleDocsSyncService Integration', () => {
       const originalText = 'First paragraph\n';
       await linkStore.saveBaseline('doc-123', originalText);
       await linkStore.setLink('/test/file.md', 'doc-123');
+      await linkStore.updateLastSynced('/test/file.md', '2026-01-01T00:00:00.000Z');
 
       // First getDocument call: for sync comparison
       // Second getDocument call: after text diff, for formatting reapply
@@ -350,6 +353,7 @@ describe('GoogleDocsSyncService Integration', () => {
 
       await linkStore.saveBaseline('doc-123', 'original text\n');
       await linkStore.setLink('/test/file.md', 'doc-123');
+      await linkStore.updateLastSynced('/test/file.md', '2026-01-01T00:00:00.000Z');
 
       // Someone edited the doc externally — current text differs from baseline
       mockDocsService.getDocument.mockResolvedValue({
@@ -368,7 +372,7 @@ describe('GoogleDocsSyncService Integration', () => {
       const result = await syncService.sync('/test/file.md', 'doc-123', 'my new content');
 
       expect(result.success).toBe(false);
-      expect(result.externalEditsDetected).toBe(true);
+      expect(result.conflict).toBe('both');
       expect(mockDocsService.batchUpdate).not.toHaveBeenCalled();
     });
   });
@@ -384,6 +388,7 @@ describe('GoogleDocsSyncService Integration', () => {
 
       await linkStore.saveBaseline('doc-123', 'original text\n');
       await linkStore.setLink('/test/file.md', 'doc-123');
+      await linkStore.updateLastSynced('/test/file.md', '2026-01-01T00:00:00.000Z');
 
       // syncForceOverwrite → fullPopulate:
       // getDocument call 1: fullPopulate() checks existing content for clearing
@@ -437,6 +442,7 @@ describe('GoogleDocsSyncService Integration', () => {
 
       await linkStore.saveBaseline('doc-123', 'old content\n');
       await linkStore.setLink('/test/file.md', 'doc-123');
+      await linkStore.updateLastSynced('/test/file.md', '2026-01-01T00:00:00.000Z');
 
       // syncForceOverwrite → fullPopulate:
       // getDocument call 1: fullPopulate() checks existing content for clearing
@@ -850,6 +856,7 @@ describe('GoogleDocsSyncService Integration', () => {
       const originalText = 'Hello world\n';
       await linkStore.saveBaseline('doc-123', originalText);
       await linkStore.setLink('/test/file.md', 'doc-123');
+      await linkStore.updateLastSynced('/test/file.md', '2026-01-01T00:00:00.000Z');
 
       // Current doc matches baseline (no external edits)
       mockDocsService.getDocument

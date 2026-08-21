@@ -114,23 +114,53 @@ export class GoogleDocsLinkStore {
     await fs.writeFile(cachePath, JSON.stringify(cache), 'utf-8');
   }
 
+  /**
+   * The two markdown snapshots a merge needs: the file as it stood at the last
+   * sync, and the Doc reverse-converted at that same moment.
+   *
+   * They are kept apart because they are different dialects of one document --
+   * a mermaid fence locally is a PNG remotely. Diffing each side against its
+   * own snapshot is what stops that gap from looking like an edit. See
+   * ThreeWayMerge for the full reasoning.
+   */
+  async saveMarkdownSnapshots(docId: string, local: string, remote: string): Promise<void> {
+    await Promise.all([
+      fs.writeFile(path.join(this.baselineDir, `${docId}.local.md`), local, 'utf-8'),
+      fs.writeFile(path.join(this.baselineDir, `${docId}.remote.md`), remote, 'utf-8'),
+    ]);
+  }
+
+  async loadMarkdownSnapshots(
+    docId: string,
+  ): Promise<{ local: string; remote: string } | null> {
+    try {
+      const [local, remote] = await Promise.all([
+        fs.readFile(path.join(this.baselineDir, `${docId}.local.md`), 'utf-8'),
+        fs.readFile(path.join(this.baselineDir, `${docId}.remote.md`), 'utf-8'),
+      ]);
+      return { local, remote };
+    } catch {
+      // Either is missing: this link predates snapshotting, or was never
+      // synced. A merge is impossible without both, so say so plainly.
+      return null;
+    }
+  }
+
   async deleteBaseline(docId: string): Promise<void> {
-    const baselinePath = path.join(this.baselineDir, `${docId}.baseline.txt`);
-    try {
-      await fs.unlink(baselinePath);
-    } catch {
-      // ignore if not found
-    }
-    try {
-      await fs.unlink(path.join(this.baselineDir, `${docId}.images.json`));
-    } catch {
-      // ignore if not found
-    }
-    try {
-      await fs.unlink(path.join(this.baselineDir, `${docId}.model`));
-    } catch {
-      // ignore if not found
-    }
+    const stale = [
+      `${docId}.baseline.txt`,
+      `${docId}.images.json`,
+      `${docId}.model`,
+      `${docId}.local.md`,
+      `${docId}.remote.md`,
+    ];
+    await Promise.all(stale.map(async (name) => {
+      try {
+        await fs.unlink(path.join(this.baselineDir, name));
+      } catch {
+        // ignore if not found
+      }
+    }));
   }
 
   private async save(): Promise<void> {

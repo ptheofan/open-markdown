@@ -144,10 +144,28 @@ function generateParagraphDiffOperations(
         } else {
           // ── N:M REPLACEMENT — delete old paragraphs, insert new text ──
           const insertAt = apiParas[apiIdx]!.startIndex;
-          // Delete old paragraphs (collect range from first to last)
-          const deleteStart = apiParas[apiIdx]!.startIndex;
-          const deleteEnd = apiParas[apiIdx + removedCount - 1]!.endIndex;
-          allOps.push({ type: 'delete', index: deleteStart, endIndex: deleteEnd });
+          // One range per run of paragraphs that really are adjacent.
+          //
+          // extractApiParagraphs walks only the body's top level and keeps
+          // the paragraphs, so a table between two of them leaves no trace in
+          // the list -- they look like neighbours while a whole table sits
+          // between them in the document. Taking "first start to last end"
+          // then produces a range across the table, and Google refuses the
+          // whole batch: deleting the newline before a table, or either of
+          // its boundaries, without deleting the table itself is invalid.
+          // A gap between one paragraph's end and the next one's start is
+          // exactly where something else lives.
+          let runStart = apiParas[apiIdx]!.startIndex;
+          let deleteEnd = apiParas[apiIdx]!.endIndex;
+          for (let i = 1; i < removedCount; i++) {
+            const para = apiParas[apiIdx + i]!;
+            if (para.startIndex !== deleteEnd) {
+              allOps.push({ type: 'delete', index: runStart, endIndex: deleteEnd });
+              runStart = para.startIndex;
+            }
+            deleteEnd = para.endIndex;
+          }
+          allOps.push({ type: 'delete', index: runStart, endIndex: deleteEnd });
           // Insert new paragraphs as text
           let newText = '';
           for (let i = 0; i < addedCount; i++) {

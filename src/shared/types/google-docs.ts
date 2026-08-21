@@ -133,21 +133,40 @@ export interface GoogleDocLink {
 /** Why a sync stopped to ask the user. */
 export type SyncConflictKind = 'both' | 'remote-only';
 
-/** How the user chose to reconcile a two-sided change. */
-export type SyncResolveMode = 'push' | 'pull' | 'merge';
+/**
+ * The two halves of resolving a sync.
+ *
+ * 'preview' computes every difference and hands it back without touching
+ * either side; 'apply' takes the markdown the user settled on and makes both
+ * the file and the Doc hold it. Direction is no longer a mode -- "use the
+ * Doc" and "use the file" are just every change set one way in the preview.
+ */
+export type SyncResolveMode = 'preview' | 'apply';
 
-/** One block both sides edited, which no algorithm can settle on its own. */
-export interface SyncConflict {
-  /** Position in the merged block list, used to apply the resolution. */
-  index: number;
-  /** The block as it stands in the local markdown file. */
-  local: string;
-  /** The block as it stands in the Google Doc. */
-  remote: string;
-}
-
-/** What the user picked for a single conflicting block. */
+/** What the user picked for a single difference. */
 export type SyncConflictChoice = 'local' | 'remote' | 'both';
+
+/**
+ * What kind of difference a change represents.
+ *
+ * 'local-only' and 'remote-only' have an obvious default, but they are still
+ * reported: the user asked to see every difference before it is applied, and
+ * a silently-applied hunk is one they cannot decline.
+ */
+export type SyncChangeKind = 'conflict' | 'local-only' | 'remote-only';
+
+/** One difference between the file and the Doc, for the user to settle. */
+export interface SyncChange {
+  /** Position in the merged block list, used to apply the choice. */
+  index: number;
+  kind: SyncChangeKind;
+  /** The block as it stands in the local markdown file. Empty if absent. */
+  local: string;
+  /** The block as it stands in the Google Doc. Empty if absent. */
+  remote: string;
+  /** What happens if the user changes nothing. */
+  choice: SyncConflictChoice;
+}
 
 /** Result of a sync operation */
 export interface GoogleDocsSyncResult {
@@ -169,8 +188,13 @@ export interface GoogleDocsSyncResult {
 export interface GoogleDocsResolveResult extends GoogleDocsSyncResult {
   /** New content for the local markdown file, when the choice changed it. */
   markdown?: string;
-  /** Blocks the user must settle before a merge can finish. */
-  conflicts?: SyncConflict[];
+  /** Every difference between the file and the Doc, for the review screen. */
+  changes?: SyncChange[];
+  /**
+   * The merged document with each change at its default, one block per slot.
+   * The review screen substitutes into this to preview a different choice.
+   */
+  blocks?: string[];
 }
 
 /** Which stage of a sync is running. */

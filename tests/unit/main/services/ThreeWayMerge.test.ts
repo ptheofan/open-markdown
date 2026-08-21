@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { splitBlocks, joinBlocks, threeWayMerge, applyResolutions } from '@main/services/ThreeWayMerge';
+import { splitBlocks, joinBlocks, threeWayMerge, applyResolutions, twoWayReview } from '@main/services/ThreeWayMerge';
+import type { MergeOutcome } from '@main/services/ThreeWayMerge';
+
+/** Only the differences no default can settle. */
+const conflictsOf = (outcome: MergeOutcome): MergeOutcome['changes'] =>
+  outcome.changes.filter((change) => change.kind === 'conflict');
 
 describe('splitBlocks', () => {
   it('keeps a fenced code block whole despite its blank lines', () => {
@@ -35,7 +40,7 @@ describe('threeWayMerge', () => {
       remote: 'one\n\ntwo\n\nthree EDITED\n',
     });
 
-    expect(result.conflicts).toEqual([]);
+    expect(conflictsOf(result)).toEqual([]);
     expect(joinBlocks(result.blocks)).toBe('one EDITED\n\ntwo\n\nthree EDITED\n');
   });
 
@@ -47,7 +52,7 @@ describe('threeWayMerge', () => {
       remote: 'one\n\nthree\n',
     });
 
-    expect(result.conflicts).toEqual([]);
+    expect(conflictsOf(result)).toEqual([]);
     expect(joinBlocks(result.blocks)).toBe('one\n\nthree\n');
   });
 
@@ -59,8 +64,8 @@ describe('threeWayMerge', () => {
       remote: 'one\n\ntwo REMOTE\n',
     });
 
-    expect(result.conflicts).toHaveLength(1);
-    expect(result.conflicts[0]).toMatchObject({ local: 'two LOCAL', remote: 'two REMOTE' });
+    expect(conflictsOf(result)).toHaveLength(1);
+    expect(conflictsOf(result)[0]).toMatchObject({ local: 'two LOCAL', remote: 'two REMOTE' });
   });
 
   it('does not call it a conflict when both sides made the same edit', () => {
@@ -71,7 +76,7 @@ describe('threeWayMerge', () => {
       remote: 'one\n\ntwo SAME\n',
     });
 
-    expect(result.conflicts).toEqual([]);
+    expect(conflictsOf(result)).toEqual([]);
     expect(joinBlocks(result.blocks)).toBe('one\n\ntwo SAME\n');
   });
 
@@ -87,7 +92,7 @@ describe('threeWayMerge', () => {
       remote: '# Title\n\n![](https://drive/x)\n\nProse edited\n',
     });
 
-    expect(result.conflicts).toEqual([]);
+    expect(conflictsOf(result)).toEqual([]);
     expect(joinBlocks(result.blocks)).toBe('# Title\n\n```mermaid\ngraph A\n```\n\nProse edited\n');
   });
 
@@ -103,7 +108,7 @@ describe('threeWayMerge', () => {
       remote: '# Title\n\n![](https://drive/x)\n\n[Edit](https://mermaid.live/a)\n\nProse edited\n',
     });
 
-    expect(result.conflicts).toEqual([]);
+    expect(conflictsOf(result)).toEqual([]);
     expect(joinBlocks(result.blocks)).toBe('# Title\n\n```mermaid\ngraph A\n```\n\nProse edited\n');
   });
 
@@ -115,7 +120,7 @@ describe('threeWayMerge', () => {
       remote: '# Title\n\n![](https://drive/x)\n',
     });
 
-    expect(result.conflicts).toEqual([]);
+    expect(conflictsOf(result)).toEqual([]);
     expect(joinBlocks(result.blocks)).toBe('# Title\n\n```mermaid\ngraph A\n```\n');
   });
 });
@@ -129,17 +134,96 @@ describe('applyResolutions', () => {
   });
 
   it('keeps the local side', () => {
-    const blocks = applyResolutions(merged.blocks, merged.conflicts, ['local']);
+    const blocks = applyResolutions(merged.blocks, merged.changes, ['local']);
     expect(joinBlocks(blocks)).toBe('one\n\ntwo LOCAL\n');
   });
 
   it('keeps the remote side', () => {
-    const blocks = applyResolutions(merged.blocks, merged.conflicts, ['remote']);
+    const blocks = applyResolutions(merged.blocks, merged.changes, ['remote']);
     expect(joinBlocks(blocks)).toBe('one\n\ntwo REMOTE\n');
   });
 
   it('keeps both, local first', () => {
-    const blocks = applyResolutions(merged.blocks, merged.conflicts, ['both']);
+    const blocks = applyResolutions(merged.blocks, merged.changes, ['both']);
     expect(joinBlocks(blocks)).toBe('one\n\ntwo LOCAL\n\ntwo REMOTE\n');
+  });
+});
+
+describe('threeWayMerge change reporting', () => {
+  it('reports a change for every edit, not only the clashing ones', () => {
+    const result = threeWayMerge({
+      localBase: 'one\n\ntwo\n\nthree\n',
+      local: 'one EDITED\n\ntwo\n\nthree\n',
+      remoteBase: 'one\n\ntwo\n\nthree\n',
+      remote: 'one\n\ntwo\n\nthree EDITED\n',
+    });
+
+    expect(result.changes).toEqual([
+      { index: 0, kind: 'local-only', local: 'one EDITED', remote: 'one', choice: 'local' },
+      { index: 2, kind: 'remote-only', local: 'three', remote: 'three EDITED', choice: 'remote' },
+    ]);
+  });
+
+  it('marks a block both sides rewrote as a conflict', () => {
+    const result = threeWayMerge({
+      localBase: 'one\n\ntwo\n',
+      local: 'one MINE\n\ntwo\n',
+      remoteBase: 'one\n\ntwo\n',
+      remote: 'one THEIRS\n\ntwo\n',
+    });
+
+    expect(result.changes).toEqual([
+      { index: 0, kind: 'conflict', local: 'one MINE', remote: 'one THEIRS', choice: 'local' },
+    ]);
+  });
+
+  it('reports an empty side when one of them deleted the block', () => {
+    const result = threeWayMerge({
+      localBase: 'one\n\ntwo\n',
+      local: 'one\n\ntwo\n',
+      remoteBase: 'one\n\ntwo\n',
+      remote: 'one\n',
+    });
+
+    expect(result.changes).toEqual([
+      { index: 1, kind: 'remote-only', local: 'two', remote: '', choice: 'remote' },
+    ]);
+  });
+});
+
+describe('twoWayReview', () => {
+  it('finds nothing when the two sides already agree', () => {
+    const result = twoWayReview('one\n\ntwo\n', 'one\n\ntwo\n');
+    expect(result.changes).toEqual([]);
+    expect(joinBlocks(result.blocks)).toBe('one\n\ntwo\n');
+  });
+
+  it('reports a block only the Doc has, defaulting to the file', () => {
+    const result = twoWayReview('one\n', 'one\n\nextra\n');
+    expect(result.changes).toEqual([
+      { index: 1, kind: 'remote-only', local: '', remote: 'extra', choice: 'local' },
+    ]);
+    // Left at its default, the file wins and the Doc's block goes.
+    expect(joinBlocks(result.blocks)).toBe('one\n');
+  });
+
+  it('reports a block only the file has', () => {
+    const result = twoWayReview('one\n\nmine\n', 'one\n');
+    expect(result.changes).toEqual([
+      { index: 1, kind: 'local-only', local: 'mine', remote: '', choice: 'local' },
+    ]);
+  });
+
+  it('reports a differing block as a conflict', () => {
+    const result = twoWayReview('one\n\ntwo MINE\n', 'one\n\ntwo THEIRS\n');
+    expect(result.changes).toEqual([
+      { index: 1, kind: 'conflict', local: 'two MINE', remote: 'two THEIRS', choice: 'local' },
+    ]);
+  });
+
+  it('lets the Doc win when the choice is flipped', () => {
+    const result = twoWayReview('one\n\ntwo MINE\n', 'one\n\ntwo THEIRS\n');
+    const blocks = applyResolutions(result.blocks, result.changes, ['remote']);
+    expect(joinBlocks(blocks)).toBe('one\n\ntwo THEIRS\n');
   });
 });

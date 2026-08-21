@@ -269,63 +269,59 @@ describe('carrying out the user\'s choice', () => {
     });
   });
 
-  it('pull rewrites the file and leaves the Doc alone', async () => {
-    const result = await syncService.resolve('/file.md', 'doc-1', 'pull', SNAPSHOT);
+  it('preview reports every difference and writes nothing', async () => {
+    const result = await syncService.resolve(
+      '/file.md', 'doc-1', 'preview', 'Intro EDITED\n\nOld second text\n',
+    );
 
     expect(result.success).toBe(true);
-    expect(result.markdown).toBe('Intro paragraph\n\nSecond paragraph\n');
+    expect(result.changes).toEqual([
+      { index: 0, kind: 'local-only', local: 'Intro EDITED', remote: 'Intro paragraph', choice: 'local' },
+      { index: 1, kind: 'remote-only', local: 'Old second text', remote: 'Second paragraph', choice: 'remote' },
+    ]);
+    // Looking must never change anything.
     expect(mockDocsService.batchUpdate).not.toHaveBeenCalled();
   });
 
-  it('pull discards local edits, which is what taking the Doc means', async () => {
+  it('preview marks a block both sides rewrote as a conflict', async () => {
     const result = await syncService.resolve(
-      '/file.md', 'doc-1', 'pull', 'Intro EDITED LOCALLY\n\nOld second text\n',
+      '/file.md', 'doc-1', 'preview', 'Intro paragraph\n\nMy own second text\n',
     );
 
-    expect(result.markdown).toBe('Intro paragraph\n\nSecond paragraph\n');
+    expect(result.changes).toEqual([
+      {
+        index: 1,
+        kind: 'conflict',
+        local: 'My own second text',
+        remote: 'Second paragraph',
+        choice: 'local',
+      },
+    ]);
   });
 
-  it('push edits the Doc and does not touch the file', async () => {
-    const result = await syncService.resolve('/file.md', 'doc-1', 'push', SNAPSHOT);
+  it('previews a first sync against the Doc as it stands, having no snapshot', async () => {
+    // The old code refused here, telling the user to pick a whole side. There
+    // is no shared ancestor, but the two documents themselves diff perfectly
+    // well -- which is the only way a first sync onto a Doc with content can
+    // be reviewed rather than guessed at.
+    mockLinkStore.loadMarkdownSnapshots.mockResolvedValue(null);
+
+    const result = await syncService.resolve('/file.md', 'doc-1', 'preview', 'Intro paragraph\n\nMine\n');
 
     expect(result.success).toBe(true);
-    expect(result.markdown).toBeUndefined();
-    expect(mockDocsService.batchUpdate).toHaveBeenCalled();
+    expect(result.changes).toEqual([
+      { index: 1, kind: 'conflict', local: 'Mine', remote: 'Second paragraph', choice: 'local' },
+    ]);
   });
 
-  it('merge carries both sides when they touched different blocks', async () => {
+  it('apply writes the approved markdown and edits the Doc to match', async () => {
     const result = await syncService.resolve(
-      '/file.md', 'doc-1', 'merge', 'Intro EDITED\n\nOld second text\n',
+      '/file.md', 'doc-1', 'apply', 'Intro EDITED\n\nSecond paragraph\n',
     );
 
-    expect(result.conflicts).toBeUndefined();
+    expect(result.success).toBe(true);
     expect(result.markdown).toBe('Intro EDITED\n\nSecond paragraph\n');
     expect(mockDocsService.batchUpdate).toHaveBeenCalled();
-  });
-
-  it('merge stops and reports a clash rather than picking a winner', async () => {
-    const result = await syncService.resolve(
-      '/file.md', 'doc-1', 'merge', 'Intro paragraph\n\nMy own second text\n',
-    );
-
-    expect(result.success).toBe(false);
-    expect(result.conflicts).toHaveLength(1);
-    expect(result.conflicts?.[0]).toMatchObject({
-      local: 'My own second text',
-      remote: 'Second paragraph',
-    });
-    // Nothing is written until the user has settled it.
-    expect(mockDocsService.batchUpdate).not.toHaveBeenCalled();
-  });
-
-  it('merge applies the choice it is given the second time round', async () => {
-    const result = await syncService.resolve(
-      '/file.md', 'doc-1', 'merge', 'Intro paragraph\n\nMy own second text\n',
-      { resolutions: ['remote'] },
-    );
-
-    expect(result.success).toBe(true);
-    expect(result.markdown).toBe('Intro paragraph\n\nSecond paragraph\n');
   });
 
   it('reports progress, so the snackbar keeps moving while it works', async () => {
@@ -333,11 +329,11 @@ describe('carrying out the user\'s choice', () => {
     // sync(). Without this the progress bar sits dark for the whole operation.
     const updates: Array<{ percent: number; label: string }> = [];
 
-    await syncService.resolve('/file.md', 'doc-1', 'push', SNAPSHOT, {
+    await syncService.resolve('/file.md', 'doc-1', 'apply', SNAPSHOT, {
       onProgress: (u) => updates.push(u),
     });
 
-    expect(updates[0]?.label).toBe('Reading the Google Doc');
+    expect(updates[0]?.label).toBe('Applying changes');
     expect(updates.at(-1)).toEqual({ percent: 100, label: 'Done' });
   });
 
@@ -345,33 +341,31 @@ describe('carrying out the user\'s choice', () => {
     // Recording a sync the file never received would make the next sync read
     // the stale file, decide the local side changed, and push it back over the
     // collaborator's edits.
-    const result = await syncService.resolve('/file.md', 'doc-1', 'pull', SNAPSHOT, {
+    const result = await syncService.resolve('/file.md', 'doc-1', 'apply', SNAPSHOT, {
       writeLocal: () => Promise.resolve(false),
     });
 
     expect(result.success).toBe(false);
     expect(mockLinkStore.saveBaseline).not.toHaveBeenCalled();
     expect(mockLinkStore.saveModelFingerprint).not.toHaveBeenCalled();
+    expect(mockDocsService.batchUpdate).not.toHaveBeenCalled();
   });
 
   it('writes the file before touching the Doc, so a failed push self-heals', async () => {
+    // Recorded as each side actually happens. Checking mock call counts after
+    // the fact cannot tell the two orderings apart -- both end with one write
+    // and one batchUpdate.
     const order: string[] = [];
+    mockDocsService.batchUpdate.mockImplementation(() => {
+      order.push('doc');
+      return Promise.resolve({});
+    });
 
-    await syncService.resolve('/file.md', 'doc-1', 'merge', 'Intro EDITED\n\nOld second text\n', {
+    await syncService.resolve('/file.md', 'doc-1', 'apply', 'Intro EDITED\n\nSecond paragraph\n', {
       writeLocal: () => { order.push('file'); return Promise.resolve(true); },
     });
-    if (mockDocsService.batchUpdate.mock.calls.length > 0) order.push('doc');
 
-    expect(order).toEqual(['file', 'doc']);
-  });
-
-  it('says plainly that a merge needs a previous sync to compare against', async () => {
-    mockLinkStore.loadMarkdownSnapshots.mockResolvedValue(null);
-
-    const result = await syncService.resolve('/file.md', 'doc-1', 'merge', SNAPSHOT);
-
-    expect(result.success).toBe(false);
-    expect(result.error).toContain('previous successful sync');
-    expect(mockDocsService.batchUpdate).not.toHaveBeenCalled();
+    expect(order[0]).toBe('file');
+    expect(order).toContain('doc');
   });
 });

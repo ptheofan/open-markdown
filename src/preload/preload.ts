@@ -33,7 +33,6 @@ import type {
   GoogleDocsResolveResult,
   SyncProgressUpdate,
   SyncResolveMode,
-  SyncConflictChoice,
   TableColumnWidths,
   MermaidDiagramData,
 } from '@shared/types';
@@ -383,7 +382,7 @@ const electronAPI: ElectronAPI = {
       return ipcRenderer.invoke(IPC_CHANNELS.GOOGLE_DOCS.SYNC, filePath, markdownContent, mermaidDiagrams, tableWidths);
     },
 
-    syncResolve: (filePath: string, mode: SyncResolveMode, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[], tableWidths?: TableColumnWidths[], resolutions?: SyncConflictChoice[]): Promise<GoogleDocsResolveResult> => {
+    syncResolve: (filePath: string, mode: SyncResolveMode, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[], tableWidths?: TableColumnWidths[]): Promise<GoogleDocsResolveResult> => {
       return ipcRenderer.invoke(
         IPC_CHANNELS.GOOGLE_DOCS.SYNC_RESOLVE,
         filePath,
@@ -391,7 +390,6 @@ const electronAPI: ElectronAPI = {
         markdownContent,
         mermaidDiagrams,
         tableWidths,
-        resolutions,
       ) as Promise<GoogleDocsResolveResult>;
     },
 

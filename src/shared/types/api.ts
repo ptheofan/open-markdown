@@ -13,7 +13,7 @@ import type {
   ExternalFileOpenEvent,
 } from './fileAssociation';
 import type { RecentFileEntry } from './recentFiles';
-import type { GoogleDocLink, GoogleDocsSyncResult, GoogleDocsResolveResult, GoogleAuthState, MermaidDiagramData, TableColumnWidths, SyncProgressUpdate, SyncResolveMode, SyncConflictChoice } from './google-docs';
+import type { GoogleDocLink, GoogleDocsSyncResult, GoogleDocsResolveResult, GoogleAuthState, MermaidDiagramData, TableColumnWidths, SyncProgressUpdate, SyncResolveMode } from './google-docs';
 
 /**
  * IPC Channel names for type-safe communication
@@ -306,7 +306,7 @@ export interface GoogleDocsAPI {
   sync: (filePath: string, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[], tableWidths?: TableColumnWidths[]) => Promise<GoogleDocsSyncResult>;
   /** Reconcile a two-sided change. Merge is called twice: once to learn the
    *  conflicts, once with the user's answers. */
-  syncResolve: (filePath: string, mode: SyncResolveMode, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[], tableWidths?: TableColumnWidths[], resolutions?: SyncConflictChoice[]) => Promise<GoogleDocsResolveResult>;
+  syncResolve: (filePath: string, mode: SyncResolveMode, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[], tableWidths?: TableColumnWidths[]) => Promise<GoogleDocsResolveResult>;
   onAuthChange: (callback: (state: GoogleAuthState) => void) => () => void;
   onSyncProgress: (callback: (update: SyncProgressUpdate) => void) => () => void;
   onSyncStatus: (callback: (status: { syncing: boolean; error?: string }) => void) => () => void;

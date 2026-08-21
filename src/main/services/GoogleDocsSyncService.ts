@@ -8,7 +8,7 @@
 import { diffChars, diffArrays } from 'diff';
 import { convertMarkdownToDocs } from '@main/services/MarkdownToDocsConverter';
 import { convertDocsToMarkdown } from '@main/services/DocsToMarkdownConverter';
-import { threeWayMerge, applyResolutions, joinBlocks } from '@main/services/ThreeWayMerge';
+import { threeWayMerge, twoWayReview } from '@main/services/ThreeWayMerge';
 import {
   buildInsertRequests,
   CODE_FONT_FAMILY,
@@ -31,7 +31,6 @@ import type {
   GoogleDocsResolveResult,
   GoogleDocsSyncResult,
   MermaidDiagramData,
-  SyncConflictChoice,
   SyncPhase,
   SyncResolveMode,
   SyncProgressUpdate,
@@ -833,16 +832,16 @@ export class GoogleDocsSyncService {
   }
 
   /**
-   * Carry out the reconciliation the user chose for a two-sided change.
+   * Resolve a sync in two halves: look, then leap.
    *
-   * All three modes converge on "work out the intended markdown, then push it
-   * with applyDiff", so the Doc is never cleared and rebuilt whichever way the
-   * user goes.
+   * `preview` reads the Doc, works out every difference from the file, and
+   * hands them back without touching either side. `apply` takes the markdown
+   * the user settled on and makes both sides hold it.
    *
-   * - push  -- the file wins; the Doc is edited into shape.
-   * - pull  -- the Doc wins; the file is rewritten, the Doc left alone.
-   * - merge -- both; conflicting blocks come back for the user to settle and
-   *            the call is repeated with their choices.
+   * Direction is not a mode. "Use the Doc" and "use the file" are every change
+   * set one way in the review screen, so they need no separate code path --
+   * and apply always goes through `applyDiff`, never a clear-and-rebuild, so
+   * the Doc's comments survive whichever way the user leans.
    */
   async resolve(
     filePath: string,
@@ -852,7 +851,6 @@ export class GoogleDocsSyncService {
     options: {
       mermaidDiagrams?: MermaidDiagramData[];
       tableWidths?: TableColumnWidths[];
-      resolutions?: SyncConflictChoice[];
       onProgress?: (update: SyncProgressUpdate) => void;
       /**
        * Write new content to the local markdown file, reporting success.
@@ -869,70 +867,38 @@ export class GoogleDocsSyncService {
   ): Promise<GoogleDocsResolveResult> {
     this.progress = options.onProgress;
     try {
-      this.report('Reading the Google Doc', 'reading');
-      if (mode === 'push') {
-        return await this.syncForceOverwrite(
+      if (mode === 'apply') {
+        // `markdown` is what the user approved in the review screen, so there
+        // is nothing left to decide -- write it, then make the Doc match.
+        if (options.writeLocal && !(await options.writeLocal(markdown))) {
+          return { success: false, error: 'Could not write the local file' };
+        }
+        this.report('Applying changes', 'applying');
+        const pushed = await this.syncForceOverwrite(
           filePath, docId, markdown, options.mermaidDiagrams, options.tableWidths,
         );
+        return pushed.success ? { ...pushed, markdown } : pushed;
       }
 
+      this.report('Reading the Google Doc', 'reading');
       const currentDoc = await this.docsService.getDocument(docId);
       const remote = convertDocsToMarkdown(currentDoc);
       const snapshots = await this.linkStore.loadMarkdownSnapshots(docId);
 
-      if (mode === 'pull') {
-        // Replaying only the remote's hunks onto the local baseline discards
-        // the local edits, which is what "the Doc wins" means -- while keeping
-        // the markdown form of every block nobody touched. Without snapshots
-        // there is no baseline to replay onto, so the Doc as it reads now is
-        // the best available answer.
-        const merged = snapshots
-          ? joinBlocks(threeWayMerge({
-            localBase: snapshots.local,
-            local: snapshots.local,
-            remoteBase: snapshots.remote,
-            remote,
-          }).blocks)
-          : remote;
-        if (options.writeLocal && !(await options.writeLocal(merged))) {
-          return { success: false, error: 'Could not write the local file' };
-        }
-        // The Doc already holds this content, so there is nothing to push.
-        await this.recordSynced(filePath, docId, merged, currentDoc, remote);
-        return { success: true, markdown: merged };
-      }
+      // With snapshots, each side is diffed against its own dialect and the
+      // lossiness cancels. Without them -- a first sync into a Doc that
+      // already holds content -- the two documents as they stand are still a
+      // perfectly good diff, just a noisier one.
+      const outcome = snapshots !== null
+        ? threeWayMerge({
+          localBase: snapshots.local,
+          local: markdown,
+          remoteBase: snapshots.remote,
+          remote,
+        })
+        : twoWayReview(markdown, remote);
 
-      if (snapshots === null) {
-        return {
-          success: false,
-          error: 'Merging needs a previous successful sync to compare against. '
-            + 'Choose the Doc or the file for this one.',
-        };
-      }
-
-      const outcome = threeWayMerge({
-        localBase: snapshots.local,
-        local: markdown,
-        remoteBase: snapshots.remote,
-        remote,
-      });
-
-      if (outcome.conflicts.length > 0 && options.resolutions === undefined) {
-        return { success: false, conflicts: outcome.conflicts };
-      }
-
-      const merged = joinBlocks(
-        applyResolutions(outcome.blocks, outcome.conflicts, options.resolutions ?? []),
-      );
-      if (options.writeLocal && !(await options.writeLocal(merged))) {
-        return { success: false, error: 'Could not write the local file' };
-      }
-      this.report('Applying changes', 'applying');
-      // The merged text carries the local-only edits too, so the Doc needs it.
-      const pushed = await this.syncForceOverwrite(
-        filePath, docId, merged, options.mermaidDiagrams, options.tableWidths,
-      );
-      return pushed.success ? { ...pushed, markdown: merged } : pushed;
+      return { success: true, changes: outcome.changes, blocks: outcome.blocks };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return { success: false, error: message, status: (err as { status?: number }).status };
@@ -942,22 +908,6 @@ export class GoogleDocsSyncService {
     }
   }
 
-  /**
-   * Record a sync that changed only the local file, so the next sync sees both
-   * sides as settled rather than re-reporting the same conflict.
-   */
-  private async recordSynced(
-    filePath: string,
-    docId: string,
-    markdown: string,
-    apiDoc: GDocsApiDocument,
-    remoteMarkdown: string,
-  ): Promise<void> {
-    await this.linkStore.saveBaseline(docId, this.docsService.extractPlainText(apiDoc));
-    await this.linkStore.saveMarkdownSnapshots(docId, markdown, remoteMarkdown);
-    await this.linkStore.saveModelFingerprint(docId, modelFingerprint(convertMarkdownToDocs(markdown)));
-    await this.linkStore.updateLastSynced(filePath, new Date().toISOString());
-  }
 
   /**
    * Process mermaid diagrams — match DocsElements with renderer-provided

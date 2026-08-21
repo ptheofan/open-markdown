@@ -18,7 +18,7 @@ import {
   createOpenExternalDropdown,
   createGoogleDocsButton,
   createSyncProgressBar,
-  createSyncConflictDialog,
+  createSyncReviewDialog,
   Toast,
   type MarkdownViewer,
   type DropZone,
@@ -33,7 +33,7 @@ import {
   type OpenExternalDropdown,
   type GoogleDocsButton,
   type SyncProgressBar,
-  type SyncConflictDialog,
+  type SyncReviewDialog,
 } from './renderer/components';
 import type { EditModeCallbacks } from './renderer/components/EditModeController';
 import {
@@ -64,8 +64,7 @@ import type {
 import type {
   GoogleAuthState,
   GoogleDocsResolveResult,
-  SyncConflictChoice,
-  SyncConflictKind,
+  SyncChange,
   SyncResolveMode,
 } from '@shared/types/google-docs';
 import type { MermaidPlugin } from '@plugins/builtin/MermaidPlugin';
@@ -105,7 +104,7 @@ class App {
   private openExternalDropdown: OpenExternalDropdown | null = null;
   private googleDocsButton: GoogleDocsButton | null = null;
   private syncProgressBar: SyncProgressBar | null = null;
-  private syncConflictDialog: SyncConflictDialog | null = null;
+  private syncReviewDialog: SyncReviewDialog | null = null;
 
   private state: AppState = {
     currentFilePath: null,
@@ -275,7 +274,7 @@ class App {
     }
 
     // Asks how to reconcile when the file and the Doc have both changed.
-    this.syncConflictDialog = createSyncConflictDialog();
+    this.syncReviewDialog = createSyncReviewDialog();
 
     // Create zoom controller for the markdown content
     // Target: markdown-content (the element to scale)
@@ -1260,7 +1259,7 @@ class App {
 
       if (result.conflict) {
         this.googleDocsButton?.setState('ready');
-        await this.handleSyncConflict(result.conflict, content, mermaidData, tableWidths);
+        await this.handleSyncConflict(content, mermaidData, tableWidths);
         return;
       } else if (result.success) {
         this.toast?.success('Synced to Google Docs');
@@ -1308,55 +1307,60 @@ class App {
   }
 
   /**
-   * Ask the user how to reconcile, then carry it out.
+   * Show every difference, then apply what the user settled on.
    *
-   * A merge takes two trips to the main process: the first reports the blocks
-   * it could not settle, the second carries the user's answers back.
+   * Two trips to the main process: 'preview' works out the differences without
+   * touching either side, 'apply' writes the approved markdown to the file and
+   * edits the Doc to match. Both kinds of stop -- only the Doc moved, or both
+   * did -- land on the same screen, because "use my file" is a legitimate
+   * answer either way.
    */
   private async handleSyncConflict(
-    kind: SyncConflictKind,
     content: string,
     mermaidData?: MermaidDiagramData[],
     tableWidths?: TableColumnWidths[],
   ): Promise<void> {
-    let mode: SyncResolveMode | null;
-    if (kind === 'remote-only') {
-      // Nothing of the user's is at stake, so a full three-way choice would be
-      // noise -- there is only one sensible direction.
-      mode = (await this.syncConflictDialog?.confirmPull()) === true ? 'pull' : null;
-    } else {
-      mode = (await this.syncConflictDialog?.chooseMode()) ?? null;
-    }
-    if (mode === null) return;
-
-    let resolutions: SyncConflictChoice[] | undefined;
-    for (;;) {
-      this.googleDocsButton?.setState('syncing');
-      const result = await this.resolveSync(mode, content, mermaidData, tableWidths, resolutions);
-      if (result === null) return;
-
-      if (result.conflicts != null && result.conflicts.length > 0) {
-        this.googleDocsButton?.setState('ready');
-        const answers = await this.syncConflictDialog?.resolveConflicts(result.conflicts);
-        if (answers == null) return;
-        resolutions = answers;
-        continue;
-      }
-
-      if (!result.success) {
-        this.toast?.error(result.error ?? 'Sync failed');
-        await this.updateGoogleDocsButtonState();
-        return;
-      }
-
-      // pull and merge hand back new file content; push does not.
-      if (result.markdown != null) {
-        await this.applyPulledMarkdown(result.markdown);
-      }
-      this.toast?.success(mode === 'pull' ? 'Updated from Google Docs' : 'Synced to Google Docs');
+    this.googleDocsButton?.setState('syncing');
+    const preview = await this.resolveSync('preview', content, mermaidData, tableWidths);
+    if (preview === null) return;
+    if (!preview.success) {
+      this.toast?.error(preview.error ?? 'Sync failed');
       await this.updateGoogleDocsButtonState();
       return;
     }
+
+    const changes = preview.changes ?? [];
+    const blocks = preview.blocks ?? [];
+    // The Doc moved in a way that reverse-converts to the same markdown -- a
+    // formatting-only edit, say. Nothing to ask about; applying settles it.
+    const merged = changes.length === 0
+      ? content
+      : await this.reviewChanges(changes, blocks);
+    if (merged == null) return;
+
+    this.googleDocsButton?.setState('syncing');
+    const applied = await this.resolveSync('apply', merged, mermaidData, tableWidths);
+    if (applied === null) return;
+    if (!applied.success) {
+      this.toast?.error(applied.error ?? 'Sync failed');
+      await this.updateGoogleDocsButtonState();
+      return;
+    }
+
+    if (applied.markdown != null && applied.markdown !== content) {
+      await this.applyPulledMarkdown(applied.markdown);
+    }
+    this.toast?.success('Synced with Google Docs');
+    await this.updateGoogleDocsButtonState();
+  }
+
+  /** Hand the differences to the review screen, with the button idle. */
+  private async reviewChanges(
+    changes: SyncChange[],
+    blocks: string[],
+  ): Promise<string | null> {
+    this.googleDocsButton?.setState('ready');
+    return (await this.syncReviewDialog?.review(changes, blocks)) ?? null;
   }
 
   private async resolveSync(
@@ -1364,7 +1368,6 @@ class App {
     content: string,
     mermaidData?: MermaidDiagramData[],
     tableWidths?: TableColumnWidths[],
-    resolutions?: SyncConflictChoice[],
   ): Promise<GoogleDocsResolveResult | null> {
     if (!this.state.currentFilePath) return null;
     try {
@@ -1374,7 +1377,6 @@ class App {
         content,
         mermaidData && mermaidData.length > 0 ? mermaidData : undefined,
         tableWidths && tableWidths.length > 0 ? tableWidths : undefined,
-        resolutions,
       );
     } catch (error) {
       console.error('Google Docs resolve failed:', error);
@@ -1487,7 +1489,7 @@ class App {
     this.openExternalDropdown?.destroy();
     this.googleDocsButton?.destroy();
     this.syncProgressBar?.destroy();
-    this.syncConflictDialog?.destroy();
+    this.syncReviewDialog?.destroy();
   }
 }
 

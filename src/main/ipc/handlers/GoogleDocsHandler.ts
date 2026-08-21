@@ -5,7 +5,7 @@ import { getGoogleDocsLinkStore } from '@main/services/GoogleDocsLinkStore';
 import { createGoogleDocsService } from '@main/services/GoogleDocsService';
 import { createGoogleDocsSyncService } from '@main/services/GoogleDocsSyncService';
 import { getFileService } from '@main/services/FileService';
-import type { TableColumnWidths, MermaidDiagramData, GoogleDocsSyncResult, SyncResolveMode, SyncConflictChoice } from '@shared/types/google-docs';
+import type { TableColumnWidths, MermaidDiagramData, GoogleDocsSyncResult, SyncResolveMode } from '@shared/types/google-docs';
 
 function sendToAllWindows(channel: string, data: unknown): void {
   const windows = BrowserWindow.getAllWindows();
@@ -143,9 +143,8 @@ export function registerGoogleDocsHandlers(): void {
     },
   );
 
-  // Reconcile a two-sided change the way the user chose. Merge takes two
-  // trips: the first reports the blocks it cannot settle, the second carries
-  // the user's answers.
+  // Resolving takes two trips: 'preview' reports every difference, and
+  // 'apply' carries back the markdown the user settled on.
   ipcMain.handle(
     IPC_CHANNELS.GOOGLE_DOCS.SYNC_RESOLVE,
     async (
@@ -155,7 +154,6 @@ export function registerGoogleDocsHandlers(): void {
       markdownContent: string,
       mermaidDiagrams?: MermaidDiagramData[],
       tableWidths?: TableColumnWidths[],
-      resolutions?: SyncConflictChoice[],
     ) => {
       const link = linkStore.getLink(filePath);
       if (!link) return { success: false, error: 'File not linked to Google Docs' };
@@ -164,11 +162,16 @@ export function registerGoogleDocsHandlers(): void {
         const result = await syncService.resolve(filePath, link.docId, mode, markdownContent, {
           mermaidDiagrams,
           tableWidths,
-          resolutions,
           onProgress: (update) => sendToAllWindows(
             IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_PROGRESS, update,
           ),
           writeLocal: async (content) => {
+            // Skip a write that would change nothing. Choosing "use my file"
+            // for every difference leaves the markdown exactly as it was, and
+            // rewriting it anyway would bump the mtime and wake the watcher
+            // for no reason.
+            const existing = await getFileService().readFile(filePath);
+            if (existing.success && existing.content === content) return true;
             const written = await getFileService().writeFile(filePath, content);
             return written.success;
           },

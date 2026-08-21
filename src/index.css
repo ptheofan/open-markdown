@@ -2326,9 +2326,9 @@ button:focus:not(:focus-visible) {
   background: #22c55e;
 }
 
-/* ── Sync conflict dialog ─────────────────────────────────────────── */
+/* ── Sync review dialog ───────────────────────────────────────────── */
 
-.sync-conflict-overlay {
+.sync-review-overlay {
   position: fixed;
   inset: 0;
   z-index: 10002;
@@ -2339,10 +2339,11 @@ button:focus:not(:focus-visible) {
   background-color: rgba(0, 0, 0, 0.45);
 }
 
-.sync-conflict {
-  width: min(680px, 100%);
+.sync-review {
+  display: flex;
+  flex-direction: column;
+  width: min(1040px, 100%);
   max-height: 100%;
-  overflow-y: auto;
   padding: 20px 22px;
   border-radius: 10px;
   background-color: var(--toolbar-bg);
@@ -2352,64 +2353,95 @@ button:focus:not(:focus-visible) {
   font-size: 13px;
 }
 
-.sync-conflict-title {
+.sync-review-title {
   margin: 0 0 8px;
   font-size: 16px;
 }
 
-.sync-conflict-body {
-  margin: 0 0 16px;
+.sync-review-body {
+  margin: 0 0 12px;
   opacity: 0.85;
   line-height: 1.5;
 }
 
-.sync-conflict-progress {
-  margin: 0 0 12px;
+.sync-review-bulk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.sync-review-bulk-label {
   opacity: 0.7;
 }
 
-.sync-conflict-actions {
-  display: flex;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.sync-conflict-actions-stacked {
-  flex-direction: column;
-  align-items: stretch;
-}
-
-/* Each direction carries a one-line explanation under its label, so the
-   choice can be made without reading the paragraph above twice. */
-.sync-conflict-actions-stacked .btn {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  text-align: left;
-}
-
-.sync-conflict-hint {
-  font-size: 12px;
-  font-weight: normal;
-  opacity: 0.75;
-}
-
-.sync-conflict-pair {
+/* The list scrolls against the preview, which stays put: the point of the
+   screen is watching the result change as each choice is made. */
+.sync-review-panes {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-bottom: 16px;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 16px;
+  min-height: 0;
+  flex: 1;
 }
 
-@media (max-width: 560px) {
-  .sync-conflict-pair {
+@media (max-width: 860px) {
+  .sync-review-panes {
     grid-template-columns: 1fr;
   }
 }
 
-.sync-conflict-side-title {
+.sync-review-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sync-review-change {
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+/* A block both sides rewrote has no safe default, so it is marked out. */
+.sync-review-change-conflict {
+  border-color: var(--warning-border, #d97706);
+}
+
+.sync-review-change-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.sync-review-kind {
+  font-weight: 600;
+}
+
+.sync-review-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+@media (max-width: 560px) {
+  .sync-review-pair {
+    grid-template-columns: 1fr;
+  }
+}
+
+.sync-review-side-title {
   margin: 0 0 6px;
   font-size: 12px;
   text-transform: uppercase;
@@ -2417,11 +2449,11 @@ button:focus:not(:focus-visible) {
   opacity: 0.7;
 }
 
-.sync-conflict-local,
-.sync-conflict-remote {
+.sync-review-local,
+.sync-review-remote,
+.sync-review-preview-text {
   margin: 0;
   padding: 10px;
-  max-height: 220px;
   overflow: auto;
   border-radius: 6px;
   border: 1px solid var(--border-color);
@@ -2431,4 +2463,40 @@ button:focus:not(:focus-visible) {
   line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.sync-review-local,
+.sync-review-remote {
+  max-height: 180px;
+}
+
+.sync-review-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sync-review-choices .btn[aria-pressed='true'] {
+  background-color: var(--accent-color, #2563eb);
+  border-color: var(--accent-color, #2563eb);
+  color: #fff;
+}
+
+.sync-review-preview {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.sync-review-preview-text {
+  flex: 1;
+  min-height: 0;
+}
+
+.sync-review-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 16px;
 }

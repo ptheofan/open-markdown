@@ -32,6 +32,10 @@ const mocks = vi.hoisted(() => ({
     syncForceOverwrite: vi.fn(),
     resolve: vi.fn(),
   },
+  fileService: {
+    readFile: vi.fn(),
+    writeFile: vi.fn(),
+  },
   linkStore: {
     getLink: vi.fn(),
     removeLink: vi.fn(),
@@ -63,6 +67,10 @@ vi.mock('@main/services/GoogleDocsService', () => ({
 
 vi.mock('@main/services/GoogleDocsSyncService', () => ({
   createGoogleDocsSyncService: () => mocks.syncService,
+}));
+
+vi.mock('@main/services/FileService', () => ({
+  getFileService: () => mocks.fileService,
 }));
 
 import { ipcMain } from 'electron';
@@ -121,48 +129,68 @@ describe('GoogleDocsHandler', () => {
   });
 
   describe('sync-resolve', () => {
-    function invokeResolve(
-      mode: string,
-      resolutions?: string[],
-    ): Promise<unknown> {
+    function invokeResolve(mode: string, markdown = '# md'): Promise<unknown> {
       registerGoogleDocsHandlers();
       const entry = vi
         .mocked(ipcMain.handle)
         .mock.calls.find((c) => c[0] === 'google-docs:sync-resolve');
       if (!entry) throw new Error('sync-resolve handler not registered');
       const fn = entry[1] as (...args: unknown[]) => Promise<unknown>;
-      return fn({}, '/notes/a.md', mode, '# md', undefined, undefined, resolutions);
+      return fn({}, '/notes/a.md', mode, markdown, undefined, undefined);
+    }
+
+    /** Run whatever writeLocal callback the handler handed the sync service. */
+    async function runWriteLocal(content: string): Promise<boolean | undefined> {
+      const options = mocks.syncService.resolve.mock.calls[0]?.[4] as
+        { writeLocal?: (md: string) => Promise<boolean> } | undefined;
+      return options?.writeLocal?.(content);
     }
 
     beforeEach(() => {
       mocks.linkStore.getLink.mockReturnValue({ docId: 'doc-1', lastSyncedAt: null });
       mocks.syncService.resolve.mockResolvedValue({ success: true });
+      mocks.fileService.readFile.mockResolvedValue({ success: true, content: '# md' });
+      mocks.fileService.writeFile.mockResolvedValue({ success: true });
     });
 
     it('passes the chosen mode through to the sync service', async () => {
-      await invokeResolve('pull');
+      await invokeResolve('preview');
       expect(mocks.syncService.resolve).toHaveBeenCalledWith(
-        '/notes/a.md', 'doc-1', 'pull', '# md', expect.objectContaining({ resolutions: undefined }),
+        '/notes/a.md', 'doc-1', 'preview', '# md', expect.any(Object),
       );
     });
 
-    it('carries the conflict answers on the second trip', async () => {
-      await invokeResolve('merge', ['remote', 'local']);
-      expect(mocks.syncService.resolve).toHaveBeenCalledWith(
-        '/notes/a.md', 'doc-1', 'merge', '# md',
-        expect.objectContaining({ resolutions: ['remote', 'local'] }),
-      );
+    it('does not rewrite the file when the review changed nothing in it', async () => {
+      // Choosing "use my file" for every difference leaves the markdown byte
+      // for byte as it was. Writing it anyway bumps the mtime and wakes the
+      // watcher, which re-renders the view for no reason.
+      await invokeResolve('apply');
+      await expect(runWriteLocal('# md')).resolves.toBe(true);
+      expect(mocks.fileService.writeFile).not.toHaveBeenCalled();
+    });
+
+    it('rewrites the file when the review did change it', async () => {
+      await invokeResolve('apply');
+      await expect(runWriteLocal('# md changed')).resolves.toBe(true);
+      expect(mocks.fileService.writeFile).toHaveBeenCalledWith('/notes/a.md', '# md changed');
+    });
+
+    it('writes when the file could not be read, rather than assuming it matches', async () => {
+      mocks.fileService.readFile.mockResolvedValue({ success: false });
+      await invokeResolve('apply');
+      await runWriteLocal('# md');
+      expect(mocks.fileService.writeFile).toHaveBeenCalled();
     });
 
     it('drops a link to a document that is gone rather than retrying it', async () => {
       mocks.syncService.resolve.mockResolvedValue({ success: false, status: 404 });
-      await invokeResolve('push');
+      await invokeResolve('apply');
       expect(mocks.linkStore.removeLink).toHaveBeenCalledWith('/notes/a.md');
     });
 
     it('refuses when the file is not linked', async () => {
       mocks.linkStore.getLink.mockReturnValue(undefined);
-      const result = await invokeResolve('merge');
+      const result = await invokeResolve('preview');
       expect(result).toEqual({ success: false, error: 'File not linked to Google Docs' });
       expect(mocks.syncService.resolve).not.toHaveBeenCalled();
     });

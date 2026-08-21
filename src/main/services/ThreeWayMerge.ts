@@ -25,7 +25,10 @@
  */
 
 import { diffArrays } from 'diff';
-import type { SyncConflict, SyncConflictChoice } from '@shared/types/google-docs';
+import type { SyncChange, SyncChangeKind, SyncConflictChoice } from '@shared/types/google-docs';
+import { joinBlocks, applyResolutions } from '@shared/markdown/blocks';
+
+export { joinBlocks, applyResolutions };
 
 /** A replacement of a range of baseline blocks. */
 interface Edit {
@@ -46,9 +49,14 @@ export interface ThreeWayInput {
 }
 
 export interface MergeOutcome {
-  /** The merged document. Conflicting positions hold a placeholder. */
+  /**
+   * The merged document, one block per slot, every change sitting at its
+   * default. A change always occupies exactly one slot so a different choice
+   * can be substituted by index.
+   */
   blocks: string[];
-  conflicts: SyncConflict[];
+  /** Every difference found, in document order. */
+  changes: SyncChange[];
 }
 
 /**
@@ -93,11 +101,6 @@ export function splitBlocks(md: string): string[] {
   }
   flush();
   return blocks;
-}
-
-/** Reassemble blocks into a markdown document. */
-export function joinBlocks(blocks: string[]): string {
-  return blocks.length > 0 ? `${blocks.join('\n\n')}\n` : '';
 }
 
 /**
@@ -171,10 +174,22 @@ function overlaps(a: Edit, b: Edit): boolean {
 /** Replay both edit scripts against the shared baseline. */
 function replay(base: string[], localEdits: Edit[], remoteEdits: Edit[]): MergeOutcome {
   const blocks: string[] = [];
-  const conflicts: SyncConflict[] = [];
+  const changes: SyncChange[] = [];
   let pos = 0;
   let li = 0;
   let ri = 0;
+
+  // Every difference lands in exactly one slot, holding whichever side the
+  // default picks. The review screen swaps that slot to show another choice.
+  const record = (
+    kind: SyncChangeKind,
+    local: string,
+    remote: string,
+    choice: SyncConflictChoice,
+  ): void => {
+    changes.push({ index: blocks.length, kind, local, remote, choice });
+    blocks.push(choice === 'remote' ? remote : local);
+  };
 
   while (li < localEdits.length || ri < remoteEdits.length) {
     const le = localEdits[li];
@@ -185,11 +200,10 @@ function replay(base: string[], localEdits: Edit[], remoteEdits: Edit[]): MergeO
       const localText = joinBlocks(le.replacement).trimEnd();
       const remoteText = joinBlocks(re.replacement).trimEnd();
       if (localText === remoteText) {
+        // Both sides made the same edit, so there is nothing to ask about.
         blocks.push(...le.replacement);
       } else {
-        // No algorithm can settle this; the user has to look at it.
-        conflicts.push({ index: blocks.length, local: localText, remote: remoteText });
-        blocks.push(localText);
+        record('conflict', localText, remoteText, 'local');
       }
       pos = Math.max(le.end, re.end);
       li++;
@@ -201,14 +215,18 @@ function replay(base: string[], localEdits: Edit[], remoteEdits: Edit[]): MergeO
     const edit = takeLocal ? le : re;
     if (edit == null) break;
     blocks.push(...base.slice(pos, edit.start));
-    blocks.push(...edit.replacement);
+    // One side moved; the other still holds what the baseline held there.
+    const edited = joinBlocks(edit.replacement).trimEnd();
+    const untouched = joinBlocks(base.slice(edit.start, edit.end)).trimEnd();
+    if (takeLocal) record('local-only', edited, untouched, 'local');
+    else record('remote-only', untouched, edited, 'remote');
     pos = edit.end;
     if (takeLocal) li++;
     else ri++;
   }
 
   blocks.push(...base.slice(pos));
-  return { blocks, conflicts };
+  return { blocks, changes };
 }
 
 /**
@@ -234,23 +252,33 @@ export function threeWayMerge(input: ThreeWayInput): MergeOutcome {
 }
 
 /**
- * Substitute the user's choices back into the merged block list.
+ * Review a file and a Doc with no shared history, by diffing them directly.
  *
- * `choices` is positional: one entry per conflict, in the order reported.
+ * Used on a first sync into a Doc that already holds content: there is no
+ * ancestor to replay against, but the two documents as they stand right now
+ * are a perfectly good diff.
+ *
+ * This is the one path where the reverse conversion's lossiness does not
+ * cancel -- see the note at the top of this file. A mermaid fence is a PNG in
+ * the Doc and will show up as a difference every time, so every change here
+ * defaults to the file's version, which leaves that source alone.
  */
-export function applyResolutions(
-  blocks: string[],
-  conflicts: SyncConflict[],
-  choices: SyncConflictChoice[],
-): string[] {
-  const out = [...blocks];
-  conflicts.forEach((conflict, i) => {
-    const choice = choices[i] ?? 'local';
-    out[conflict.index] = choice === 'remote'
-      ? conflict.remote
-      : choice === 'both'
-        ? `${conflict.local}\n\n${conflict.remote}`
-        : conflict.local;
-  });
-  return out;
+export function twoWayReview(local: string, remote: string): MergeOutcome {
+  const base = splitBlocks(local);
+  const blocks: string[] = [];
+  const changes: SyncChange[] = [];
+  let pos = 0;
+
+  for (const edit of editsFrom(base, splitBlocks(remote))) {
+    blocks.push(...base.slice(pos, edit.start));
+    const mine = joinBlocks(base.slice(edit.start, edit.end)).trimEnd();
+    const theirs = joinBlocks(edit.replacement).trimEnd();
+    const kind: SyncChangeKind = mine === '' ? 'remote-only' : theirs === '' ? 'local-only' : 'conflict';
+    changes.push({ index: blocks.length, kind, local: mine, remote: theirs, choice: 'local' });
+    blocks.push(mine);
+    pos = edit.end;
+  }
+
+  blocks.push(...base.slice(pos));
+  return { blocks, changes };
 }

@@ -314,3 +314,52 @@ describe('a block whose two dialects differ', () => {
     expect(joinBlocks(result.blocks)).toBe('one\n\ntwo plain\n\nbrand new\n\nthree\n');
   });
 });
+
+describe('an edit on one side that swallows an edit on the other', () => {
+  // Emptying the Doc is one remote edit spanning the whole document. If the
+  // file has any edit of its own, the two overlap -- and a conflict recorded
+  // as "your replacement versus theirs" throws away every untouched block
+  // inside the larger range. On a real document that is the entire file.
+  it('keeps the untouched blocks when the Doc is emptied', () => {
+    const result = threeWayMerge({
+      localBase: 'one\n\ntwo\n\nthree\n',
+      local: 'one\n\ntwo EDITED\n\nthree\n',
+      remoteBase: 'one\n\ntwo\n\nthree\n',
+      remote: '',
+    });
+
+    expect(result.changes).toHaveLength(1);
+    expect(result.changes[0]).toMatchObject({
+      kind: 'conflict',
+      local: 'one\n\ntwo EDITED\n\nthree',
+      remote: '',
+    });
+  });
+
+  it('restores the whole file when that conflict is settled the file\'s way', () => {
+    const result = threeWayMerge({
+      localBase: 'one\n\ntwo\n\nthree\n',
+      local: 'one\n\ntwo EDITED\n\nthree\n',
+      remoteBase: 'one\n\ntwo\n\nthree\n',
+      remote: '',
+    });
+
+    const blocks = applyResolutions(result.blocks, result.changes, ['local']);
+    expect(joinBlocks(blocks)).toBe('one\n\ntwo EDITED\n\nthree\n');
+  });
+
+  it('gathers every edit the region reaches, not just the first of each', () => {
+    const result = threeWayMerge({
+      localBase: 'one\n\ntwo\n\nthree\n\nfour\n',
+      local: 'one A\n\ntwo\n\nthree\n\nfour B\n',
+      remoteBase: 'one\n\ntwo\n\nthree\n\nfour\n',
+      remote: 'replaced\n',
+    });
+
+    expect(result.changes).toHaveLength(1);
+    expect(result.changes[0]).toMatchObject({
+      local: 'one A\n\ntwo\n\nthree\n\nfour B',
+      remote: 'replaced',
+    });
+  });
+});

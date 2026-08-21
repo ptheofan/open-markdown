@@ -157,6 +157,26 @@ function overlaps(a: Edit, b: Edit): boolean {
   return a.start < b.end && b.start < a.end;
 }
 
+/**
+ * Rebuild one region of the baseline with a side's edits applied.
+ *
+ * A conflict is between the two sides' versions of the whole contested
+ * region, not between the two replacements alone. Blocks inside the region
+ * that neither edit touched belong to both versions -- dropping them is how
+ * a document loses everything but the paragraph someone happened to edit.
+ */
+function spliceRegion(base: string[], edits: Edit[], start: number, end: number): string[] {
+  const out: string[] = [];
+  let at = start;
+  for (const edit of edits) {
+    out.push(...base.slice(at, edit.start));
+    out.push(...edit.replacement);
+    at = edit.end;
+  }
+  out.push(...base.slice(at, end));
+  return out;
+}
+
 /** Replay both edit scripts against the shared baseline. */
 function replay(base: string[], localEdits: Edit[], remoteEdits: Edit[]): MergeOutcome {
   const blocks: string[] = [];
@@ -182,18 +202,46 @@ function replay(base: string[], localEdits: Edit[], remoteEdits: Edit[]): MergeO
     const re = remoteEdits[ri];
 
     if (le != null && re != null && overlaps(le, re)) {
-      blocks.push(...base.slice(pos, Math.min(le.start, re.start)));
-      const localText = joinBlocks(le.replacement).trimEnd();
-      const remoteText = joinBlocks(re.replacement).trimEnd();
+      // Grow the contested region until neither side has another edit
+      // reaching into it. One big edit -- the Doc emptied, say -- can cover
+      // several of the other side's, and settling only the first would leave
+      // the rest replaying against indices the region has already consumed.
+      let start = Math.min(le.start, re.start);
+      let end = Math.max(le.end, re.end);
+      const ls: Edit[] = [];
+      const rs: Edit[] = [];
+      for (let grew = true; grew;) {
+        grew = false;
+        while (li < localEdits.length && localEdits[li]!.start < end) {
+          const edit = localEdits[li]!;
+          ls.push(edit);
+          start = Math.min(start, edit.start);
+          end = Math.max(end, edit.end);
+          li++;
+          grew = true;
+        }
+        while (ri < remoteEdits.length && remoteEdits[ri]!.start < end) {
+          const edit = remoteEdits[ri]!;
+          rs.push(edit);
+          start = Math.min(start, edit.start);
+          end = Math.max(end, edit.end);
+          ri++;
+          grew = true;
+        }
+      }
+
+      blocks.push(...base.slice(pos, start));
+      const localSide = spliceRegion(base, ls, start, end);
+      const remoteSide = spliceRegion(base, rs, start, end);
+      const localText = joinBlocks(localSide).trimEnd();
+      const remoteText = joinBlocks(remoteSide).trimEnd();
       if (localText === remoteText) {
         // Both sides made the same edit, so there is nothing to ask about.
-        blocks.push(...le.replacement);
+        blocks.push(...localSide);
       } else {
         record('conflict', localText, remoteText, 'local');
       }
-      pos = Math.max(le.end, re.end);
-      li++;
-      ri++;
+      pos = end;
       continue;
     }
 

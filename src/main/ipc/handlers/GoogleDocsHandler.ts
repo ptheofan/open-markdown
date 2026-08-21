@@ -107,6 +107,7 @@ export function registerGoogleDocsHandlers(): void {
       markdownContent: string,
       mermaidDiagrams?: MermaidDiagramData[],
       tableWidths?: TableColumnWidths[],
+      alsoWriteSource?: boolean,
     ) => {
       const link = linkStore.getLink(filePath);
       if (!link) return { success: false, error: 'File not linked to Google Docs' };
@@ -115,6 +116,7 @@ export function registerGoogleDocsHandlers(): void {
         const result = await syncService.resolve(filePath, link.docId, mode, direction, markdownContent, {
           mermaidDiagrams,
           tableWidths,
+          alsoWriteSource,
           onProgress: (update) => sendToAllWindows(
             IPC_CHANNELS.GOOGLE_DOCS.ON_SYNC_PROGRESS, update,
           ),

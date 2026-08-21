@@ -378,7 +378,7 @@ const electronAPI: ElectronAPI = {
       return ipcRenderer.invoke(IPC_CHANNELS.GOOGLE_DOCS.GET_LINK, filePath);
     },
 
-    syncResolve: (filePath: string, mode: SyncResolveMode, direction: SyncDirection, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[], tableWidths?: TableColumnWidths[]): Promise<GoogleDocsResolveResult> => {
+    syncResolve: (filePath: string, mode: SyncResolveMode, direction: SyncDirection, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[], tableWidths?: TableColumnWidths[], alsoWriteSource?: boolean): Promise<GoogleDocsResolveResult> => {
       return ipcRenderer.invoke(
         IPC_CHANNELS.GOOGLE_DOCS.SYNC_RESOLVE,
         filePath,
@@ -387,6 +387,7 @@ const electronAPI: ElectronAPI = {
         markdownContent,
         mermaidDiagrams,
         tableWidths,
+        alsoWriteSource,
       ) as Promise<GoogleDocsResolveResult>;
     },
 

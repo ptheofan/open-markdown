@@ -35,6 +35,7 @@ import {
   type GoogleDocsButton,
   type SyncProgressBar,
   type SyncReviewDialog,
+  type SyncReviewOutcome,
 } from './renderer/components';
 import type { EditModeCallbacks } from './renderer/components/EditModeController';
 import {
@@ -1327,13 +1328,17 @@ class App {
 
     const changes = preview.changes ?? [];
     const blocks = preview.blocks ?? [];
-    const merged = preview.needsReview === true
+    // Nothing to review means nothing was overridden, so only the target side
+    // is written -- a pull that takes the Doc wholesale sends it no requests.
+    const settled = preview.needsReview === true
       ? await this.reviewChanges(changes, blocks, content)
-      : joinBlocks(blocks);
-    if (merged == null) return;
+      : { markdown: joinBlocks(blocks), deviates: false };
+    if (settled == null) return;
 
     this.googleDocsButton?.setState('syncing');
-    const applied = await this.resolveSync('apply', direction, merged, mermaidData, tableWidths);
+    const applied = await this.resolveSync(
+      'apply', direction, settled.markdown, mermaidData, tableWidths, settled.deviates,
+    );
     if (applied === null) return;
     if (!applied.success) {
       this.toast?.error(applied.error ?? 'Sync failed');
@@ -1353,7 +1358,7 @@ class App {
     changes: SyncChange[],
     blocks: string[],
     original: string,
-  ): Promise<string | null> {
+  ): Promise<SyncReviewOutcome | null> {
     this.googleDocsButton?.setState('ready');
     return (await this.syncReviewDialog?.review(changes, blocks, original)) ?? null;
   }
@@ -1364,6 +1369,7 @@ class App {
     content: string,
     mermaidData?: MermaidDiagramData[],
     tableWidths?: TableColumnWidths[],
+    alsoWriteSource?: boolean,
   ): Promise<GoogleDocsResolveResult | null> {
     if (!this.state.currentFilePath) return null;
     try {
@@ -1374,6 +1380,7 @@ class App {
         content,
         mermaidData && mermaidData.length > 0 ? mermaidData : undefined,
         tableWidths && tableWidths.length > 0 ? tableWidths : undefined,
+        alsoWriteSource,
       );
     } catch (error) {
       console.error('Google Docs resolve failed:', error);

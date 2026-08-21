@@ -348,6 +348,49 @@ describe('carrying out the user\'s choice', () => {
     ]);
   });
 
+  it('a pull taking the Doc wholesale never touches the Doc', async () => {
+    // Nothing of the user's was kept, so the Doc already says what the file
+    // is about to say. Sending it anyway rewrites every block whose two
+    // dialects differ -- which is most of them -- for no reason at all.
+    const result = await syncService.resolve(
+      '/file.md', 'doc-1', 'apply', 'pull', 'Intro paragraph\n\nSecond paragraph\n',
+    );
+
+    expect(result.success).toBe(true);
+    expect(mockDocsService.batchUpdate).not.toHaveBeenCalled();
+  });
+
+  it('a pull that keeps one of your blocks does send that to the Doc', async () => {
+    const result = await syncService.resolve(
+      '/file.md', 'doc-1', 'apply', 'pull', 'Intro MINE\n\nSecond paragraph\n',
+      { alsoWriteSource: true },
+    );
+
+    expect(result.success).toBe(true);
+    expect(mockDocsService.batchUpdate).toHaveBeenCalled();
+  });
+
+  it('a push taking the file wholesale never rewrites the file', async () => {
+    const wrote: string[] = [];
+
+    await syncService.resolve('/file.md', 'doc-1', 'apply', 'push', SNAPSHOT, {
+      writeLocal: (md) => { wrote.push(md); return Promise.resolve(true); },
+    });
+
+    expect(wrote).toEqual([]);
+    expect(mockDocsService.batchUpdate).toHaveBeenCalled();
+  });
+
+  it('a pull still records the sync, so the next one is not blind', async () => {
+    await syncService.resolve(
+      '/file.md', 'doc-1', 'apply', 'pull', 'Intro paragraph\n\nSecond paragraph\n',
+    );
+
+    expect(mockLinkStore.saveBaseline).toHaveBeenCalled();
+    expect(mockLinkStore.saveMarkdownSnapshots).toHaveBeenCalled();
+    expect(mockLinkStore.updateLastSynced).toHaveBeenCalled();
+  });
+
   it('apply writes the approved markdown and edits the Doc to match', async () => {
     const result = await syncService.resolve(
       '/file.md', 'doc-1', 'apply', 'push', 'Intro EDITED\n\nSecond paragraph\n',
@@ -376,6 +419,7 @@ describe('carrying out the user\'s choice', () => {
     // the stale file, decide the local side changed, and push it back over the
     // collaborator's edits.
     const result = await syncService.resolve('/file.md', 'doc-1', 'apply', 'push', SNAPSHOT, {
+      alsoWriteSource: true,
       writeLocal: () => Promise.resolve(false),
     });
 
@@ -396,6 +440,7 @@ describe('carrying out the user\'s choice', () => {
     });
 
     await syncService.resolve('/file.md', 'doc-1', 'apply', 'push', 'Intro EDITED\n\nSecond paragraph\n', {
+      alsoWriteSource: true,
       writeLocal: () => { order.push('file'); return Promise.resolve(true); },
     });
 

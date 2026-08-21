@@ -277,3 +277,40 @@ describe('splitBlocks on markdown written without blank lines', () => {
     expect(splitBlocks('intro\n```ts\ncode\n```\n')).toEqual(['intro', '```ts\ncode\n```']);
   });
 });
+
+describe('a block whose two dialects differ', () => {
+  // The reverse conversion is lossy, so the same paragraph is not always
+  // byte-identical on the two sides. diffArrays then reports it as a removed
+  // run plus an added run, and treating those independently maps a remote
+  // edit onto an empty local range -- which is an insertion. The Doc's
+  // version then lands beside the file's instead of replacing it, and the
+  // paragraph appears twice.
+  const BASE = {
+    localBase: 'one\n\ntwo plain\n\nthree\n',
+    local: 'one\n\ntwo plain\n\nthree\n',
+    remoteBase: 'one\n\ntwo **p**lain\n\nthree\n',
+  };
+
+  it('replaces the local block rather than duplicating it', () => {
+    const result = threeWayMerge({ ...BASE, remote: 'one\n\ntwo **p**lain EDITED\n\nthree\n' });
+
+    expect(joinBlocks(result.blocks)).toBe('one\n\ntwo **p**lain EDITED\n\nthree\n');
+  });
+
+  it('shows the file\'s version of that block as the other side', () => {
+    const result = threeWayMerge({ ...BASE, remote: 'one\n\ntwo **p**lain EDITED\n\nthree\n' });
+
+    expect(result.changes).toHaveLength(1);
+    expect(result.changes[0]).toMatchObject({
+      kind: 'remote-only',
+      local: 'two plain',
+      remote: 'two **p**lain EDITED',
+    });
+  });
+
+  it('still treats a genuinely new remote block as an insertion', () => {
+    const result = threeWayMerge({ ...BASE, remote: 'one\n\ntwo **p**lain\n\nbrand new\n\nthree\n' });
+
+    expect(joinBlocks(result.blocks)).toBe('one\n\ntwo plain\n\nbrand new\n\nthree\n');
+  });
+});

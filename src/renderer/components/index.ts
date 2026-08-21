@@ -147,6 +147,7 @@ export {
 export {
   createSyncReviewDialog,
   type SyncReviewDialog,
+  type SyncReviewOutcome,
 } from './SyncReviewDialog';
 
 // SyncProgressBar

@@ -97,28 +97,58 @@ function editsFrom(base: string[], other: string[]): Edit[] {
 /**
  * Map each index of `remoteBase` onto the index of `localBase` describing the
  * same part of the document, so the remote's hunks can be replayed locally.
+ *
+ * The two snapshots describe one document at one instant, but not always in
+ * the same words: the reverse conversion is lossy, so a paragraph can be the
+ * same paragraph and still not be byte-identical. diffArrays then reports it
+ * as a removed run immediately followed by an added run. Those two runs are
+ * one replacement, and mapping them independently would collapse a remote
+ * edit onto an empty local range -- an insertion, which leaves the file's
+ * version in place and puts the Doc's beside it.
  */
 function alignToLocal(localBase: string[], remoteBase: string[]): number[] {
   const map: number[] = [];
+  const changes = diffArrays(localBase, remoteBase);
   let li = 0;
   let ri = 0;
 
-  for (const change of diffArrays(localBase, remoteBase)) {
+  for (let i = 0; i < changes.length; i++) {
+    const change = changes[i];
+    if (change == null) continue;
     const count = change.value.length;
+
     if (!change.added && !change.removed) {
       for (let k = 0; k < count; k++) map[ri + k] = li + k;
       li += count;
       ri += count;
-    } else if (change.removed) {
-      // Present locally, absent remotely -- a block whose dialects diverged, or
-      // one the Doc never received. Local indices advance, remote ones do not.
-      li += count;
-    } else {
-      // Present remotely only: every such index pins to the same local spot.
-      for (let k = 0; k < count; k++) map[ri + k] = li;
-      ri += count;
+      continue;
     }
+
+    if (change.removed) {
+      const next = changes[i + 1];
+      if (next?.added) {
+        // One replacement, not a deletion and an insertion. Pin each added
+        // block onto the removed block it stands in for, so an edit to it
+        // spans real local blocks and replaces them.
+        const added = next.value.length;
+        for (let k = 0; k < added; k++) map[ri + k] = li + Math.min(k, count);
+        li += count;
+        ri += added;
+        i++;
+        continue;
+      }
+      // Present locally, absent remotely -- a block the Doc never received.
+      // Local indices advance, remote ones do not.
+      li += count;
+      continue;
+    }
+
+    // Present remotely only: genuinely new, so every such index pins to the
+    // same local spot and the hunk lands as an insertion.
+    for (let k = 0; k < count; k++) map[ri + k] = li;
+    ri += count;
   }
+
   map[remoteBase.length] = localBase.length;
   return map;
 }

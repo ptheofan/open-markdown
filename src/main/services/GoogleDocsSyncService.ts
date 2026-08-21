@@ -715,6 +715,26 @@ export class GoogleDocsSyncService {
   }
 
   /**
+   * Write down what the two sides now agree on.
+   *
+   * Used when a sync changed only the local file. The pair of snapshots is
+   * how every later sync tells a real edit from a difference of dialect, so
+   * skipping it would leave the next one comparing against a document that no
+   * longer exists on either side.
+   */
+  private async recordSynced(
+    filePath: string,
+    docId: string,
+    markdown: string,
+    apiDoc: GDocsApiDocument,
+  ): Promise<void> {
+    await this.linkStore.saveBaseline(docId, this.docsService.extractPlainText(apiDoc));
+    await this.linkStore.saveMarkdownSnapshots(docId, markdown, convertDocsToMarkdown(apiDoc));
+    await this.linkStore.saveModelFingerprint(docId, modelFingerprint(convertMarkdownToDocs(markdown)));
+    await this.linkStore.updateLastSynced(filePath, new Date().toISOString());
+  }
+
+  /**
    * Push the local markdown over a Doc that has also changed, making the Doc
    * match the file.
    *
@@ -790,16 +810,37 @@ export class GoogleDocsSyncService {
        * pushing.
        */
       writeLocal?: (markdown: string) => Promise<boolean>;
+      /**
+       * The user kept something the direction would have discarded, so the
+       * side they were not syncing towards has to receive it too. Without a
+       * deviation the source already holds what the target is about to, and
+       * writing it is pure damage: a pull would rewrite every block whose two
+       * dialects differ, which is most of them.
+       */
+      alsoWriteSource?: boolean;
     } = {},
   ): Promise<GoogleDocsResolveResult> {
     this.progress = options.onProgress;
     try {
       if (mode === 'apply') {
         // `markdown` is what the user approved, so there is nothing left to
-        // decide -- write it, then make the Doc match.
-        if (options.writeLocal && !(await options.writeLocal(markdown))) {
+        // decide -- only which sides have to be told about it.
+        const touchFile = direction === 'pull' || options.alsoWriteSource === true;
+        const touchDoc = direction === 'push' || options.alsoWriteSource === true;
+
+        if (touchFile && options.writeLocal && !(await options.writeLocal(markdown))) {
           return { success: false, error: 'Could not write the local file' };
         }
+
+        if (!touchDoc) {
+          // A pull the user took wholesale. The Doc is already right, so it is
+          // read once for the record and left completely alone.
+          this.report('Applying changes', 'applying');
+          const currentDoc = await this.docsService.getDocument(docId);
+          await this.recordSynced(filePath, docId, markdown, currentDoc);
+          return { success: true, markdown };
+        }
+
         this.report('Applying changes', 'applying');
         const pushed = await this.syncForceOverwrite(
           filePath, docId, markdown, options.mermaidDiagrams, options.tableWidths,

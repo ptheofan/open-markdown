@@ -19,15 +19,31 @@ import MarkdownIt from 'markdown-it';
 import type { SyncChange, SyncConflictChoice } from '@shared/types/google-docs';
 import { applyResolutions, chooseSide, joinBlocks, splitBlocks } from '@shared/markdown/blocks';
 
+/** What the user settled on, and whether they went against the direction. */
+export interface SyncReviewOutcome {
+  markdown: string;
+  /**
+   * At least one change was taken from the side the direction would have
+   * discarded, so that side has to receive it too. Without a deviation the
+   * source already holds what the target is about to, and writing to it would
+   * rewrite every block whose two dialects merely differ.
+   */
+  deviates: boolean;
+}
+
 export interface SyncReviewDialog {
   /**
    * Show the merge and wait for the user to settle it.
    *
-   * Resolves with the markdown they approved, or null if they backed out.
-   * `original` is returned verbatim when the result matches it, so accepting
-   * your own side throughout does not reformat the file.
+   * Resolves with what they approved, or null if they backed out. `original`
+   * is returned verbatim when the result matches it, so accepting your own
+   * side throughout does not reformat the file.
    */
-  review(changes: SyncChange[], blocks: string[], original?: string): Promise<string | null>;
+  review(
+    changes: SyncChange[],
+    blocks: string[],
+    original?: string,
+  ): Promise<SyncReviewOutcome | null>;
   destroy(): void;
 }
 
@@ -51,7 +67,11 @@ class SyncReviewDialogImpl implements SyncReviewDialog {
   private overlay: HTMLElement | null = null;
   private onKeyDown: ((e: KeyboardEvent) => void) | null = null;
 
-  review(changes: SyncChange[], blocks: string[], original?: string): Promise<string | null> {
+  review(
+    changes: SyncChange[],
+    blocks: string[],
+    original?: string,
+  ): Promise<SyncReviewOutcome | null> {
     return new Promise((resolve) => {
       const choices: SyncConflictChoice[] = changes.map((change) => change.choice);
       /** Block index -> position in `changes`, for the rows that are changes. */
@@ -95,7 +115,7 @@ class SyncReviewDialogImpl implements SyncReviewDialog {
 
       const merged = (): string => joinBlocks(applyResolutions(blocks, changes, choices));
 
-      const finish = (value: string | null): void => {
+      const finish = (value: SyncReviewOutcome | null): void => {
         this.close();
         resolve(value);
       };
@@ -137,12 +157,16 @@ class SyncReviewDialogImpl implements SyncReviewDialog {
         if (nav != null) return jump(nav === 'prev' ? -1 : 1);
 
         const action = button.dataset['action'];
-        if (action === 'cancel') finish(null);
-        else if (action === 'apply') {
+        if (action === 'cancel') return finish(null);
+        if (action === 'apply') {
           const result = merged();
           // Accepting your own side everywhere must not rewrite the file just
           // because the merge re-joins blocks with blank lines between them.
-          finish(original != null && joinBlocks(splitBlocks(original)) === result ? original : result);
+          const same = original != null && joinBlocks(splitBlocks(original)) === result;
+          finish({
+            markdown: same && original != null ? original : result,
+            deviates: changes.some((change, i) => choices[i] !== change.choice),
+          });
         }
       });
 

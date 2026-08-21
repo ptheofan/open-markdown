@@ -304,7 +304,7 @@ export interface GoogleDocsAPI {
   getLink: (filePath: string) => Promise<GoogleDocLink | null>;
   /** Reconcile a two-sided change. Merge is called twice: once to learn the
    *  conflicts, once with the user's answers. */
-  syncResolve: (filePath: string, mode: SyncResolveMode, direction: SyncDirection, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[], tableWidths?: TableColumnWidths[]) => Promise<GoogleDocsResolveResult>;
+  syncResolve: (filePath: string, mode: SyncResolveMode, direction: SyncDirection, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[], tableWidths?: TableColumnWidths[], alsoWriteSource?: boolean) => Promise<GoogleDocsResolveResult>;
   onAuthChange: (callback: (state: GoogleAuthState) => void) => () => void;
   onSyncProgress: (callback: (update: SyncProgressUpdate) => void) => () => void;
   onSyncStatus: (callback: (status: { syncing: boolean; error?: string }) => void) => () => void;

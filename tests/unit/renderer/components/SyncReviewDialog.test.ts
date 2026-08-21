@@ -100,14 +100,28 @@ describe('SyncReviewDialog', () => {
       const done = dialog.review(CHANGES, BLOCKS);
       click('[data-bulk="remote"]');
       click('[data-action="apply"]');
-      await expect(done).resolves.toBe('one\n\ntwo\n\nthree THEIRS\n');
+      await expect(done).resolves.toEqual({
+        markdown: 'one\n\ntwo\n\nthree THEIRS\n',
+        deviates: true,
+      });
     });
 
     it('makes the whole file win in one click', async () => {
       const done = dialog.review(CHANGES, BLOCKS);
       click('[data-bulk="local"]');
       click('[data-action="apply"]');
-      await expect(done).resolves.toBe('one MINE\n\ntwo\n\nthree\n');
+      await expect(done).resolves.toEqual({
+        markdown: 'one MINE\n\ntwo\n\nthree\n',
+        deviates: true,
+      });
+    });
+
+    it('reports no deviation when every default is left as it stands', async () => {
+      // Nothing was overridden, so the side the user was not syncing towards
+      // already holds this and must not be written to.
+      const done = dialog.review(CHANGES, BLOCKS);
+      click('[data-action="apply"]');
+      await expect(done).resolves.toMatchObject({ deviates: false });
     });
 
     it('resolves with null when cancelled', async () => {
@@ -130,7 +144,7 @@ describe('SyncReviewDialog', () => {
       );
       click('[data-bulk="local"]');
       click('[data-action="apply"]');
-      await expect(done).resolves.toBe(original);
+      await expect(done).resolves.toMatchObject({ markdown: original });
     });
 
     it('still rebuilds when the result really differs', async () => {
@@ -140,7 +154,7 @@ describe('SyncReviewDialog', () => {
         '# Title\nProse\n',
       );
       click('[data-action="apply"]');
-      await expect(done).resolves.toBe('# Title\n\nProse EDITED\n');
+      await expect(done).resolves.toMatchObject({ markdown: '# Title\n\nProse EDITED\n' });
     });
   });
 

@@ -1053,6 +1053,7 @@ export class GoogleDocsSyncService {
     }
 
     // Phase 1: Insert all text content (tables as placeholders)
+    this.report('Writing the document text', 'applying');
     const { requests, pendingTables } = buildInsertRequests(docsDoc, 1);
     console.warn('[SyncService] fullPopulate: %d requests, %d pending tables', requests.length, pendingTables.length);
     if (requests.length > 0) {
@@ -1067,6 +1068,7 @@ export class GoogleDocsSyncService {
     // Read back the doc from API and save its text as baseline.
     // This ensures baseline matches future API reads (avoiding false
     // external-edit detection from format differences in tables/images).
+    this.report('Applying formatting', 'formatting');
     const populatedDoc = await this.docsService.getDocument(docId);
     const actualText = this.docsService.extractPlainText(populatedDoc);
     await this.linkStore.saveBaseline(docId, actualText);
@@ -1114,7 +1116,16 @@ export class GoogleDocsSyncService {
     docId: string,
     pendingTables: PendingTable[],
   ): Promise<void> {
+    let built = 0;
     for (const table of pendingTables) {
+      // Each table costs a document read and two round trips, so on a
+      // table-heavy document this loop is most of the sync. Reporting it is
+      // what keeps the bar from sitting on the last diagram for a minute.
+      this.report(
+        `Building table ${built + 1} of ${pendingTables.length}`,
+        'tables', built, pendingTables.length,
+      );
+      built += 1;
       // Read doc to find the placeholder
       const doc = await this.docsService.getDocument(docId);
       const content = doc?.body?.content ?? [];

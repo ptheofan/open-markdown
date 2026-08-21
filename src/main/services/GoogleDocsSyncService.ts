@@ -271,6 +271,23 @@ interface ApiImageBlock {
   mermaidLiveUrl?: string;
 }
 
+/**
+ * The header row, as the identity of a table across a sync.
+ *
+ * Ordinal position shifts the moment a table is added or removed, and exact
+ * content stops matching the moment anyone edits a cell. A header row
+ * survives both, which is what makes it usable for pairing.
+ */
+function apiTableHeaderKey(apiTable: ApiTable): string {
+  return (apiTable.cells[0] ?? []).map((cell) => cell.text.trim()).join('\u0000');
+}
+
+function modelTableHeaderKey(modelTable: DocsElement): string {
+  return (modelTable.rows?.[0] ?? [])
+    .map((cell) => cell.map((run) => run.text).join('').trim())
+    .join('\u0000');
+}
+
 function extractApiTables(apiDoc: GDocsApiDocument): ApiTable[] {
   const result: ApiTable[] = [];
   const content = apiDoc?.body?.content;
@@ -1269,8 +1286,60 @@ export class GoogleDocsSyncService {
       .filter(({ el }) => el.type === 'table');
     const modelTables = modelTableEntries.map((e) => e.el);
 
-    // Match by position (1st model table <-> 1st API table, etc.)
-    const tableCount = Math.min(apiTables.length, modelTables.length);
+    // Pair the two lists by their header row, not by ordinal.
+    //
+    // Deleting a table in the Doc used to shift every table after it by one,
+    // so each was compared against its neighbour's twin: the survivors were
+    // rewritten into each other and the deleted one reappended at the end.
+    // Exact content is no good as the key either -- a table someone edited no
+    // longer matches its own twin -- but a header row survives ordinary edits,
+    // which is exactly what has to be seen through.
+    const pairs: Array<{ apiTable: ApiTable; modelTable: DocsElement }> = [];
+    const tablesToDelete: ApiTable[] = [];
+    const tablesToAdd: Array<{ el: DocsElement; position: number }> = [];
+
+    {
+      const changes = diffArrays(
+        apiTables.map(apiTableHeaderKey),
+        modelTables.map(modelTableHeaderKey),
+      );
+      let ai = 0;
+      let mi = 0;
+      for (let ci = 0; ci < changes.length; ci++) {
+        const change = changes[ci]!;
+        const count = change.value.length;
+
+        if (!change.added && !change.removed) {
+          for (let k = 0; k < count; k++) {
+            pairs.push({ apiTable: apiTables[ai + k]!, modelTable: modelTables[mi + k]! });
+          }
+          ai += count;
+          mi += count;
+          continue;
+        }
+
+        if (change.removed) {
+          const added = changes[ci + 1]?.added === true ? changes[ci + 1]!.value.length : 0;
+          // A removed run against an added one is a set of headers that were
+          // rewritten; pair as many as line up and treat the rest as real
+          // additions and deletions.
+          const matched = Math.min(count, added);
+          for (let k = 0; k < matched; k++) {
+            pairs.push({ apiTable: apiTables[ai + k]!, modelTable: modelTables[mi + k]! });
+          }
+          for (let k = matched; k < count; k++) tablesToDelete.push(apiTables[ai + k]!);
+          for (let k = matched; k < added; k++) tablesToAdd.push(modelTableEntries[mi + k]!);
+          ai += count;
+          mi += added;
+          if (added > 0) ci++;
+          continue;
+        }
+
+        for (let k = 0; k < count; k++) tablesToAdd.push(modelTableEntries[mi + k]!);
+        mi += count;
+      }
+    }
+
     // Track tables that need replacement (process in reverse for index stability)
     const tablesToReplace: Array<{ apiTable: ApiTable; modelTable: DocsElement }> = [];
 
@@ -1284,10 +1353,7 @@ export class GoogleDocsSyncService {
     const tablesToResize: Array<{ apiTable: ApiTable; rowDelta: number; columnDelta: number }> = [];
     let anyCellChanged = false;
 
-    for (let i = 0; i < tableCount; i++) {
-      const apiTable = apiTables[i]!;
-      const modelTable = modelTables[i]!;
-
+    for (const { apiTable, modelTable } of pairs) {
       if (apiTable.cellTexts === modelTableCellTexts(modelTable)) continue;
       anyCellChanged = true;
 
@@ -1308,20 +1374,6 @@ export class GoogleDocsSyncService {
         tablesToResize.push({ apiTable, rowDelta, columnDelta });
       }
       // Same shape: nothing structural to do; the cell pass below handles it.
-    }
-
-    // Tables removed from markdown (more API tables than model tables)
-    const tablesToDelete: ApiTable[] = [];
-    for (let i = tableCount; i < apiTables.length; i++) {
-      tablesToDelete.push(apiTables[i]!);
-    }
-
-    // Tables added in markdown (more model tables than API tables)
-    // These need to be inserted at the correct position — we use the
-    // end of the document as insertion point for new tables.
-    const tablesToAdd: Array<{ el: DocsElement; position: number }> = [];
-    for (let i = tableCount; i < modelTableEntries.length; i++) {
-      tablesToAdd.push(modelTableEntries[i]!);
     }
 
     // Process table deletions and replacements in reverse document order
@@ -1384,24 +1436,49 @@ export class GoogleDocsSyncService {
     const imgDoc = await this.docsService.getDocument(docId);
     const apiImages = extractApiImageBlocks(imgDoc);
 
-    const imageCount = Math.min(apiImages.length, modelImages.length);
-    // Track images that need replacement (reverse order)
+    // Paired on the mermaid.live URL, which is the diagram's identity -- for
+    // the same reason tables are paired on their header row. By ordinal, a
+    // diagram deleted in the Doc shifted every one after it, and the survivor
+    // was rewritten into its neighbour.
     const imagesToReplace: Array<{ apiImage: ApiImageBlock; modelImage: DocsElement }> = [];
-
-    for (let i = 0; i < imageCount; i++) {
-      const apiImage = apiImages[i]!;
-      const modelImage = modelImages[i]!;
-
-      // Compare mermaid.live URLs — if the diagram code changed, the URL changed
-      if (apiImage.mermaidLiveUrl !== modelImage.mermaidLiveUrl) {
-        imagesToReplace.push({ apiImage, modelImage });
-      }
-    }
-
-    // Images removed from markdown
     const imagesToDelete: ApiImageBlock[] = [];
-    for (let i = imageCount; i < apiImages.length; i++) {
-      imagesToDelete.push(apiImages[i]!);
+    const imagesToAdd: Array<{ el: DocsElement; position: number }> = [];
+
+    {
+      const changes = diffArrays(
+        apiImages.map((img) => img.mermaidLiveUrl ?? ''),
+        modelImages.map((img) => img.mermaidLiveUrl ?? ''),
+      );
+      let ai = 0;
+      let mi = 0;
+      for (let ci = 0; ci < changes.length; ci++) {
+        const change = changes[ci]!;
+        const count = change.value.length;
+
+        if (!change.added && !change.removed) {
+          // Same URL means the same diagram, unchanged. Nothing to do.
+          ai += count;
+          mi += count;
+          continue;
+        }
+
+        if (change.removed) {
+          const added = changes[ci + 1]?.added === true ? changes[ci + 1]!.value.length : 0;
+          const matched = Math.min(count, added);
+          for (let k = 0; k < matched; k++) {
+            imagesToReplace.push({ apiImage: apiImages[ai + k]!, modelImage: modelImages[mi + k]! });
+          }
+          for (let k = matched; k < count; k++) imagesToDelete.push(apiImages[ai + k]!);
+          for (let k = matched; k < added; k++) imagesToAdd.push(modelImageEntries[mi + k]!);
+          ai += count;
+          mi += added;
+          if (added > 0) ci++;
+          continue;
+        }
+
+        for (let k = 0; k < count; k++) imagesToAdd.push(modelImageEntries[mi + k]!);
+        mi += count;
+      }
     }
 
     // Process image replacements and deletions in reverse document order
@@ -1427,8 +1504,7 @@ export class GoogleDocsSyncService {
     }
 
     // New images go where the markdown puts them, not at the end.
-    for (let i = imageCount; i < modelImageEntries.length; i++) {
-      const { el: modelImage, position } = modelImageEntries[i]!;
+    for (const { el: modelImage, position } of imagesToAdd) {
       // Re-read each time: the previous insert moved everything after it.
       const currentDoc = await this.docsService.getDocument(docId);
       const insertAt = insertionIndexFor(currentDoc, newDocsDoc.elements, position);

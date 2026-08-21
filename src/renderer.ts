@@ -1340,7 +1340,7 @@ class App {
     // Nothing to review means nothing was overridden, so only the target side
     // is written -- a pull that takes the Doc wholesale sends it no requests.
     const settled = preview.needsReview === true
-      ? await this.reviewChanges(changes, blocks, content)
+      ? await this.reviewChanges(changes, blocks, direction, content)
       : { markdown: joinBlocks(blocks), deviates: false };
     if (settled == null) return;
 
@@ -1366,10 +1366,11 @@ class App {
   private async reviewChanges(
     changes: SyncChange[],
     blocks: string[],
+    direction: SyncDirection,
     original: string,
   ): Promise<SyncReviewOutcome | null> {
     this.googleDocsButton?.setState('ready');
-    return (await this.syncReviewDialog?.review(changes, blocks, original)) ?? null;
+    return (await this.syncReviewDialog?.review(changes, blocks, direction, original)) ?? null;
   }
 
   private async resolveSync(

@@ -16,7 +16,7 @@
  * that is all "use the Doc" and "use my file" ever were.
  */
 import MarkdownIt from 'markdown-it';
-import type { SyncChange, SyncConflictChoice } from '@shared/types/google-docs';
+import type { SyncChange, SyncConflictChoice, SyncDirection } from '@shared/types/google-docs';
 import { applyResolutions, chooseSide, joinBlocks, splitBlocks } from '@shared/markdown/blocks';
 
 /** What the user settled on, and whether they went against the direction. */
@@ -42,6 +42,7 @@ export interface SyncReviewDialog {
   review(
     changes: SyncChange[],
     blocks: string[],
+    direction: SyncDirection,
     original?: string,
   ): Promise<SyncReviewOutcome | null>;
   destroy(): void;
@@ -70,13 +71,14 @@ class SyncReviewDialogImpl implements SyncReviewDialog {
   review(
     changes: SyncChange[],
     blocks: string[],
+    direction: SyncDirection,
     original?: string,
   ): Promise<SyncReviewOutcome | null> {
     return new Promise((resolve) => {
       const choices: SyncConflictChoice[] = changes.map((change) => change.choice);
       /** Block index -> position in `changes`, for the rows that are changes. */
       const changeAt = new Map(changes.map((change, i) => [change.index, i]));
-      const overlay = this.open(this.shell(changes, blocks, changeAt));
+      const overlay = this.open(this.shell(changes, blocks, changeAt, direction));
 
       // Every cell is filled here, never in the markup: the right-hand text is
       // written by whoever can edit the Doc.
@@ -136,10 +138,11 @@ class SyncReviewDialogImpl implements SyncReviewDialog {
         const button = target?.closest<HTMLElement>('button');
         if (!button) return;
 
-        const bulk = button.dataset['bulk'];
-        if (bulk != null) {
-          choices.fill(bulk as SyncConflictChoice);
-          changes.forEach((_, i) => paintRow(i));
+        if (button.dataset['reset'] != null) {
+          // Back to the source of truth for the whole file. There is no
+          // whole-file button for the other side: on a push that would be a
+          // pull, which is the other button in the toolbar.
+          changes.forEach((change, i) => { choices[i] = change.choice; paintRow(i); });
           return;
         }
 
@@ -190,7 +193,12 @@ class SyncReviewDialogImpl implements SyncReviewDialog {
    * Carries no user text: every cell is filled with textContent afterwards,
    * or rendered through markdown-it with html disabled.
    */
-  private shell(changes: SyncChange[], blocks: string[], changeAt: Map<number, number>): string {
+  private shell(
+    changes: SyncChange[],
+    blocks: string[],
+    changeAt: Map<number, number>,
+    direction: SyncDirection,
+  ): string {
     const conflicts = changes.filter((c) => c.kind === 'conflict').length;
     const summary = [
       changes.length === 1 ? '1 change' : `${changes.length} changes`,
@@ -228,16 +236,23 @@ class SyncReviewDialogImpl implements SyncReviewDialog {
       </div>`;
     }).join('');
 
+    // The direction already named a source of truth, so the only whole-file
+    // action is "drop my exceptions". Offering "use the Doc" on a push would
+    // be offering a pull, which is a different button in the toolbar.
+    const pulling = direction === 'pull';
+    const title = pulling ? 'Pull from Google Doc' : 'Push to Google Doc';
+    const source = pulling ? 'the Google Doc' : 'this file';
+    const reset = pulling ? 'Use the Doc throughout' : 'Use this file throughout';
+
     return `
       <header class="sync-merge-head">
-        <h2 class="sync-merge-title">Merge with Google Doc</h2>
+        <h2 class="sync-merge-title">${title}</h2>
         <span class="sync-merge-summary">${summary}</span>
         <span class="sync-merge-spacer"></span>
+        <span class="sync-merge-bulk-label">Keeping ${source} except where you say otherwise</span>
         <button type="button" class="btn btn-quiet" data-nav="prev" title="Previous change">&#9650;</button>
         <button type="button" class="btn btn-quiet" data-nav="next" title="Next change">&#9660;</button>
-        <span class="sync-merge-bulk-label">Whole file:</span>
-        <button type="button" class="btn btn-quiet" data-bulk="local">Use this file</button>
-        <button type="button" class="btn btn-quiet" data-bulk="remote">Use the Doc</button>
+        <button type="button" class="btn btn-quiet" data-reset="">${reset}</button>
       </header>
       <div class="sync-merge-colheads">
         <span>This file</span><span></span><span>Result</span><span></span><span>Google Doc</span>
@@ -245,7 +260,7 @@ class SyncReviewDialogImpl implements SyncReviewDialog {
       <div class="sync-merge-grid">${rows}</div>
       <footer class="sync-merge-actions">
         <button type="button" class="btn btn-quiet" data-action="cancel">Cancel</button>
-        <button type="button" class="btn btn-primary" data-action="apply">Apply to both</button>
+        <button type="button" class="btn btn-primary" data-action="apply">${pulling ? 'Pull' : 'Push'}</button>
       </footer>
     `;
   }

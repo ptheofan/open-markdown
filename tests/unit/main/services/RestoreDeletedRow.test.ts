@@ -84,11 +84,12 @@ describe('a row deleted from a table in the Doc', () => {
       mockLinkStore as unknown as Parameters<typeof createGoogleDocsSyncService>[1],
     );
 
-    // The Doc reflects the insert once it has happened, the way the API would.
+    // The Doc reflects the insert once it has happened, the way the API
+    // would: a blank row appears where it was asked for.
     const doc = (): GDocsApiDocument => ({
       body: {
         content: [tableOf(
-          rowInserted ? [HEADER, KEPT, ['', '']] : [HEADER, KEPT],
+          rowInserted ? [HEADER, ['', ''], KEPT] : [HEADER, KEPT],
           1,
         )],
       },
@@ -108,15 +109,29 @@ describe('a row deleted from a table in the Doc', () => {
     });
   });
 
-  it('grows the table back and writes the missing row into it', async () => {
+  it('puts the row back where it belongs, not at the bottom', async () => {
+    // Appending it and shifting every row's text up by one is what moved the
+    // comments: they anchor to text ranges, so a row whose text is rewritten
+    // keeps the comment that belonged to what used to be there.
     await syncService.syncForceOverwrite('/file.md', 'doc-1', 'markdown');
 
-    const requests = allRequests();
-    expect(requests.some((r) => r['insertTableRow'] != null)).toBe(true);
+    const inserts = allRequests()
+      .map((r) => r['insertTableRow'] as { tableCellLocation?: { rowIndex?: number }; insertBelow?: boolean } | undefined)
+      .filter((r) => r != null);
 
-    // The cell pass diffs character by character, so the restored text
-    // arrives as fragments rather than one string. What matters is that the
-    // table was worked on at all: skipped, it keeps the Doc's version.
-    expect(requests.filter((r) => r['insertText'] != null).length).toBeGreaterThan(0);
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]?.tableCellLocation?.rowIndex).toBe(1);
+    expect(inserts[0]?.insertBelow).toBe(false);
+  });
+
+  it('leaves the surviving row\'s text alone, so its comments stay put', async () => {
+    await syncService.syncForceOverwrite('/file.md', 'doc-1', 'markdown');
+
+    const written = allRequests()
+      .map((r) => (r['insertText'] as { text?: string } | undefined)?.text ?? '')
+      .join('');
+    // Only the blank row needs filling. Rewriting the row that was never
+    // touched is what detaches its comments.
+    expect(written).not.toContain('testlio');
   });
 });

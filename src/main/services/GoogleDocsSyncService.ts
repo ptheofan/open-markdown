@@ -284,6 +284,66 @@ interface ApiImageBlock {
  * Returns only the tables present on both sides; what is left over on either
  * side is an addition or a deletion, which the caller decides about.
  */
+/** A row's cell texts: its identity within a table, across an edit. */
+function apiRowKey(cells: ApiParagraph[]): string {
+  return cells.map((cell) => cell.text.trim()).join('\u0000');
+}
+
+function modelRowKey(row: DocsTextRun[][]): string {
+  return row.map((cell) => cell.map((run) => run.text).join('').trim()).join('\u0000');
+}
+
+/**
+ * Where rows have to be added or removed for the Doc's table to match the
+ * file's, in the Doc's own row numbers.
+ *
+ * Rows are matched on their content, so a row missing from the middle is
+ * restored in the middle. Appending it instead and letting the text shift up
+ * a row rewrites every row below -- and comments anchor to text ranges, so
+ * each one ends up attached to whatever moved into its place.
+ *
+ * A removed run against an added one is a set of rows whose text changed;
+ * those stay where they are and the cell pass rewrites them.
+ */
+function tableRowOperations(
+  apiTable: ApiTable,
+  modelTable: DocsElement,
+): Array<{ type: 'insert' | 'delete'; at: number; count: number }> {
+  const changes = diffArrays(
+    apiTable.cells.map(apiRowKey),
+    (modelTable.rows ?? []).map(modelRowKey),
+  );
+  const ops: Array<{ type: 'insert' | 'delete'; at: number; count: number }> = [];
+  let at = 0;
+
+  for (let ci = 0; ci < changes.length; ci++) {
+    const change = changes[ci]!;
+    const count = change.value.length;
+
+    if (!change.added && !change.removed) {
+      at += count;
+      continue;
+    }
+
+    if (change.removed) {
+      const added = changes[ci + 1]?.added === true ? changes[ci + 1]!.value.length : 0;
+      const matched = Math.min(count, added);
+      at += matched;
+      if (count > matched) {
+        ops.push({ type: 'delete', at, count: count - matched });
+        at += count - matched;
+      }
+      if (added > matched) ops.push({ type: 'insert', at, count: added - matched });
+      if (added > 0) ci++;
+      continue;
+    }
+
+    ops.push({ type: 'insert', at, count });
+  }
+
+  return ops;
+}
+
 function pairTablesByHeader(
   apiTables: ApiTable[],
   modelTables: DocsElement[],
@@ -1403,7 +1463,7 @@ export class GoogleDocsSyncService {
     // or removing a row is an ordinary edit and must not cost the table its
     // comments, so the rows are inserted or deleted in place and the text is
     // filled in afterwards.
-    const tablesToResize: Array<{ apiTable: ApiTable; rowDelta: number; columnDelta: number }> = [];
+    const tablesToResize: Array<{ apiTable: ApiTable; modelTable: DocsElement; columnDelta: number }> = [];
     let anyCellChanged = false;
 
     console.warn(
@@ -1434,12 +1494,14 @@ export class GoogleDocsSyncService {
         continue;
       }
 
-      const rowDelta = modelRows.length - apiTable.rowCount;
-      const columnDelta = modelColumns - apiTable.columnCount;
-      if (rowDelta !== 0 || columnDelta !== 0) {
-        tablesToResize.push({ apiTable, rowDelta, columnDelta });
-      }
-      // Same shape: nothing structural to do; the cell pass below handles it.
+      // Always offered for reshaping: rows are matched by content, so a row
+      // moved or replaced needs work even when the count has not changed.
+      // resizeTable sends nothing when there is nothing to do.
+      tablesToResize.push({
+        apiTable,
+        modelTable,
+        columnDelta: modelColumns - apiTable.columnCount,
+      });
     }
 
     // Process table deletions and replacements in reverse document order
@@ -1482,7 +1544,7 @@ export class GoogleDocsSyncService {
     // Resize in reverse document order so earlier tables keep their indices.
     for (const op of [...tablesToResize].sort((a, b) => b.apiTable.startIndex - a.apiTable.startIndex)) {
       reportTable('Resizing table');
-      await this.resizeTable(docId, op.apiTable, op.rowDelta, op.columnDelta);
+      await this.resizeTable(docId, op.apiTable, op.modelTable, op.columnDelta);
     }
 
     // Finally, fill in the text. Re-read first: anything above did move
@@ -1592,36 +1654,43 @@ export class GoogleDocsSyncService {
   private async resizeTable(
     docId: string,
     apiTable: ApiTable,
-    rowDelta: number,
+    modelTable: DocsElement,
     columnDelta: number,
   ): Promise<void> {
     const tableStartLocation = { index: apiTable.startIndex };
     const requests: DocsBatchUpdateRequest[] = [];
 
-    for (let n = 0; n < rowDelta; n++) {
-      requests.push({
-        insertTableRow: {
-          // Each insert goes below what is by then the last row.
-          tableCellLocation: {
-            tableStartLocation,
-            rowIndex: apiTable.rowCount - 1 + n,
-            columnIndex: 0,
+    // Bottom up, so a row added or removed above does not move the rows an
+    // operation further down still refers to.
+    const rowOps = tableRowOperations(apiTable, modelTable)
+      .sort((a, b) => b.at - a.at);
+
+    for (const op of rowOps) {
+      if (op.type === 'insert') {
+        for (let n = 0; n < op.count; n++) {
+          // Inserting above row `at` puts it where it went missing. Past the
+          // last row there is nothing to sit above, so it goes below instead.
+          const append = op.at >= apiTable.rowCount;
+          requests.push({
+            insertTableRow: {
+              tableCellLocation: {
+                tableStartLocation,
+                rowIndex: append ? apiTable.rowCount - 1 : op.at,
+                columnIndex: 0,
+              },
+              insertBelow: append,
+            },
+          });
+        }
+        continue;
+      }
+      for (let n = op.count - 1; n >= 0; n--) {
+        requests.push({
+          deleteTableRow: {
+            tableCellLocation: { tableStartLocation, rowIndex: op.at + n, columnIndex: 0 },
           },
-          insertBelow: true,
-        },
-      });
-    }
-    // Delete from the bottom up so the rows above keep their indices.
-    for (let n = 0; n < -rowDelta; n++) {
-      requests.push({
-        deleteTableRow: {
-          tableCellLocation: {
-            tableStartLocation,
-            rowIndex: apiTable.rowCount - 1 - n,
-            columnIndex: 0,
-          },
-        },
-      });
+        });
+      }
     }
 
     for (let n = 0; n < columnDelta; n++) {
@@ -1651,8 +1720,9 @@ export class GoogleDocsSyncService {
 
     if (requests.length > 0) {
       console.warn(
-        '[SyncService] table resize: %d row / %d column op(s)',
-        Math.abs(rowDelta), Math.abs(columnDelta),
+        '[SyncService] table reshape: %d row op(s), %d column op(s) on %s',
+        rowOps.reduce((n, op) => n + op.count, 0), Math.abs(columnDelta),
+        apiTableHeaderKey(apiTable),
       );
       await this.docsService.batchUpdate(docId, requests);
     }

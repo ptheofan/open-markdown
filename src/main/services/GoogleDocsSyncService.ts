@@ -278,6 +278,59 @@ interface ApiImageBlock {
  * content stops matching the moment anyone edits a cell. A header row
  * survives both, which is what makes it usable for pairing.
  */
+/**
+ * Pair the Doc's tables with the file's, matching on the header row.
+ *
+ * Returns only the tables present on both sides; what is left over on either
+ * side is an addition or a deletion, which the caller decides about.
+ */
+function pairTablesByHeader(
+  apiTables: ApiTable[],
+  modelTables: DocsElement[],
+): Array<{ apiTable: ApiTable; modelTable: DocsElement; apiIndex: number; modelIndex: number }> {
+  const pairs: Array<{ apiTable: ApiTable; modelTable: DocsElement; apiIndex: number; modelIndex: number }> = [];
+  const changes = diffArrays(apiTables.map(apiTableHeaderKey), modelTables.map(modelTableHeaderKey));
+  let ai = 0;
+  let mi = 0;
+
+  for (let ci = 0; ci < changes.length; ci++) {
+    const change = changes[ci]!;
+    const count = change.value.length;
+
+    if (!change.added && !change.removed) {
+      for (let k = 0; k < count; k++) {
+        pairs.push({
+          apiTable: apiTables[ai + k]!, modelTable: modelTables[mi + k]!,
+          apiIndex: ai + k, modelIndex: mi + k,
+        });
+      }
+      ai += count;
+      mi += count;
+      continue;
+    }
+
+    if (change.removed) {
+      const added = changes[ci + 1]?.added === true ? changes[ci + 1]!.value.length : 0;
+      // A removed run against an added one is a set of headers that were
+      // rewritten; pair as many as line up.
+      for (let k = 0; k < Math.min(count, added); k++) {
+        pairs.push({
+          apiTable: apiTables[ai + k]!, modelTable: modelTables[mi + k]!,
+          apiIndex: ai + k, modelIndex: mi + k,
+        });
+      }
+      ai += count;
+      mi += added;
+      if (added > 0) ci++;
+      continue;
+    }
+
+    mi += count;
+  }
+
+  return pairs;
+}
+
 function apiTableHeaderKey(apiTable: ApiTable): string {
   return (apiTable.cells[0] ?? []).map((cell) => cell.text.trim()).join('\u0000');
 }
@@ -1353,8 +1406,21 @@ export class GoogleDocsSyncService {
     const tablesToResize: Array<{ apiTable: ApiTable; rowDelta: number; columnDelta: number }> = [];
     let anyCellChanged = false;
 
+    console.warn(
+      '[SyncService] tables: %d in the Doc, %d in the file -> %d paired, %d to add, %d to delete',
+      apiTables.length, modelTables.length, pairs.length, tablesToAdd.length, tablesToDelete.length,
+    );
+    for (const t of tablesToDelete) console.warn('[SyncService]   deleting: %s', apiTableHeaderKey(t));
+    for (const t of tablesToAdd) console.warn('[SyncService]   adding: %s', modelTableHeaderKey(t.el));
+
     for (const { apiTable, modelTable } of pairs) {
       if (apiTable.cellTexts === modelTableCellTexts(modelTable)) continue;
+      console.warn(
+        '[SyncService]   changed: %s (Doc %dx%d, file %dx%d)',
+        apiTableHeaderKey(apiTable),
+        apiTable.rowCount, apiTable.columnCount,
+        (modelTable.rows ?? []).length, (modelTable.rows?.[0] ?? []).length,
+      );
       anyCellChanged = true;
 
       const modelRows = modelTable.rows ?? [];
@@ -1602,9 +1668,17 @@ export class GoogleDocsSyncService {
     const apiTables = extractApiTables(await this.docsService.getDocument(docId));
     const requests: DocsBatchUpdateRequest[] = [];
 
-    for (let i = 0; i < Math.min(apiTables.length, modelTables.length); i++) {
-      const edits = tableCellDiffRequests(apiTables[i]!, modelTables[i]!);
-      if (edits !== null) requests.push(...edits);
+    // Paired on the header row, not by ordinal -- for the same reason the
+    // outer pass is. One table missing on either side would otherwise shift
+    // every table after it and write each one's text into its neighbour.
+    for (const { apiTable, modelTable } of pairTablesByHeader(apiTables, modelTables)) {
+      const edits = tableCellDiffRequests(apiTable, modelTable);
+      if (edits === null) {
+        console.warn('[SyncService] table cell diff skipped (shape mismatch): %s',
+          apiTableHeaderKey(apiTable));
+        continue;
+      }
+      requests.push(...edits);
     }
 
     if (requests.length === 0) return;

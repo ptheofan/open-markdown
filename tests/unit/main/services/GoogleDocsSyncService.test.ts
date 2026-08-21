@@ -390,7 +390,8 @@ describe('syncProgressPercent', () => {
   it('reports a rising percentage across the fixed phases', () => {
     expect(syncProgressPercent({ phase: 'reading' })).toBe(10);
     expect(syncProgressPercent({ phase: 'converting' })).toBe(20);
-    expect(syncProgressPercent({ phase: 'applying' })).toBe(85);
+    expect(syncProgressPercent({ phase: 'applying' })).toBe(80);
+    expect(syncProgressPercent({ phase: 'formatting' })).toBe(98);
     expect(syncProgressPercent({ phase: 'done' })).toBe(100);
   });
 
@@ -403,9 +404,13 @@ describe('syncProgressPercent', () => {
     expect(third).toBeLessThan(70);
   });
 
-  it('spreads table inserts across their band', () => {
-    expect(syncProgressPercent({ phase: 'tables', index: 0, total: 2 })).toBe(90);
-    expect(syncProgressPercent({ phase: 'tables', index: 2, total: 2 })).toBe(100);
+  it('spreads table work across its band, which sits after the diagrams', () => {
+    expect(syncProgressPercent({ phase: 'tables', index: 0, total: 2 })).toBe(80);
+    expect(syncProgressPercent({ phase: 'tables', index: 2, total: 2 })).toBe(92);
+    // The band has to start above where the diagram pass left the bar, or a
+    // table-heavy document looks stuck on the last diagram.
+    expect(syncProgressPercent({ phase: 'tables', index: 0, total: 2 }))
+      .toBeGreaterThanOrEqual(syncProgressPercent({ phase: 'diagrams', index: 5, total: 5 }));
   });
 
   it('never divides by zero when there is nothing to count', () => {

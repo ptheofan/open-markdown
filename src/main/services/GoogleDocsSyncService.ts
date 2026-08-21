@@ -660,8 +660,9 @@ const PROGRESS_BANDS: Record<SyncPhase, readonly [number, number]> = {
   reading: [0, 10],
   converting: [10, 20],
   diagrams: [25, 70],
-  applying: [70, 85],
-  tables: [90, 100],
+  applying: [70, 80],
+  tables: [80, 92],
+  formatting: [92, 98],
   done: [100, 100],
 };
 
@@ -1203,6 +1204,7 @@ export class GoogleDocsSyncService {
     markdown: string,
   ): Promise<GoogleDocsSyncResult> {
     // Phase 1: Text paragraph diff
+    this.report('Updating the document text', 'applying');
     const apiParas = extractApiParagraphs(currentApiDoc);
     const modelElements = flattenElements(newDocsDoc.elements);
 
@@ -1217,6 +1219,7 @@ export class GoogleDocsSyncService {
     await this.syncStructuralElements(docId, newDocsDoc);
 
     // Phase 3: Read doc back and apply formatting
+    this.report('Applying formatting', 'formatting');
     const finalDoc = await this.docsService.getDocument(docId);
     const formattingOps = buildFormattingFromApiDoc(finalDoc, newDocsDoc);
     if (formattingOps.length > 0) {
@@ -1316,7 +1319,21 @@ export class GoogleDocsSyncService {
       ...tablesToDelete.map(t => ({ type: 'delete' as const, apiTable: t })),
     ].sort((a, b) => b.apiTable.endIndex - a.apiTable.endIndex);
 
+    // Each of these is a round trip to Google, and on a table-heavy document
+    // they are most of the sync. Counted up front so the bar can move through
+    // them rather than sitting on whatever the diagram pass last said.
+    const tableSteps = allTableOps.length
+      + (tablesToAdd.length > 0 ? 1 : 0)
+      + tablesToResize.length
+      + (anyCellChanged ? 1 : 0);
+    let tableStep = 0;
+    const reportTable = (what: string): void => {
+      tableStep += 1;
+      this.report(`${what} ${tableStep} of ${tableSteps}`, 'tables', tableStep - 1, tableSteps);
+    };
+
     for (const op of allTableOps) {
+      reportTable(op.type === 'delete' ? 'Removing table' : 'Rebuilding table');
       if (op.type === 'delete') {
         await this.docsService.batchUpdate(docId, [{
           deleteContentRange: { range: { startIndex: op.apiTable.startIndex, endIndex: op.apiTable.endIndex } },
@@ -1329,17 +1346,20 @@ export class GoogleDocsSyncService {
 
     // Insert new tables (added in markdown)
     if (tablesToAdd.length > 0) {
+      reportTable('Adding tables, step');
       await this.insertNewTables(docId, tablesToAdd, newDocsDoc.elements);
     }
 
     // Resize in reverse document order so earlier tables keep their indices.
     for (const op of [...tablesToResize].sort((a, b) => b.apiTable.startIndex - a.apiTable.startIndex)) {
+      reportTable('Resizing table');
       await this.resizeTable(docId, op.apiTable, op.rowDelta, op.columnDelta);
     }
 
     // Finally, fill in the text. Re-read first: anything above did move
     // indices, and the cell diff addresses real positions.
     if (anyCellChanged) {
+      reportTable('Filling in table text, step');
       await this.applyTableCellEdits(docId, modelTables);
     }
 
@@ -1379,7 +1399,13 @@ export class GoogleDocsSyncService {
       ...imagesToDelete.map(t => ({ type: 'delete' as const, apiImage: t })),
     ].sort((a, b) => b.apiImage.endIndex - a.apiImage.endIndex);
 
+    let imageStep = 0;
     for (const op of allImageOps) {
+      imageStep += 1;
+      this.report(
+        `Placing diagram ${imageStep} of ${allImageOps.length}`,
+        'tables', tableSteps + imageStep - 1, tableSteps + allImageOps.length,
+      );
       if (op.type === 'delete') {
         await this.docsService.batchUpdate(docId, [{
           deleteContentRange: { range: { startIndex: op.apiImage.startIndex, endIndex: op.apiImage.endIndex } },

@@ -44,6 +44,86 @@ describe('Structural element sync', () => {
   });
 
   describe('table sync', () => {
+    it('says what it is doing while it works through the tables', async () => {
+      // The bar sat at 70% showing "Uploaded diagram 7 of 7" for the whole
+      // table pass -- which on a table-heavy document is most of the sync.
+      // Nothing between the diagrams and the end reported anything at all.
+
+      const syncService = createGoogleDocsSyncService(
+        mockDocsService as unknown as GoogleDocsService,
+        linkStore,
+      );
+
+      // Set up baseline from previous sync
+      const baselineText = 'Title\nOld A\nOld B\n';
+      await linkStore.saveBaseline('doc-123', baselineText);
+      await linkStore.setLink('/test/file.md', 'doc-123');
+      await linkStore.updateLastSynced('/test/file.md', '2026-01-01T00:00:00.000Z');
+
+      // Current API doc has: paragraph, table with "Old A\nOld B\n", paragraph
+      const apiDocWithTable = {
+        body: {
+          content: [
+            {
+              paragraph: {
+                elements: [{ textRun: { content: 'Title\n' } }],
+              },
+              startIndex: 1,
+              endIndex: 7,
+            },
+            {
+              table: {
+                tableRows: [
+                  {
+                    tableCells: [
+                      {
+                        content: [{
+                          paragraph: {
+                            elements: [{ textRun: { content: 'Old A\n' } }],
+                          },
+                        }],
+                      },
+                    ],
+                  },
+                  {
+                    tableCells: [
+                      {
+                        content: [{
+                          paragraph: {
+                            elements: [{ textRun: { content: 'Old B\n' } }],
+                          },
+                        }],
+                      },
+                    ],
+                  },
+                ],
+              },
+              startIndex: 7,
+              endIndex: 30,
+            },
+          ],
+        },
+      };
+
+      mockDocsService.getDocument.mockResolvedValue(apiDocWithTable);
+      mockDocsService.extractPlainText
+        .mockReturnValueOnce(baselineText)  // sync check
+        .mockReturnValue('Title\nNew A\nNew B\n');
+
+      // Markdown with changed table
+      const markdown = '# Title\n\n| Col |\n|---|\n| New A |\n| New B |';
+
+      const seen: Array<{ percent: number; label: string }> = [];
+      await syncService.resolve('/test/file.md', 'doc-123', 'apply', 'push', markdown, {
+        onProgress: (u) => seen.push(u),
+      });
+
+      expect(seen.some((u) => /table/i.test(u.label))).toBe(true);
+      // And the bar has to leave the diagram band behind.
+      expect(seen.some((u) => u.percent > 70 && u.percent < 100)).toBe(true);
+      expect(seen.at(-1)).toEqual({ percent: 100, label: 'Done' });
+    });
+
     it('should grow a table in place rather than rebuilding it', async () => {
       const syncService = createGoogleDocsSyncService(
         mockDocsService as unknown as GoogleDocsService,

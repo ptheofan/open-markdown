@@ -221,7 +221,14 @@ export interface GoogleDocsResolveResult extends GoogleDocsSyncResult {
 }
 
 /** Which stage of a sync is running. */
-export type SyncPhase = 'reading' | 'converting' | 'diagrams' | 'applying' | 'tables' | 'done';
+export type SyncPhase =
+  | 'reading'
+  | 'converting'
+  | 'diagrams'
+  | 'applying'
+  | 'tables'
+  | 'formatting'
+  | 'done';
 
 /** A point in a sync's progress, as reported to the UI. */
 export interface SyncProgressUpdate {

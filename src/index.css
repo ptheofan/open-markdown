@@ -2510,3 +2510,16 @@ pre.sync-merge-cell {
   gap: 8px;
   padding-top: 12px;
 }
+
+/* Off-screen surface used to re-render diagrams in the light palette before
+   they are uploaded to a Google Doc, whose page is white whatever theme the
+   app is in. Kept in the layout tree -- display:none would leave the SVG
+   unmeasured and the export blank. */
+.gdocs-export-surface {
+  position: fixed;
+  left: -10000px;
+  top: 0;
+  width: 1200px;
+  background: #ffffff;
+  pointer-events: none;
+}

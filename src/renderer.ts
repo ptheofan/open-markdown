@@ -47,7 +47,7 @@ import {
 } from './renderer/services';
 import { isDomainError } from '@shared/errors';
 import { BUILTIN_PLUGINS } from '@shared/constants';
-import { applyTheme as applyThemeCSS } from './themes';
+import { applyTheme as applyThemeCSS, generateCompleteThemeCSS } from './themes';
 
 import type {
   ThemeMode,
@@ -1231,22 +1231,65 @@ class App {
 
     const containers = viewer.querySelectorAll('.mermaid-container[data-mermaid-source]');
     const diagrams: MermaidDiagramData[] = [];
+    const surface = this.createLightExportSurface();
 
-    for (const container of containers) {
-      const encodedSource = container.getAttribute('data-mermaid-source');
-      if (!encodedSource) continue;
+    try {
+      for (const container of containers) {
+        const encodedSource = container.getAttribute('data-mermaid-source');
+        if (!encodedSource) continue;
 
-      try {
-        const code = mermaidPlugin.decodeFromAttribute(encodedSource);
-        const pngBase64 = await mermaidPlugin.renderToPng(container as HTMLElement);
-        const liveUrl = await mermaidPlugin.generateMermaidLiveUrl(code);
-        diagrams.push({ code, pngBase64, liveUrl });
-      } catch (error) {
-        console.warn('Failed to extract mermaid diagram:', error);
+        try {
+          const code = mermaidPlugin.decodeFromAttribute(encodedSource);
+          // Re-rendered light rather than captured from screen: a Google Doc
+          // page is white, and the diagram on screen is whatever theme the
+          // app happens to be in.
+          const pngBase64 = await mermaidPlugin.renderToPngForExport(code, surface.host);
+          const liveUrl = await mermaidPlugin.generateMermaidLiveUrl(code);
+          diagrams.push({ code, pngBase64, liveUrl });
+        } catch (error) {
+          console.warn('Failed to extract mermaid diagram:', error);
+        }
       }
+    } finally {
+      surface.dispose();
     }
 
     return diagrams;
+  }
+
+  /**
+   * An off-screen element carrying the light palette.
+   *
+   * Diagrams resolve their colours from CSS variables on the document root,
+   * so rendering one for export inside the running app would pick up the
+   * app's theme however the diagram itself was themed. The real theme
+   * generator produces the light values -- rescoped from :root to this
+   * element, so the visible UI is untouched.
+   */
+  private createLightExportSurface(): { host: HTMLElement; dispose: () => void } {
+    const declarations = this.markdownViewer?.getPluginThemeDeclarations() ?? {};
+    const css = generateCompleteThemeCSS(
+      'light',
+      declarations,
+      this.state.currentPreferences ?? undefined,
+    );
+
+    const style = document.createElement('style');
+    style.textContent = css.replace(':root', '.gdocs-export-surface');
+    document.head.appendChild(style);
+
+    const host = document.createElement('div');
+    host.className = 'gdocs-export-surface';
+    host.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(host);
+
+    return {
+      host,
+      dispose: () => {
+        host.remove();
+        style.remove();
+      },
+    };
   }
 
   /**

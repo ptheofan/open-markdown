@@ -45,6 +45,9 @@ export class MermaidPlugin implements MarkdownPlugin, PreviewablePlugin {
 
   private options: MermaidOptions;
   private mermaid: typeof import('mermaid').default | null = null;
+
+  /** Keeps export render ids distinct from the on-screen ones. */
+  private exportCounter = 0;
   private diagramCounter = 0;
   private preferences: MermaidPreferences;
 
@@ -457,11 +460,42 @@ export class MermaidPlugin implements MarkdownPlugin, PreviewablePlugin {
   }
 
   /**
+   * Render a diagram for a document whose page is white.
+   *
+   * The SVG on screen carries whatever theme the app is in, so exporting it
+   * straight puts a dark diagram on a white page -- pale strokes on a black
+   * slab, unreadable in Google Docs. The source is re-rendered here in
+   * mermaid's light theme instead, into a host the caller has already given
+   * the light palette, and the app's own theme is put back afterwards
+   * whatever happens.
+   *
+   * @param code   the diagram source
+   * @param host   an off-screen element carrying the light theme variables
+   */
+  async renderToPngForExport(code: string, host: HTMLElement): Promise<string> {
+    if (!this.mermaid) throw new Error('Mermaid not initialised');
+
+    const appTheme = this.options.theme;
+    try {
+      this.options.theme = 'default';
+      this.initializeMermaid();
+      this.exportCounter += 1;
+      const { svg } = await this.mermaid.render(`mermaid-export-${this.exportCounter}`, code);
+      host.innerHTML = svg;
+      return await this.renderToPng(host, '#ffffff');
+    } finally {
+      host.innerHTML = '';
+      this.options.theme = appTheme;
+      this.initializeMermaid();
+    }
+  }
+
+  /**
    * Render the diagram SVG to a PNG base64 string using html-to-image
    * @param container - The .mermaid-container element containing the rendered SVG
    * @returns Base64 PNG string (without data: prefix)
    */
-  async renderToPng(container: HTMLElement): Promise<string> {
+  async renderToPng(container: HTMLElement, background?: string): Promise<string> {
     const svg = container.querySelector('svg');
     if (!svg) {
       throw new Error('SVG element not found');
@@ -473,6 +507,10 @@ export class MermaidPlugin implements MarkdownPlugin, PreviewablePlugin {
     let backgroundColor: string;
     if (this.preferences.export.background === 'transparent') {
       backgroundColor = 'rgba(0,0,0,0)';
+    } else if (background != null) {
+      // An export names its own page colour; --bg is the app's, which is the
+      // wrong one entirely when the destination is a white document.
+      backgroundColor = background;
     } else {
       const bgColor = getComputedStyle(document.documentElement)
         .getPropertyValue('--bg')

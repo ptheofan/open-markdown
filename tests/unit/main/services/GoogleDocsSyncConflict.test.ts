@@ -168,10 +168,14 @@ describe('deciding what a direction should do', () => {
     Awaited<ReturnType<typeof syncService.resolve>>
   > => syncService.resolve(file, 'doc-1', 'preview', direction, markdown);
 
-  it('says there is nothing to push when only the Doc moved', async () => {
+  it('has work to do on a push when only the Doc moved', async () => {
+    // A push makes the Doc say what the file says. Someone else editing the
+    // Doc is drift from the file, and bringing it back into line is exactly
+    // what a push is for -- reporting "nothing to push" hides that.
     const result = await preview('push', SNAPSHOT);
 
-    expect(result.nothingToDo).toBe(true);
+    expect(result.nothingToDo).toBe(false);
+    expect(result.needsReview).toBe(true);
     expect(mockDocsService.batchUpdate).not.toHaveBeenCalled();
   });
 
@@ -182,13 +186,25 @@ describe('deciding what a direction should do', () => {
     expect(result.needsReview).toBe(false);
   });
 
-  it('says there is nothing to pull when only the file moved', async () => {
+  it('has work to do on a pull when only the file moved', async () => {
     mockLinkStore.loadMarkdownSnapshots.mockResolvedValue({
       local: SNAPSHOT,
       remote: 'Intro paragraph\n\nSecond paragraph\n',
     });
 
     const result = await preview('pull', 'Intro EDITED\n\nOld second text\n');
+
+    expect(result.nothingToDo).toBe(false);
+    expect(result.needsReview).toBe(true);
+  });
+
+  it('reports nothing to do only when the two sides already agree', async () => {
+    mockLinkStore.loadMarkdownSnapshots.mockResolvedValue({
+      local: 'Intro paragraph\n\nSecond paragraph\n',
+      remote: 'Intro paragraph\n\nSecond paragraph\n',
+    });
+
+    const result = await preview('push', 'Intro paragraph\n\nSecond paragraph\n');
 
     expect(result.nothingToDo).toBe(true);
   });
@@ -410,7 +426,7 @@ describe('carrying out the user\'s choice', () => {
       onProgress: (u) => updates.push(u),
     });
 
-    expect(updates[0]?.label).toBe('Applying changes');
+    expect(updates[0]?.label).toBe('Pushing updates to the Google Doc');
     expect(updates.at(-1)).toEqual({ percent: 100, label: 'Done' });
   });
 

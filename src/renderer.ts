@@ -109,6 +109,9 @@ class App {
   private syncProgressBar: SyncProgressBar | null = null;
   private syncReviewDialog: SyncReviewDialog | null = null;
 
+  /** Bumped on every sync-status change, to spot a stale refresh. */
+  private syncStatusSeq = 0;
+
   private state: AppState = {
     currentFilePath: null,
     currentTheme: 'system',
@@ -587,6 +590,7 @@ class App {
     // Google Docs sync status listener
     const cleanupGDocsSync = window.electronAPI.googleDocs.onSyncStatus(
       (status: { syncing: boolean; error?: string }) => {
+        const seq = ++this.syncStatusSeq;
         if (status.syncing) {
           this.googleDocsButton?.setState('syncing');
           this.syncProgressBar?.show();
@@ -596,7 +600,12 @@ class App {
           // link must leave the button offering 'link', not 'sync'. The error
           // itself is reported by whoever invoked the sync, not here, so it is
           // not toasted twice.
-          void this.updateGoogleDocsButtonState();
+          void this.updateGoogleDocsButtonState().then(() => {
+            // One user action is two round trips -- preview then apply -- so
+            // this refresh can land after the next one has already started.
+            // Without the check it would quietly clear that spinner.
+            if (seq !== this.syncStatusSeq) this.googleDocsButton?.setState('syncing');
+          });
         }
       }
     );

@@ -100,12 +100,15 @@ describe('GoogleDocsSyncService', () => {
       expect(mockDocsService.batchUpdate).toHaveBeenCalled();
     });
 
-    it('has nothing to push when only the Doc was edited', async () => {
+    it('has work to do on a push when only the Doc was edited', async () => {
+      // The Doc has drifted from the file, and a push exists to close that
+      // gap. It stops to ask first, because closing it reverts their edit.
       docSaying('Hello, edited by someone else', 'Hello');
 
       const result = await syncService.resolve('/file.md', 'doc-1', 'preview', 'push', 'Hello');
 
-      expect(result.nothingToDo).toBe(true);
+      expect(result.nothingToDo).toBe(false);
+      expect(result.needsReview).toBe(true);
     });
 
     it('pulls that same Doc edit without stopping to ask', async () => {

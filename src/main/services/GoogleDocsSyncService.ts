@@ -850,16 +850,22 @@ export class GoogleDocsSyncService {
           return { success: false, error: 'Could not write the local file' };
         }
 
+        // The label names the direction the user asked for: "applying
+        // changes" says nothing about which document is about to move.
+        const label = direction === 'pull'
+          ? 'Pulling updates from the Google Doc'
+          : 'Pushing updates to the Google Doc';
+
         if (!touchDoc) {
           // A pull the user took wholesale. The Doc is already right, so it is
           // read once for the record and left completely alone.
-          this.report('Applying changes', 'applying');
+          this.report(label, 'applying');
           const currentDoc = await this.docsService.getDocument(docId);
           await this.recordSynced(filePath, docId, markdown, currentDoc);
           return { success: true, markdown };
         }
 
-        this.report('Applying changes', 'applying');
+        this.report(label, 'applying');
         const pushed = await this.syncForceOverwrite(
           filePath, docId, markdown, options.mermaidDiagrams, options.tableWidths,
         );
@@ -901,17 +907,20 @@ export class GoogleDocsSyncService {
         outcome.blocks, outcome.changes, changes.map((change) => change.choice),
       );
 
-      // A pull carries what the Doc changed, a push what the file did. What
-      // the *other* side changed is what makes the defaults worth seeing
-      // before they are applied -- accepting them wholesale would revert it.
-      const carried: SyncChangeKind = direction === 'pull' ? 'remote-only' : 'local-only';
+      // "Nothing to push" means the Doc already says what the file says --
+      // not merely that the file has not moved. A Doc someone else edited has
+      // drifted from the file, and making it match again is exactly the work
+      // a push is for. Any difference at all is work in either direction.
+      //
+      // What the *other* side changed is what makes the defaults worth seeing
+      // first, since applying them wholesale would revert it.
       const atStake: SyncChangeKind = direction === 'pull' ? 'local-only' : 'remote-only';
 
       return {
         success: true,
         changes,
         blocks,
-        nothingToDo: !changes.some((c) => c.kind === carried || c.kind === 'conflict'),
+        nothingToDo: changes.length === 0,
         needsReview: changes.some((c) => c.kind === atStake || c.kind === 'conflict'),
       };
     } catch (err: unknown) {

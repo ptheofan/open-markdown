@@ -280,8 +280,55 @@ function addSpacingAfterTables(elements: DocsElement[]): DocsElement[] {
   return spaced;
 }
 
+/** A row of dashes and pipes: the line that makes the rows above it a table. */
+const TABLE_DELIMITER = /^\s*\|?(\s*:?-{2,}:?\s*\|)+\s*:?-{2,}:?\s*\|?\s*$/;
+
+/**
+ * Put a blank line above a table that runs straight out of a list item.
+ *
+ * A table cannot interrupt a list item's paragraph, so the parser takes the
+ * whole thing as text and the Doc gets a wall of pipe characters where a
+ * table belongs -- and the paragraph diff then tries to write that over a
+ * region that holds a real table, which Google rejects outright. Markdown
+ * written by hand does this constantly.
+ *
+ * Only a run of pipes immediately followed by a delimiter row qualifies, so
+ * ordinary prose containing a pipe is left alone.
+ */
+function separateTablesFromLists(markdown: string): string {
+  const lines = markdown.split('\n');
+  const out: string[] = [];
+  let fence: string | null = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    const fenceMatch = /^\s*(`{3,}|~{3,})/.exec(line);
+    if (fence !== null) {
+      if (fenceMatch && line.trim().startsWith(fence)) fence = null;
+      out.push(line);
+      continue;
+    }
+    if (fenceMatch?.[1] != null) {
+      fence = fenceMatch[1];
+      out.push(line);
+      continue;
+    }
+
+    const previous = out.at(-1);
+    const startsTable = /^\s*\|/.test(line) && TABLE_DELIMITER.test(lines[i + 1] ?? '');
+    const afterListItem = previous != null
+      && previous.trim() !== ''
+      && /^\s*([-*+]\s|\d+[.)]\s)/.test(previous);
+
+    if (startsTable && afterListItem) out.push('');
+    out.push(line);
+  }
+
+  return out.join('\n');
+}
+
 export function convertMarkdownToDocs(markdown: string): DocsDocument {
-  const tokens = md.parse(markdown, {});
+  const tokens = md.parse(separateTablesFromLists(markdown), {});
   const elements = processTokens(tokens);
   return { elements: addSpacingAfterTables(elements) };
 }

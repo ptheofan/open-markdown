@@ -8,7 +8,7 @@
 import { diffChars, diffArrays } from 'diff';
 import { convertMarkdownToDocs } from '@main/services/MarkdownToDocsConverter';
 import { convertDocsToMarkdown } from '@main/services/DocsToMarkdownConverter';
-import { threeWayMerge, applyResolutions, joinBlocks } from '@main/services/ThreeWayMerge';
+import { threeWayMerge, twoWayReview, applyResolutions } from '@main/services/ThreeWayMerge';
 import {
   buildInsertRequests,
   CODE_FONT_FAMILY,
@@ -31,9 +31,11 @@ import type {
   GoogleDocsResolveResult,
   GoogleDocsSyncResult,
   MermaidDiagramData,
-  SyncConflictChoice,
   SyncPhase,
   SyncResolveMode,
+  SyncDirection,
+  SyncChangeKind,
+  SyncConflictChoice,
   SyncProgressUpdate,
   TableColumnWidths,
 } from '@shared/types/google-docs';
@@ -142,10 +144,28 @@ function generateParagraphDiffOperations(
         } else {
           // ── N:M REPLACEMENT — delete old paragraphs, insert new text ──
           const insertAt = apiParas[apiIdx]!.startIndex;
-          // Delete old paragraphs (collect range from first to last)
-          const deleteStart = apiParas[apiIdx]!.startIndex;
-          const deleteEnd = apiParas[apiIdx + removedCount - 1]!.endIndex;
-          allOps.push({ type: 'delete', index: deleteStart, endIndex: deleteEnd });
+          // One range per run of paragraphs that really are adjacent.
+          //
+          // extractApiParagraphs walks only the body's top level and keeps
+          // the paragraphs, so a table between two of them leaves no trace in
+          // the list -- they look like neighbours while a whole table sits
+          // between them in the document. Taking "first start to last end"
+          // then produces a range across the table, and Google refuses the
+          // whole batch: deleting the newline before a table, or either of
+          // its boundaries, without deleting the table itself is invalid.
+          // A gap between one paragraph's end and the next one's start is
+          // exactly where something else lives.
+          let runStart = apiParas[apiIdx]!.startIndex;
+          let deleteEnd = apiParas[apiIdx]!.endIndex;
+          for (let i = 1; i < removedCount; i++) {
+            const para = apiParas[apiIdx + i]!;
+            if (para.startIndex !== deleteEnd) {
+              allOps.push({ type: 'delete', index: runStart, endIndex: deleteEnd });
+              runStart = para.startIndex;
+            }
+            deleteEnd = para.endIndex;
+          }
+          allOps.push({ type: 'delete', index: runStart, endIndex: deleteEnd });
           // Insert new paragraphs as text
           let newText = '';
           for (let i = 0; i < addedCount; i++) {
@@ -249,6 +269,136 @@ interface ApiImageBlock {
   endIndex: number;
   /** The mermaid.live edit URL extracted from the link paragraph, if present */
   mermaidLiveUrl?: string;
+}
+
+/**
+ * The header row, as the identity of a table across a sync.
+ *
+ * Ordinal position shifts the moment a table is added or removed, and exact
+ * content stops matching the moment anyone edits a cell. A header row
+ * survives both, which is what makes it usable for pairing.
+ */
+/**
+ * Pair the Doc's tables with the file's, matching on the header row.
+ *
+ * Returns only the tables present on both sides; what is left over on either
+ * side is an addition or a deletion, which the caller decides about.
+ */
+/** A row's cell texts: its identity within a table, across an edit. */
+function apiRowKey(cells: ApiParagraph[]): string {
+  return cells.map((cell) => cell.text.trim()).join('\u0000');
+}
+
+function modelRowKey(row: DocsTextRun[][]): string {
+  return row.map((cell) => cell.map((run) => run.text).join('').trim()).join('\u0000');
+}
+
+/**
+ * Where rows have to be added or removed for the Doc's table to match the
+ * file's, in the Doc's own row numbers.
+ *
+ * Rows are matched on their content, so a row missing from the middle is
+ * restored in the middle. Appending it instead and letting the text shift up
+ * a row rewrites every row below -- and comments anchor to text ranges, so
+ * each one ends up attached to whatever moved into its place.
+ *
+ * A removed run against an added one is a set of rows whose text changed;
+ * those stay where they are and the cell pass rewrites them.
+ */
+function tableRowOperations(
+  apiTable: ApiTable,
+  modelTable: DocsElement,
+): Array<{ type: 'insert' | 'delete'; at: number; count: number }> {
+  const changes = diffArrays(
+    apiTable.cells.map(apiRowKey),
+    (modelTable.rows ?? []).map(modelRowKey),
+  );
+  const ops: Array<{ type: 'insert' | 'delete'; at: number; count: number }> = [];
+  let at = 0;
+
+  for (let ci = 0; ci < changes.length; ci++) {
+    const change = changes[ci]!;
+    const count = change.value.length;
+
+    if (!change.added && !change.removed) {
+      at += count;
+      continue;
+    }
+
+    if (change.removed) {
+      const added = changes[ci + 1]?.added === true ? changes[ci + 1]!.value.length : 0;
+      const matched = Math.min(count, added);
+      at += matched;
+      if (count > matched) {
+        ops.push({ type: 'delete', at, count: count - matched });
+        at += count - matched;
+      }
+      if (added > matched) ops.push({ type: 'insert', at, count: added - matched });
+      if (added > 0) ci++;
+      continue;
+    }
+
+    ops.push({ type: 'insert', at, count });
+  }
+
+  return ops;
+}
+
+function pairTablesByHeader(
+  apiTables: ApiTable[],
+  modelTables: DocsElement[],
+): Array<{ apiTable: ApiTable; modelTable: DocsElement; apiIndex: number; modelIndex: number }> {
+  const pairs: Array<{ apiTable: ApiTable; modelTable: DocsElement; apiIndex: number; modelIndex: number }> = [];
+  const changes = diffArrays(apiTables.map(apiTableHeaderKey), modelTables.map(modelTableHeaderKey));
+  let ai = 0;
+  let mi = 0;
+
+  for (let ci = 0; ci < changes.length; ci++) {
+    const change = changes[ci]!;
+    const count = change.value.length;
+
+    if (!change.added && !change.removed) {
+      for (let k = 0; k < count; k++) {
+        pairs.push({
+          apiTable: apiTables[ai + k]!, modelTable: modelTables[mi + k]!,
+          apiIndex: ai + k, modelIndex: mi + k,
+        });
+      }
+      ai += count;
+      mi += count;
+      continue;
+    }
+
+    if (change.removed) {
+      const added = changes[ci + 1]?.added === true ? changes[ci + 1]!.value.length : 0;
+      // A removed run against an added one is a set of headers that were
+      // rewritten; pair as many as line up.
+      for (let k = 0; k < Math.min(count, added); k++) {
+        pairs.push({
+          apiTable: apiTables[ai + k]!, modelTable: modelTables[mi + k]!,
+          apiIndex: ai + k, modelIndex: mi + k,
+        });
+      }
+      ai += count;
+      mi += added;
+      if (added > 0) ci++;
+      continue;
+    }
+
+    mi += count;
+  }
+
+  return pairs;
+}
+
+function apiTableHeaderKey(apiTable: ApiTable): string {
+  return (apiTable.cells[0] ?? []).map((cell) => cell.text.trim()).join('\u0000');
+}
+
+function modelTableHeaderKey(modelTable: DocsElement): string {
+  return (modelTable.rows?.[0] ?? [])
+    .map((cell) => cell.map((run) => run.text).join('').trim())
+    .join('\u0000');
 }
 
 function extractApiTables(apiDoc: GDocsApiDocument): ApiTable[] {
@@ -640,8 +790,9 @@ const PROGRESS_BANDS: Record<SyncPhase, readonly [number, number]> = {
   reading: [0, 10],
   converting: [10, 20],
   diagrams: [25, 70],
-  applying: [70, 85],
-  tables: [90, 100],
+  applying: [70, 80],
+  tables: [80, 92],
+  formatting: [92, 98],
   done: [100, 100],
 };
 
@@ -713,83 +864,23 @@ export class GoogleDocsSyncService {
   }
 
   /**
-   * Main sync method — performs three-way diffing to detect external edits
-   * and apply minimal changes.
+   * Write down what the two sides now agree on.
+   *
+   * Used when a sync changed only the local file. The pair of snapshots is
+   * how every later sync tells a real edit from a difference of dialect, so
+   * skipping it would leave the next one comparing against a document that no
+   * longer exists on either side.
    */
-  async sync(filePath: string, docId: string, markdown: string, mermaidDiagrams?: MermaidDiagramData[], tableWidths?: TableColumnWidths[], onProgress?: (update: SyncProgressUpdate) => void): Promise<GoogleDocsSyncResult> {
-    this.progress = onProgress;
-    try {
-      this.report('Reading the Google Doc', 'reading');
-      console.warn('[SyncService] Step 1: Loading baseline...');
-      // Baselines are keyed by document, but "has this file ever synced here"
-      // is a fact about the (file, document) pair. Two files can point at one
-      // Doc; without this, the second one inherits the first one's baseline,
-      // skips the first-sync guard, and overwrites the Doc without asking.
-      // lastSyncedAt is null until a file completes a sync of its own.
-      const link = this.linkStore.getLink(filePath);
-      const neverSyncedThisFile = link != null && link.lastSyncedAt == null;
-      const baseline = neverSyncedThisFile
-        ? null
-        : await this.linkStore.loadBaseline(docId);
-      console.warn('[SyncService] Step 2: Reading current doc from API...');
-      const currentDoc = await this.docsService.getDocument(docId);
-      console.warn('[SyncService] Step 3: Extracting plain text for external-edit check...');
-      const theirs = this.docsService.extractPlainText(currentDoc);
-      this.report('Converting your markdown', 'converting');
-      console.warn('[SyncService] Step 4: Converting markdown...');
-      const docsDoc = convertMarkdownToDocs(markdown);
-      // Nothing changed on either side? Then there is nothing to upload, diff
-      // or reformat. Checked before the diagrams, so an unchanged document
-      // costs one document read rather than a full rebuild.
-      const fingerprint = modelFingerprint(docsDoc);
-      const lastFingerprint = await this.linkStore.getModelFingerprint(docId);
-      if (lastFingerprint === fingerprint && baseline !== null && baseline === theirs) {
-        console.warn('[SyncService] Nothing changed since the last sync -- skipping');
-        return { success: true, unchanged: true };
-      }
-
-      console.warn('[SyncService] Step 5: Processing mermaid diagrams...');
-      await this.processMermaidDiagrams(docId, docsDoc, mermaidDiagrams);
-      this.applyTableColumnWidths(docsDoc, tableWidths);
-
-      // Reaching here means at least one side moved, so both flags matter.
-      const localChanged = lastFingerprint !== fingerprint;
-
-      if (baseline === null) {
-        // Never synced to this Doc. An empty one is ours to fill; one that
-        // already holds content may hold comments with it, and wiping those
-        // is exactly what this feature exists to avoid.
-        if (isBodyEmpty(currentDoc)) {
-          console.warn('[SyncService] First sync into an empty doc -> fullPopulate');
-          const populated = await this.fullPopulate(docId, filePath, docsDoc, markdown);
-          if (populated.success) await this.linkStore.saveModelFingerprint(docId, fingerprint);
-          return populated;
-        }
-        console.warn('[SyncService] First sync into a doc that already has content -> ask');
-        return { success: false, conflict: 'both' };
-      }
-
-      if (baseline !== theirs) {
-        console.warn('[SyncService] Doc changed since last sync; local changed: %s', localChanged);
-        // With no local change there is nothing to reconcile -- the user only
-        // has to say whether to take the Doc's version.
-        return { success: false, conflict: localChanged ? 'both' : 'remote-only' };
-      }
-
-      this.report('Applying changes', 'applying');
-      console.warn('[SyncService] Applying paragraph-level diff...');
-      const diffed = await this.applyDiff(docId, filePath, currentDoc, docsDoc, markdown);
-      if (diffed.success) await this.linkStore.saveModelFingerprint(docId, fingerprint);
-      return diffed;
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      const stack = err instanceof Error ? err.stack : '';
-      console.error('[SyncService] ERROR:', message, '\n', stack);
-      return { success: false, error: message, status: (err as { status?: number }).status };
-    } finally {
-      this.report('Done', 'done');
-      this.progress = undefined;
-    }
+  private async recordSynced(
+    filePath: string,
+    docId: string,
+    markdown: string,
+    apiDoc: GDocsApiDocument,
+  ): Promise<void> {
+    await this.linkStore.saveBaseline(docId, this.docsService.extractPlainText(apiDoc));
+    await this.linkStore.saveMarkdownSnapshots(docId, markdown, convertDocsToMarkdown(apiDoc));
+    await this.linkStore.saveModelFingerprint(docId, modelFingerprint(convertMarkdownToDocs(markdown)));
+    await this.linkStore.updateLastSynced(filePath, new Date().toISOString());
   }
 
   /**
@@ -833,26 +924,29 @@ export class GoogleDocsSyncService {
   }
 
   /**
-   * Carry out the reconciliation the user chose for a two-sided change.
+   * Resolve a sync in two halves: look, then leap.
    *
-   * All three modes converge on "work out the intended markdown, then push it
-   * with applyDiff", so the Doc is never cleared and rebuilt whichever way the
-   * user goes.
+   * `preview` reads the Doc, works out every difference from the file, and
+   * hands them back without touching either side. `apply` takes the markdown
+   * the user settled on and makes both sides hold it.
    *
-   * - push  -- the file wins; the Doc is edited into shape.
-   * - pull  -- the Doc wins; the file is rewritten, the Doc left alone.
-   * - merge -- both; conflicting blocks come back for the user to settle and
-   *            the call is repeated with their choices.
+   * The direction sets each difference's default and names the intent. It is
+   * deliberately not a read-only lock on the other side: an apply must leave
+   * the two sides holding the same content, because the snapshots record what
+   * both sides agree on, and a divergence baked into them is invisible to
+   * every later sync -- the file would keep an edit the Doc never receives,
+   * with nothing left to notice it. Applying still goes through `applyDiff`,
+   * never a clear-and-rebuild, so the Doc's comments survive either way.
    */
   async resolve(
     filePath: string,
     docId: string,
     mode: SyncResolveMode,
+    direction: SyncDirection,
     markdown: string,
     options: {
       mermaidDiagrams?: MermaidDiagramData[];
       tableWidths?: TableColumnWidths[];
-      resolutions?: SyncConflictChoice[];
       onProgress?: (update: SyncProgressUpdate) => void;
       /**
        * Write new content to the local markdown file, reporting success.
@@ -865,74 +959,101 @@ export class GoogleDocsSyncService {
        * pushing.
        */
       writeLocal?: (markdown: string) => Promise<boolean>;
+      /**
+       * The user kept something the direction would have discarded, so the
+       * side they were not syncing towards has to receive it too. Without a
+       * deviation the source already holds what the target is about to, and
+       * writing it is pure damage: a pull would rewrite every block whose two
+       * dialects differ, which is most of them.
+       */
+      alsoWriteSource?: boolean;
     } = {},
   ): Promise<GoogleDocsResolveResult> {
     this.progress = options.onProgress;
     try {
-      this.report('Reading the Google Doc', 'reading');
-      if (mode === 'push') {
-        return await this.syncForceOverwrite(
-          filePath, docId, markdown, options.mermaidDiagrams, options.tableWidths,
-        );
-      }
+      if (mode === 'apply') {
+        // `markdown` is what the user approved, so there is nothing left to
+        // decide -- only which sides have to be told about it.
+        const touchFile = direction === 'pull' || options.alsoWriteSource === true;
+        const touchDoc = direction === 'push' || options.alsoWriteSource === true;
 
-      const currentDoc = await this.docsService.getDocument(docId);
-      const remote = convertDocsToMarkdown(currentDoc);
-      const snapshots = await this.linkStore.loadMarkdownSnapshots(docId);
-
-      if (mode === 'pull') {
-        // Replaying only the remote's hunks onto the local baseline discards
-        // the local edits, which is what "the Doc wins" means -- while keeping
-        // the markdown form of every block nobody touched. Without snapshots
-        // there is no baseline to replay onto, so the Doc as it reads now is
-        // the best available answer.
-        const merged = snapshots
-          ? joinBlocks(threeWayMerge({
-            localBase: snapshots.local,
-            local: snapshots.local,
-            remoteBase: snapshots.remote,
-            remote,
-          }).blocks)
-          : remote;
-        if (options.writeLocal && !(await options.writeLocal(merged))) {
+        if (touchFile && options.writeLocal && !(await options.writeLocal(markdown))) {
           return { success: false, error: 'Could not write the local file' };
         }
-        // The Doc already holds this content, so there is nothing to push.
-        await this.recordSynced(filePath, docId, merged, currentDoc, remote);
-        return { success: true, markdown: merged };
+
+        // The label names the direction the user asked for: "applying
+        // changes" says nothing about which document is about to move.
+        const label = direction === 'pull'
+          ? 'Pulling updates from the Google Doc'
+          : 'Pushing updates to the Google Doc';
+
+        if (!touchDoc) {
+          // A pull the user took wholesale. The Doc is already right, so it is
+          // read once for the record and left completely alone.
+          this.report(label, 'applying');
+          const currentDoc = await this.docsService.getDocument(docId);
+          await this.recordSynced(filePath, docId, markdown, currentDoc);
+          return { success: true, markdown };
+        }
+
+        this.report(label, 'applying');
+        const pushed = await this.syncForceOverwrite(
+          filePath, docId, markdown, options.mermaidDiagrams, options.tableWidths,
+        );
+        return pushed.success ? { ...pushed, markdown } : pushed;
       }
 
-      if (snapshots === null) {
-        return {
-          success: false,
-          error: 'Merging needs a previous successful sync to compare against. '
-            + 'Choose the Doc or the file for this one.',
-        };
-      }
+      this.report('Reading the Google Doc', 'reading');
+      const currentDoc = await this.docsService.getDocument(docId);
+      const remote = convertDocsToMarkdown(currentDoc);
+      // Snapshots are keyed by document, but "has this file ever synced here"
+      // is a fact about the (file, document) pair. Two files can point at one
+      // Doc; without this the second inherits the first one's baseline, gets a
+      // three-way merge against a document it has never seen, and every one of
+      // its own blocks reads as unchanged.
+      const link = this.linkStore.getLink(filePath);
+      const neverSyncedThisFile = link != null && link.lastSyncedAt == null;
+      const snapshots = neverSyncedThisFile
+        ? null
+        : await this.linkStore.loadMarkdownSnapshots(docId);
 
-      const outcome = threeWayMerge({
-        localBase: snapshots.local,
-        local: markdown,
-        remoteBase: snapshots.remote,
-        remote,
-      });
+      // With snapshots, each side is diffed against its own dialect and the
+      // lossiness cancels. Without them -- a first sync into a Doc that
+      // already holds content -- the two documents as they stand are still a
+      // perfectly good diff, just a noisier one.
+      const outcome = snapshots !== null
+        ? threeWayMerge({
+          localBase: snapshots.local,
+          local: markdown,
+          remoteBase: snapshots.remote,
+          remote,
+        })
+        : twoWayReview(markdown, remote);
 
-      if (outcome.conflicts.length > 0 && options.resolutions === undefined) {
-        return { success: false, conflicts: outcome.conflicts };
-      }
-
-      const merged = joinBlocks(
-        applyResolutions(outcome.blocks, outcome.conflicts, options.resolutions ?? []),
+      // The direction is every difference's default, so accepting the preview
+      // wholesale makes the target say exactly what the source says.
+      const preferred: SyncConflictChoice = direction === 'pull' ? 'remote' : 'local';
+      const changes = outcome.changes.map((change) => ({ ...change, choice: preferred }));
+      const blocks = applyResolutions(
+        outcome.blocks, outcome.changes, changes.map((change) => change.choice),
       );
-      if (options.writeLocal && !(await options.writeLocal(merged))) {
-        return { success: false, error: 'Could not write the local file' };
-      }
-      this.report('Applying changes', 'applying');
-      // The merged text carries the local-only edits too, so the Doc needs it.
-      const pushed = await this.syncForceOverwrite(
-        filePath, docId, merged, options.mermaidDiagrams, options.tableWidths,
-      );
-      return pushed.success ? { ...pushed, markdown: merged } : pushed;
+
+      // "Nothing to push" means the Doc already says what the file says --
+      // not merely that the file has not moved. A Doc someone else edited has
+      // drifted from the file, and making it match again is exactly the work
+      // a push is for. Any difference at all is work in either direction.
+      //
+      // What the *other* side changed is what makes the defaults worth seeing
+      // first, since applying them wholesale would revert it.
+      const atStake: SyncChangeKind = direction === 'pull' ? 'local-only' : 'remote-only';
+
+      return {
+        success: true,
+        changes,
+        blocks,
+        nothingToDo: changes.length === 0,
+        needsReview: changes.some((c) => c.kind === atStake || c.kind === 'conflict'),
+      };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return { success: false, error: message, status: (err as { status?: number }).status };
@@ -942,22 +1063,6 @@ export class GoogleDocsSyncService {
     }
   }
 
-  /**
-   * Record a sync that changed only the local file, so the next sync sees both
-   * sides as settled rather than re-reporting the same conflict.
-   */
-  private async recordSynced(
-    filePath: string,
-    docId: string,
-    markdown: string,
-    apiDoc: GDocsApiDocument,
-    remoteMarkdown: string,
-  ): Promise<void> {
-    await this.linkStore.saveBaseline(docId, this.docsService.extractPlainText(apiDoc));
-    await this.linkStore.saveMarkdownSnapshots(docId, markdown, remoteMarkdown);
-    await this.linkStore.saveModelFingerprint(docId, modelFingerprint(convertMarkdownToDocs(markdown)));
-    await this.linkStore.updateLastSynced(filePath, new Date().toISOString());
-  }
 
   /**
    * Process mermaid diagrams — match DocsElements with renderer-provided
@@ -1078,6 +1183,7 @@ export class GoogleDocsSyncService {
     }
 
     // Phase 1: Insert all text content (tables as placeholders)
+    this.report('Writing the document text', 'applying');
     const { requests, pendingTables } = buildInsertRequests(docsDoc, 1);
     console.warn('[SyncService] fullPopulate: %d requests, %d pending tables', requests.length, pendingTables.length);
     if (requests.length > 0) {
@@ -1092,6 +1198,7 @@ export class GoogleDocsSyncService {
     // Read back the doc from API and save its text as baseline.
     // This ensures baseline matches future API reads (avoiding false
     // external-edit detection from format differences in tables/images).
+    this.report('Applying formatting', 'formatting');
     const populatedDoc = await this.docsService.getDocument(docId);
     const actualText = this.docsService.extractPlainText(populatedDoc);
     await this.linkStore.saveBaseline(docId, actualText);
@@ -1139,7 +1246,16 @@ export class GoogleDocsSyncService {
     docId: string,
     pendingTables: PendingTable[],
   ): Promise<void> {
+    let built = 0;
     for (const table of pendingTables) {
+      // Each table costs a document read and two round trips, so on a
+      // table-heavy document this loop is most of the sync. Reporting it is
+      // what keeps the bar from sitting on the last diagram for a minute.
+      this.report(
+        `Building table ${built + 1} of ${pendingTables.length}`,
+        'tables', built, pendingTables.length,
+      );
+      built += 1;
       // Read doc to find the placeholder
       const doc = await this.docsService.getDocument(docId);
       const content = doc?.body?.content ?? [];
@@ -1229,6 +1345,7 @@ export class GoogleDocsSyncService {
     markdown: string,
   ): Promise<GoogleDocsSyncResult> {
     // Phase 1: Text paragraph diff
+    this.report('Updating the document text', 'applying');
     const apiParas = extractApiParagraphs(currentApiDoc);
     const modelElements = flattenElements(newDocsDoc.elements);
 
@@ -1243,6 +1360,7 @@ export class GoogleDocsSyncService {
     await this.syncStructuralElements(docId, newDocsDoc);
 
     // Phase 3: Read doc back and apply formatting
+    this.report('Applying formatting', 'formatting');
     const finalDoc = await this.docsService.getDocument(docId);
     const formattingOps = buildFormattingFromApiDoc(finalDoc, newDocsDoc);
     if (formattingOps.length > 0) {
@@ -1281,8 +1399,60 @@ export class GoogleDocsSyncService {
       .filter(({ el }) => el.type === 'table');
     const modelTables = modelTableEntries.map((e) => e.el);
 
-    // Match by position (1st model table <-> 1st API table, etc.)
-    const tableCount = Math.min(apiTables.length, modelTables.length);
+    // Pair the two lists by their header row, not by ordinal.
+    //
+    // Deleting a table in the Doc used to shift every table after it by one,
+    // so each was compared against its neighbour's twin: the survivors were
+    // rewritten into each other and the deleted one reappended at the end.
+    // Exact content is no good as the key either -- a table someone edited no
+    // longer matches its own twin -- but a header row survives ordinary edits,
+    // which is exactly what has to be seen through.
+    const pairs: Array<{ apiTable: ApiTable; modelTable: DocsElement }> = [];
+    const tablesToDelete: ApiTable[] = [];
+    const tablesToAdd: Array<{ el: DocsElement; position: number }> = [];
+
+    {
+      const changes = diffArrays(
+        apiTables.map(apiTableHeaderKey),
+        modelTables.map(modelTableHeaderKey),
+      );
+      let ai = 0;
+      let mi = 0;
+      for (let ci = 0; ci < changes.length; ci++) {
+        const change = changes[ci]!;
+        const count = change.value.length;
+
+        if (!change.added && !change.removed) {
+          for (let k = 0; k < count; k++) {
+            pairs.push({ apiTable: apiTables[ai + k]!, modelTable: modelTables[mi + k]! });
+          }
+          ai += count;
+          mi += count;
+          continue;
+        }
+
+        if (change.removed) {
+          const added = changes[ci + 1]?.added === true ? changes[ci + 1]!.value.length : 0;
+          // A removed run against an added one is a set of headers that were
+          // rewritten; pair as many as line up and treat the rest as real
+          // additions and deletions.
+          const matched = Math.min(count, added);
+          for (let k = 0; k < matched; k++) {
+            pairs.push({ apiTable: apiTables[ai + k]!, modelTable: modelTables[mi + k]! });
+          }
+          for (let k = matched; k < count; k++) tablesToDelete.push(apiTables[ai + k]!);
+          for (let k = matched; k < added; k++) tablesToAdd.push(modelTableEntries[mi + k]!);
+          ai += count;
+          mi += added;
+          if (added > 0) ci++;
+          continue;
+        }
+
+        for (let k = 0; k < count; k++) tablesToAdd.push(modelTableEntries[mi + k]!);
+        mi += count;
+      }
+    }
+
     // Track tables that need replacement (process in reverse for index stability)
     const tablesToReplace: Array<{ apiTable: ApiTable; modelTable: DocsElement }> = [];
 
@@ -1293,14 +1463,24 @@ export class GoogleDocsSyncService {
     // or removing a row is an ordinary edit and must not cost the table its
     // comments, so the rows are inserted or deleted in place and the text is
     // filled in afterwards.
-    const tablesToResize: Array<{ apiTable: ApiTable; rowDelta: number; columnDelta: number }> = [];
+    const tablesToResize: Array<{ apiTable: ApiTable; modelTable: DocsElement; columnDelta: number }> = [];
     let anyCellChanged = false;
 
-    for (let i = 0; i < tableCount; i++) {
-      const apiTable = apiTables[i]!;
-      const modelTable = modelTables[i]!;
+    console.warn(
+      '[SyncService] tables: %d in the Doc, %d in the file -> %d paired, %d to add, %d to delete',
+      apiTables.length, modelTables.length, pairs.length, tablesToAdd.length, tablesToDelete.length,
+    );
+    for (const t of tablesToDelete) console.warn('[SyncService]   deleting: %s', apiTableHeaderKey(t));
+    for (const t of tablesToAdd) console.warn('[SyncService]   adding: %s', modelTableHeaderKey(t.el));
 
+    for (const { apiTable, modelTable } of pairs) {
       if (apiTable.cellTexts === modelTableCellTexts(modelTable)) continue;
+      console.warn(
+        '[SyncService]   changed: %s (Doc %dx%d, file %dx%d)',
+        apiTableHeaderKey(apiTable),
+        apiTable.rowCount, apiTable.columnCount,
+        (modelTable.rows ?? []).length, (modelTable.rows?.[0] ?? []).length,
+      );
       anyCellChanged = true;
 
       const modelRows = modelTable.rows ?? [];
@@ -1314,26 +1494,14 @@ export class GoogleDocsSyncService {
         continue;
       }
 
-      const rowDelta = modelRows.length - apiTable.rowCount;
-      const columnDelta = modelColumns - apiTable.columnCount;
-      if (rowDelta !== 0 || columnDelta !== 0) {
-        tablesToResize.push({ apiTable, rowDelta, columnDelta });
-      }
-      // Same shape: nothing structural to do; the cell pass below handles it.
-    }
-
-    // Tables removed from markdown (more API tables than model tables)
-    const tablesToDelete: ApiTable[] = [];
-    for (let i = tableCount; i < apiTables.length; i++) {
-      tablesToDelete.push(apiTables[i]!);
-    }
-
-    // Tables added in markdown (more model tables than API tables)
-    // These need to be inserted at the correct position — we use the
-    // end of the document as insertion point for new tables.
-    const tablesToAdd: Array<{ el: DocsElement; position: number }> = [];
-    for (let i = tableCount; i < modelTableEntries.length; i++) {
-      tablesToAdd.push(modelTableEntries[i]!);
+      // Always offered for reshaping: rows are matched by content, so a row
+      // moved or replaced needs work even when the count has not changed.
+      // resizeTable sends nothing when there is nothing to do.
+      tablesToResize.push({
+        apiTable,
+        modelTable,
+        columnDelta: modelColumns - apiTable.columnCount,
+      });
     }
 
     // Process table deletions and replacements in reverse document order
@@ -1342,7 +1510,21 @@ export class GoogleDocsSyncService {
       ...tablesToDelete.map(t => ({ type: 'delete' as const, apiTable: t })),
     ].sort((a, b) => b.apiTable.endIndex - a.apiTable.endIndex);
 
+    // Each of these is a round trip to Google, and on a table-heavy document
+    // they are most of the sync. Counted up front so the bar can move through
+    // them rather than sitting on whatever the diagram pass last said.
+    const tableSteps = allTableOps.length
+      + (tablesToAdd.length > 0 ? 1 : 0)
+      + tablesToResize.length
+      + (anyCellChanged ? 1 : 0);
+    let tableStep = 0;
+    const reportTable = (what: string): void => {
+      tableStep += 1;
+      this.report(`${what} ${tableStep} of ${tableSteps}`, 'tables', tableStep - 1, tableSteps);
+    };
+
     for (const op of allTableOps) {
+      reportTable(op.type === 'delete' ? 'Removing table' : 'Rebuilding table');
       if (op.type === 'delete') {
         await this.docsService.batchUpdate(docId, [{
           deleteContentRange: { range: { startIndex: op.apiTable.startIndex, endIndex: op.apiTable.endIndex } },
@@ -1355,17 +1537,20 @@ export class GoogleDocsSyncService {
 
     // Insert new tables (added in markdown)
     if (tablesToAdd.length > 0) {
+      reportTable('Adding tables, step');
       await this.insertNewTables(docId, tablesToAdd, newDocsDoc.elements);
     }
 
     // Resize in reverse document order so earlier tables keep their indices.
     for (const op of [...tablesToResize].sort((a, b) => b.apiTable.startIndex - a.apiTable.startIndex)) {
-      await this.resizeTable(docId, op.apiTable, op.rowDelta, op.columnDelta);
+      reportTable('Resizing table');
+      await this.resizeTable(docId, op.apiTable, op.modelTable, op.columnDelta);
     }
 
     // Finally, fill in the text. Re-read first: anything above did move
     // indices, and the cell diff addresses real positions.
     if (anyCellChanged) {
+      reportTable('Filling in table text, step');
       await this.applyTableCellEdits(docId, modelTables);
     }
 
@@ -1379,24 +1564,49 @@ export class GoogleDocsSyncService {
     const imgDoc = await this.docsService.getDocument(docId);
     const apiImages = extractApiImageBlocks(imgDoc);
 
-    const imageCount = Math.min(apiImages.length, modelImages.length);
-    // Track images that need replacement (reverse order)
+    // Paired on the mermaid.live URL, which is the diagram's identity -- for
+    // the same reason tables are paired on their header row. By ordinal, a
+    // diagram deleted in the Doc shifted every one after it, and the survivor
+    // was rewritten into its neighbour.
     const imagesToReplace: Array<{ apiImage: ApiImageBlock; modelImage: DocsElement }> = [];
-
-    for (let i = 0; i < imageCount; i++) {
-      const apiImage = apiImages[i]!;
-      const modelImage = modelImages[i]!;
-
-      // Compare mermaid.live URLs — if the diagram code changed, the URL changed
-      if (apiImage.mermaidLiveUrl !== modelImage.mermaidLiveUrl) {
-        imagesToReplace.push({ apiImage, modelImage });
-      }
-    }
-
-    // Images removed from markdown
     const imagesToDelete: ApiImageBlock[] = [];
-    for (let i = imageCount; i < apiImages.length; i++) {
-      imagesToDelete.push(apiImages[i]!);
+    const imagesToAdd: Array<{ el: DocsElement; position: number }> = [];
+
+    {
+      const changes = diffArrays(
+        apiImages.map((img) => img.mermaidLiveUrl ?? ''),
+        modelImages.map((img) => img.mermaidLiveUrl ?? ''),
+      );
+      let ai = 0;
+      let mi = 0;
+      for (let ci = 0; ci < changes.length; ci++) {
+        const change = changes[ci]!;
+        const count = change.value.length;
+
+        if (!change.added && !change.removed) {
+          // Same URL means the same diagram, unchanged. Nothing to do.
+          ai += count;
+          mi += count;
+          continue;
+        }
+
+        if (change.removed) {
+          const added = changes[ci + 1]?.added === true ? changes[ci + 1]!.value.length : 0;
+          const matched = Math.min(count, added);
+          for (let k = 0; k < matched; k++) {
+            imagesToReplace.push({ apiImage: apiImages[ai + k]!, modelImage: modelImages[mi + k]! });
+          }
+          for (let k = matched; k < count; k++) imagesToDelete.push(apiImages[ai + k]!);
+          for (let k = matched; k < added; k++) imagesToAdd.push(modelImageEntries[mi + k]!);
+          ai += count;
+          mi += added;
+          if (added > 0) ci++;
+          continue;
+        }
+
+        for (let k = 0; k < count; k++) imagesToAdd.push(modelImageEntries[mi + k]!);
+        mi += count;
+      }
     }
 
     // Process image replacements and deletions in reverse document order
@@ -1405,7 +1615,13 @@ export class GoogleDocsSyncService {
       ...imagesToDelete.map(t => ({ type: 'delete' as const, apiImage: t })),
     ].sort((a, b) => b.apiImage.endIndex - a.apiImage.endIndex);
 
+    let imageStep = 0;
     for (const op of allImageOps) {
+      imageStep += 1;
+      this.report(
+        `Placing diagram ${imageStep} of ${allImageOps.length}`,
+        'tables', tableSteps + imageStep - 1, tableSteps + allImageOps.length,
+      );
       if (op.type === 'delete') {
         await this.docsService.batchUpdate(docId, [{
           deleteContentRange: { range: { startIndex: op.apiImage.startIndex, endIndex: op.apiImage.endIndex } },
@@ -1416,8 +1632,7 @@ export class GoogleDocsSyncService {
     }
 
     // New images go where the markdown puts them, not at the end.
-    for (let i = imageCount; i < modelImageEntries.length; i++) {
-      const { el: modelImage, position } = modelImageEntries[i]!;
+    for (const { el: modelImage, position } of imagesToAdd) {
       // Re-read each time: the previous insert moved everything after it.
       const currentDoc = await this.docsService.getDocument(docId);
       const insertAt = insertionIndexFor(currentDoc, newDocsDoc.elements, position);
@@ -1439,36 +1654,43 @@ export class GoogleDocsSyncService {
   private async resizeTable(
     docId: string,
     apiTable: ApiTable,
-    rowDelta: number,
+    modelTable: DocsElement,
     columnDelta: number,
   ): Promise<void> {
     const tableStartLocation = { index: apiTable.startIndex };
     const requests: DocsBatchUpdateRequest[] = [];
 
-    for (let n = 0; n < rowDelta; n++) {
-      requests.push({
-        insertTableRow: {
-          // Each insert goes below what is by then the last row.
-          tableCellLocation: {
-            tableStartLocation,
-            rowIndex: apiTable.rowCount - 1 + n,
-            columnIndex: 0,
+    // Bottom up, so a row added or removed above does not move the rows an
+    // operation further down still refers to.
+    const rowOps = tableRowOperations(apiTable, modelTable)
+      .sort((a, b) => b.at - a.at);
+
+    for (const op of rowOps) {
+      if (op.type === 'insert') {
+        for (let n = 0; n < op.count; n++) {
+          // Inserting above row `at` puts it where it went missing. Past the
+          // last row there is nothing to sit above, so it goes below instead.
+          const append = op.at >= apiTable.rowCount;
+          requests.push({
+            insertTableRow: {
+              tableCellLocation: {
+                tableStartLocation,
+                rowIndex: append ? apiTable.rowCount - 1 : op.at,
+                columnIndex: 0,
+              },
+              insertBelow: append,
+            },
+          });
+        }
+        continue;
+      }
+      for (let n = op.count - 1; n >= 0; n--) {
+        requests.push({
+          deleteTableRow: {
+            tableCellLocation: { tableStartLocation, rowIndex: op.at + n, columnIndex: 0 },
           },
-          insertBelow: true,
-        },
-      });
-    }
-    // Delete from the bottom up so the rows above keep their indices.
-    for (let n = 0; n < -rowDelta; n++) {
-      requests.push({
-        deleteTableRow: {
-          tableCellLocation: {
-            tableStartLocation,
-            rowIndex: apiTable.rowCount - 1 - n,
-            columnIndex: 0,
-          },
-        },
-      });
+        });
+      }
     }
 
     for (let n = 0; n < columnDelta; n++) {
@@ -1498,8 +1720,9 @@ export class GoogleDocsSyncService {
 
     if (requests.length > 0) {
       console.warn(
-        '[SyncService] table resize: %d row / %d column op(s)',
-        Math.abs(rowDelta), Math.abs(columnDelta),
+        '[SyncService] table reshape: %d row op(s), %d column op(s) on %s',
+        rowOps.reduce((n, op) => n + op.count, 0), Math.abs(columnDelta),
+        apiTableHeaderKey(apiTable),
       );
       await this.docsService.batchUpdate(docId, requests);
     }
@@ -1515,9 +1738,17 @@ export class GoogleDocsSyncService {
     const apiTables = extractApiTables(await this.docsService.getDocument(docId));
     const requests: DocsBatchUpdateRequest[] = [];
 
-    for (let i = 0; i < Math.min(apiTables.length, modelTables.length); i++) {
-      const edits = tableCellDiffRequests(apiTables[i]!, modelTables[i]!);
-      if (edits !== null) requests.push(...edits);
+    // Paired on the header row, not by ordinal -- for the same reason the
+    // outer pass is. One table missing on either side would otherwise shift
+    // every table after it and write each one's text into its neighbour.
+    for (const { apiTable, modelTable } of pairTablesByHeader(apiTables, modelTables)) {
+      const edits = tableCellDiffRequests(apiTable, modelTable);
+      if (edits === null) {
+        console.warn('[SyncService] table cell diff skipped (shape mismatch): %s',
+          apiTableHeaderKey(apiTable));
+        continue;
+      }
+      requests.push(...edits);
     }
 
     if (requests.length === 0) return;

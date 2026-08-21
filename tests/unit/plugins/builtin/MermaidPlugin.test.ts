@@ -472,3 +472,38 @@ describe('generateMermaidLiveUrl', () => {
     expect(data.content).not.toContain('[object Promise]');
   });
 });
+
+describe('rendering a diagram for a document with a white page', () => {
+  it('renders in the light theme and puts the app theme back afterwards', async () => {
+    // The on-screen SVG carries whatever theme the app is in. A dark diagram
+    // dropped into a Google Doc is unreadable, so the export re-renders the
+    // source in mermaid's light theme -- and must not leave the app there.
+    const mermaid = await import('mermaid');
+    const plugin = new MermaidPlugin();
+    await plugin.initialize();
+    plugin.setTheme('dark');
+
+    vi.mocked(mermaid.default.initialize).mockClear();
+    const host = document.createElement('div');
+    // The canvas conversion cannot run under jsdom; the theme handling is
+    // what this covers, and it lives in a finally so it runs either way.
+    await plugin.renderToPngForExport('graph TD; A-->B;', host).catch(() => undefined);
+
+    const themes = vi.mocked(mermaid.default.initialize).mock.calls
+      .map((call) => (call[0] as { theme?: string }).theme);
+    expect(themes[0]).toBe('default');
+    expect(themes.at(-1)).toBe('dark');
+  });
+
+  it('renders the source it was given, not whatever is on screen', async () => {
+    const mermaid = await import('mermaid');
+    const plugin = new MermaidPlugin();
+    await plugin.initialize();
+
+    vi.mocked(mermaid.default.render).mockClear();
+    await plugin.renderToPngForExport('graph LR; X-->Y;', document.createElement('div'))
+      .catch(() => undefined);
+
+    expect(vi.mocked(mermaid.default.render).mock.calls[0]?.[1]).toBe('graph LR; X-->Y;');
+  });
+});

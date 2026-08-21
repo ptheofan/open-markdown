@@ -123,9 +123,24 @@ export class GoogleDocsService {
     });
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`[DocsAPI] batchUpdate failed (${response.status}):`, errorText);
+      // Google names the offending request by index -- "Invalid requests[6]"
+      // -- and that index is the one thing we never print, since the requests
+      // are built in reverse and only the first three are logged. Quote it
+      // back, or the report is unactionable.
+      const at = /requests\[(\d+)\]/.exec(errorText)?.[1];
+      const culprit = at != null ? requests[Number(at)] : undefined;
+      // The neighbours matter as much as the culprit: a bad range is usually
+      // a run that should have been split, and its siblings show where.
+      const around = at != null
+        ? requests.slice(Math.max(0, Number(at) - 2), Number(at) + 3)
+        : [];
+      const detail = culprit != null
+        ? ` Offending request: ${JSON.stringify(culprit)}`
+          + ` In context: ${JSON.stringify(around)}`
+        : '';
+      console.error(`[DocsAPI] batchUpdate failed (${response.status}):`, errorText, detail);
       throw apiError(
-        `Google Docs API error (${response.status}): ${errorText}`,
+        `Google Docs API error (${response.status}): ${errorText}${detail}`,
         response.status,
       );
     }

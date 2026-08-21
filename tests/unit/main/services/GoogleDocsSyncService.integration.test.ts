@@ -79,16 +79,15 @@ describe('GoogleDocsSyncService Integration', () => {
         },
       };
       mockDocsService.getDocument
-        .mockResolvedValueOnce(emptyDoc)     // sync() check
+        .mockResolvedValueOnce(emptyDoc)     // the empty-body check
         .mockResolvedValueOnce(emptyDoc)     // fullPopulate() clear check
         .mockResolvedValue(populatedDocResponse); // fullPopulate() baseline read-back
       mockDocsService.extractPlainText
-        .mockReturnValueOnce('')   // sync() theirs
         .mockReturnValue('Hello World\nThis is a paragraph.\nItem 1\nItem 2\n');
 
       const markdown = '# Hello World\n\nThis is a paragraph.\n\n- Item 1\n- Item 2';
 
-      const result = await syncService.sync('/test/file.md', 'doc-123', markdown);
+      const result = await syncService.syncForceOverwrite('/test/file.md', 'doc-123', markdown);
 
       expect(result.success).toBe(true);
       expect(mockDocsService.batchUpdate).toHaveBeenCalledTimes(1);
@@ -132,7 +131,7 @@ describe('GoogleDocsSyncService Integration', () => {
 
       const markdown = '```js\nconst x = 1;\n```\n\n| A | B |\n|---|---|\n| 1 | 2 |';
 
-      const result = await syncService.sync('/test/file.md', 'doc-123', markdown);
+      const result = await syncService.syncForceOverwrite('/test/file.md', 'doc-123', markdown);
 
       expect(result.success).toBe(true);
 
@@ -164,7 +163,7 @@ describe('GoogleDocsSyncService Integration', () => {
 
       const markdown = '> This is a quote';
 
-      const result = await syncService.sync('/test/file.md', 'doc-123', markdown);
+      const result = await syncService.syncForceOverwrite('/test/file.md', 'doc-123', markdown);
 
       expect(result.success).toBe(true);
 
@@ -210,7 +209,7 @@ describe('GoogleDocsSyncService Integration', () => {
       mockDocsService.extractPlainText.mockReturnValue('Hello world\n');
 
       // New markdown changes "world" to "universe"
-      const result = await syncService.sync('/test/file.md', 'doc-123', 'Hello universe');
+      const result = await syncService.syncForceOverwrite('/test/file.md', 'doc-123', 'Hello universe');
 
       expect(result.success).toBe(true);
       expect(mockDocsService.batchUpdate).toHaveBeenCalledTimes(1);
@@ -255,7 +254,7 @@ describe('GoogleDocsSyncService Integration', () => {
       // Same text AND same formatting: there is nothing to send. Re-applying
       // formatting to every paragraph regardless is what made syncing a large
       // document take many seconds of no-op requests.
-      const result = await syncService.sync('/test/file.md', 'doc-123', 'Hello world');
+      const result = await syncService.syncForceOverwrite('/test/file.md', 'doc-123', 'Hello world');
 
       expect(result.success).toBe(true);
       expect(mockDocsService.batchUpdate).not.toHaveBeenCalled();
@@ -306,6 +305,11 @@ describe('GoogleDocsSyncService Integration', () => {
           body: {
             content: [
               {
+                // Indices matter: a body whose last element has no endIndex
+                // reads as empty, and an empty Doc is populated rather than
+                // diffed. The real API always sends them.
+                startIndex: 1,
+                endIndex: 17,
                 paragraph: {
                   elements: [{ textRun: { content: originalText } }],
                 },
@@ -315,10 +319,9 @@ describe('GoogleDocsSyncService Integration', () => {
         })
         .mockResolvedValue(updatedContent);
       mockDocsService.extractPlainText
-        .mockReturnValueOnce(originalText)
         .mockReturnValue('First paragraph\n\nSecond paragraph\n');
 
-      const result = await syncService.sync(
+      const result = await syncService.syncForceOverwrite(
         '/test/file.md',
         'doc-123',
         'First paragraph\n\nSecond paragraph',
@@ -369,10 +372,11 @@ describe('GoogleDocsSyncService Integration', () => {
       });
       mockDocsService.extractPlainText.mockReturnValue('edited by reviewer\n');
 
-      const result = await syncService.sync('/test/file.md', 'doc-123', 'my new content');
+      const result = await syncService.resolve(
+        '/test/file.md', 'doc-123', 'preview', 'push', 'my new content',
+      );
 
-      expect(result.success).toBe(false);
-      expect(result.conflict).toBe('both');
+      expect(result.needsReview).toBe(true);
       expect(mockDocsService.batchUpdate).not.toHaveBeenCalled();
     });
   });
@@ -523,7 +527,7 @@ describe('GoogleDocsSyncService Integration', () => {
         },
       ];
 
-      const result = await syncService.sync(
+      const result = await syncService.syncForceOverwrite(
         '/test/file.md',
         'doc-123',
         markdown,
@@ -569,7 +573,7 @@ describe('GoogleDocsSyncService Integration', () => {
       ];
 
       // Should not throw — the sync should still succeed, just without the image
-      const result = await syncService.sync(
+      const result = await syncService.syncForceOverwrite(
         '/test/file.md',
         'doc-123',
         markdown,
@@ -600,7 +604,7 @@ describe('GoogleDocsSyncService Integration', () => {
 
       mockDocsService.getDocument.mockRejectedValue(new Error('Network error'));
 
-      const result = await syncService.sync('/test/file.md', 'doc-123', '# Hello');
+      const result = await syncService.syncForceOverwrite('/test/file.md', 'doc-123', '# Hello');
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('Network error');
@@ -618,7 +622,7 @@ describe('GoogleDocsSyncService Integration', () => {
       mockDocsService.extractPlainText.mockReturnValue('');
       mockDocsService.batchUpdate.mockRejectedValue(new Error('Quota exceeded'));
 
-      const result = await syncService.sync('/test/file.md', 'doc-123', '# Hello');
+      const result = await syncService.syncForceOverwrite('/test/file.md', 'doc-123', '# Hello');
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('Quota exceeded');
@@ -784,7 +788,7 @@ describe('GoogleDocsSyncService Integration', () => {
         'Final paragraph with a [link](https://example.com).',
       ].join('\n');
 
-      const result = await syncService.sync('/test/file.md', 'doc-123', markdown);
+      const result = await syncService.syncForceOverwrite('/test/file.md', 'doc-123', markdown);
       expect(result.success).toBe(true);
 
       const requests: any[] = mockDocsService.batchUpdate.mock.calls[0]![1];
@@ -825,7 +829,7 @@ describe('GoogleDocsSyncService Integration', () => {
         '###### Heading 5 Level',
       ].join('\n');
 
-      const result = await syncService.sync('/test/file.md', 'doc-123', markdown);
+      const result = await syncService.syncForceOverwrite('/test/file.md', 'doc-123', markdown);
       expect(result.success).toBe(true);
 
       const requests: any[] = mockDocsService.batchUpdate.mock.calls[0]![1];
@@ -895,7 +899,7 @@ describe('GoogleDocsSyncService Integration', () => {
         .mockReturnValue('New Title\nHello universe\n');
 
       // Change from plain text to heading + modified text
-      const result = await syncService.sync(
+      const result = await syncService.syncForceOverwrite(
         '/test/file.md',
         'doc-123',
         '# New Title\n\nHello universe',
@@ -947,7 +951,7 @@ describe('GoogleDocsSyncService Integration', () => {
         liveUrl: 'https://mermaid.live/edit#pako:xyz',
       }];
 
-      const result = await syncService.sync(
+      const result = await syncService.syncForceOverwrite(
         '/test/file.md',
         'doc-123',
         markdown,

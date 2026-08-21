@@ -169,7 +169,7 @@ describe('editing text inside a table', () => {
   const MARKDOWN_ONE_CELL_CHANGED = '# Title\n\n| H1 | H2 |\n| --- | --- |\n| a | B EDITED |\n';
 
   it('never deletes the table itself', async () => {
-    await service().sync('/test/file.md', 'doc-1', MARKDOWN_ONE_CELL_CHANGED);
+    await service().syncForceOverwrite('/test/file.md', 'doc-1', MARKDOWN_ONE_CELL_CHANGED);
 
     const tableWipes = deletedRanges().filter(
       (r) => r.startIndex <= TABLE_START && r.endIndex >= TABLE_END - 1,
@@ -178,13 +178,13 @@ describe('editing text inside a table', () => {
   });
 
   it('never re-inserts the table', async () => {
-    await service().sync('/test/file.md', 'doc-1', MARKDOWN_ONE_CELL_CHANGED);
+    await service().syncForceOverwrite('/test/file.md', 'doc-1', MARKDOWN_ONE_CELL_CHANGED);
 
     expect(requests().filter((r) => 'insertTable' in r)).toEqual([]);
   });
 
   it('leaves the cells nobody edited alone, so their comments survive', async () => {
-    await service().sync('/test/file.md', 'doc-1', MARKDOWN_ONE_CELL_CHANGED);
+    await service().syncForceOverwrite('/test/file.md', 'doc-1', MARKDOWN_ONE_CELL_CHANGED);
 
     // Only cell (1,1) changed: it starts at 21. Nothing before that may be touched.
     const touchingOtherCells = deletedRanges().filter((r) => r.startIndex < 21);
@@ -192,7 +192,7 @@ describe('editing text inside a table', () => {
   });
 
   it('actually writes the new text into the changed cell', async () => {
-    await service().sync('/test/file.md', 'doc-1', MARKDOWN_ONE_CELL_CHANGED);
+    await service().syncForceOverwrite('/test/file.md', 'doc-1', MARKDOWN_ONE_CELL_CHANGED);
 
     const inserted = requests().flatMap((r) =>
       'insertText' in r ? [(r as unknown as { insertText: { text: string } }).insertText.text] : []);
@@ -200,7 +200,7 @@ describe('editing text inside a table', () => {
   });
 
   it('does nothing at all when no cell changed', async () => {
-    await service().sync('/test/file.md', 'doc-1', '# Title\n\n| H1 | H2 |\n| --- | --- |\n| a | b |\n');
+    await service().syncForceOverwrite('/test/file.md', 'doc-1', '# Title\n\n| H1 | H2 |\n| --- | --- |\n| a | b |\n');
 
     expect(requests().filter((r) => 'insertTable' in r)).toEqual([]);
     expect(deletedRanges()).toEqual([]);
@@ -263,7 +263,7 @@ describe('changing a table\'s shape', () => {
 
   it('adds a row instead of rebuilding the table', async () => {
     wireGrowingTable();
-    await service().sync('/test/file.md', 'doc-1', MARKDOWN_EXTRA_ROW);
+    await service().syncForceOverwrite('/test/file.md', 'doc-1', MARKDOWN_EXTRA_ROW);
 
     expect(requests().filter((r) => 'insertTableRow' in r).length).toBeGreaterThan(0);
     expect(requests().filter((r) => 'insertTable' in r)).toEqual([]);
@@ -271,7 +271,7 @@ describe('changing a table\'s shape', () => {
 
   it('keeps the existing rows and their comments when adding one', async () => {
     wireGrowingTable();
-    await service().sync('/test/file.md', 'doc-1', MARKDOWN_EXTRA_ROW);
+    await service().syncForceOverwrite('/test/file.md', 'doc-1', MARKDOWN_EXTRA_ROW);
 
     const wipes = requests().flatMap((r) => {
       const range = r['deleteContentRange']?.range;
@@ -282,7 +282,7 @@ describe('changing a table\'s shape', () => {
 
   it('fills the new row with its text', async () => {
     wireGrowingTable();
-    await service().sync('/test/file.md', 'doc-1', MARKDOWN_EXTRA_ROW);
+    await service().syncForceOverwrite('/test/file.md', 'doc-1', MARKDOWN_EXTRA_ROW);
 
     const inserted = requests()
       .flatMap((r) => ('insertText' in r ? [(r as unknown as { insertText: { text: string } }).insertText.text] : []));
@@ -299,7 +299,7 @@ describe('changing a table\'s shape', () => {
       return Promise.resolve({ replies: [] });
     });
 
-    await service().sync('/test/file.md', 'doc-1', '# Title\n\n| H1 | H2 |\n| --- | --- |\n| a | b |\n');
+    await service().syncForceOverwrite('/test/file.md', 'doc-1', '# Title\n\n| H1 | H2 |\n| --- | --- |\n| a | b |\n');
 
     expect(requests().filter((r) => 'deleteTableRow' in r).length).toBeGreaterThan(0);
     expect(requests().filter((r) => 'insertTable' in r)).toEqual([]);
@@ -341,7 +341,7 @@ describe('the cost of an unchanged table', () => {
     await createGoogleDocsSyncService(
       mockDocsService as unknown as GoogleDocsService,
       linkStore,
-    ).sync('/test/file.md', 'doc-1', markdown);
+    ).syncForceOverwrite('/test/file.md', 'doc-1', markdown);
     return mockDocsService.getDocument.mock.calls.length;
   }
 
@@ -410,7 +410,7 @@ describe('changing a table\'s column count', () => {
 
   it('adds a column instead of rebuilding the table', async () => {
     wireGrowingTable();
-    await service().sync('/test/file.md', 'doc-1', MARKDOWN_EXTRA_COLUMN);
+    await service().syncForceOverwrite('/test/file.md', 'doc-1', MARKDOWN_EXTRA_COLUMN);
 
     expect(requests().filter((r) => 'insertTableColumn' in r).length).toBeGreaterThan(0);
     expect(requests().filter((r) => 'insertTable' in r)).toEqual([]);
@@ -418,7 +418,7 @@ describe('changing a table\'s column count', () => {
 
   it('keeps the existing cells and their comments when adding a column', async () => {
     wireGrowingTable();
-    await service().sync('/test/file.md', 'doc-1', MARKDOWN_EXTRA_COLUMN);
+    await service().syncForceOverwrite('/test/file.md', 'doc-1', MARKDOWN_EXTRA_COLUMN);
 
     const wipes = requests().flatMap((r) => {
       const range = r['deleteContentRange']?.range;
@@ -429,7 +429,7 @@ describe('changing a table\'s column count', () => {
 
   it('fills the new column with its text', async () => {
     wireGrowingTable();
-    await service().sync('/test/file.md', 'doc-1', MARKDOWN_EXTRA_COLUMN);
+    await service().syncForceOverwrite('/test/file.md', 'doc-1', MARKDOWN_EXTRA_COLUMN);
 
     const inserted = requests().flatMap((r) =>
       'insertText' in r ? [(r as unknown as { insertText: { text: string } }).insertText.text] : []);
@@ -441,7 +441,7 @@ describe('changing a table\'s column count', () => {
     // insertRight:false against the last column would put the new column
     // second-from-right, silently shifting every cell after it.
     wireGrowingTable();
-    await service().sync('/test/file.md', 'doc-1', MARKDOWN_EXTRA_COLUMN);
+    await service().syncForceOverwrite('/test/file.md', 'doc-1', MARKDOWN_EXTRA_COLUMN);
 
     const inserts = requests().flatMap((r) =>
       'insertTableColumn' in r
@@ -465,7 +465,7 @@ describe('changing a table\'s column count', () => {
       return Promise.resolve({ replies: [] });
     });
 
-    await service().sync('/test/file.md', 'doc-1', '# Title\n\n| H1 | H2 |\n| --- | --- |\n| a | b |\n');
+    await service().syncForceOverwrite('/test/file.md', 'doc-1', '# Title\n\n| H1 | H2 |\n| --- | --- |\n| a | b |\n');
 
     expect(requests().filter((r) => 'deleteTableColumn' in r).length).toBeGreaterThan(0);
     expect(requests().filter((r) => 'insertTable' in r)).toEqual([]);

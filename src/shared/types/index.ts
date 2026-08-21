@@ -105,7 +105,9 @@ export type {
   SyncProgressUpdate,
   SyncConflictKind,
   SyncResolveMode,
-  SyncConflict,
+  SyncDirection,
+  SyncChangeKind,
+  SyncChange,
   SyncConflictChoice,
   GoogleDocsResolveResult,
 } from './google-docs';

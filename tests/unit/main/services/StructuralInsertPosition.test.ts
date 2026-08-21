@@ -85,7 +85,7 @@ describe('placing a newly added structural element', () => {
   it('inserts a new table between the paragraphs that surround it', async () => {
     const markdown = 'Intro\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\nOutro\n';
 
-    await service().sync('/test/file.md', 'doc-1', markdown);
+    await service().syncForceOverwrite('/test/file.md', 'doc-1', markdown);
 
     const inserts = requests().flatMap((r) =>
       'insertTable' in r ? [(r as { insertTable: { location: { index: number } } }).insertTable] : []);
@@ -100,7 +100,7 @@ describe('placing a newly added structural element', () => {
     const markdown = 'Intro\n\n```mermaid\ngraph TD\n  A-->B\n```\n\nOutro\n';
     const diagrams = [{ code: 'graph TD\n  A-->B', pngBase64: 'AAA', liveUrl: 'https://mermaid.live/x' }];
 
-    await service().sync('/test/file.md', 'doc-1', markdown, diagrams);
+    await service().syncForceOverwrite('/test/file.md', 'doc-1', markdown, diagrams);
 
     const inserts = requests().flatMap((r) =>
       'insertInlineImage' in r
@@ -132,7 +132,7 @@ describe('placing a newly added structural element', () => {
     mockDocsService.extractPlainText.mockReturnValue('Notes\nMiddle\nNotes\nEnd\n');
     await linkStore.saveBaseline('doc-1', 'Notes\nMiddle\nNotes\nEnd\n');
 
-    await service().sync(
+    await service().syncForceOverwrite(
       '/test/file.md', 'doc-1',
       'Notes\n\nMiddle\n\nNotes\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\nEnd\n',
     );
@@ -148,7 +148,7 @@ describe('placing a newly added structural element', () => {
   it('still appends when the element belongs at the end', async () => {
     const markdown = 'Intro\n\nOutro\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n';
 
-    await service().sync('/test/file.md', 'doc-1', markdown);
+    await service().syncForceOverwrite('/test/file.md', 'doc-1', markdown);
 
     const inserts = requests().flatMap((r) =>
       'insertTable' in r ? [(r as { insertTable: { location: { index: number } } }).insertTable] : []);

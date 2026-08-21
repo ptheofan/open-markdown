@@ -13,7 +13,7 @@ import type {
   ExternalFileOpenEvent,
 } from './fileAssociation';
 import type { RecentFileEntry } from './recentFiles';
-import type { GoogleDocLink, GoogleDocsSyncResult, GoogleDocsResolveResult, GoogleAuthState, MermaidDiagramData, TableColumnWidths, SyncProgressUpdate, SyncResolveMode, SyncConflictChoice } from './google-docs';
+import type { GoogleDocLink, GoogleDocsResolveResult, GoogleAuthState, MermaidDiagramData, TableColumnWidths, SyncProgressUpdate, SyncResolveMode, SyncDirection } from './google-docs';
 
 /**
  * IPC Channel names for type-safe communication
@@ -88,7 +88,6 @@ export const IPC_CHANNELS = {
     PICK_AND_LINK: 'google-docs:pick-and-link',
     UNLINK: 'google-docs:unlink',
     GET_LINK: 'google-docs:get-link',
-    SYNC: 'google-docs:sync',
     SYNC_RESOLVE: 'google-docs:sync-resolve',
     ON_AUTH_CHANGE: 'google-docs:on-auth-change',
     ON_SYNC_STATUS: 'google-docs:on-sync-status',
@@ -303,10 +302,9 @@ export interface GoogleDocsAPI {
   pickAndLink: (filePath: string) => Promise<GoogleDocLink | null>;
   unlink: (filePath: string) => Promise<void>;
   getLink: (filePath: string) => Promise<GoogleDocLink | null>;
-  sync: (filePath: string, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[], tableWidths?: TableColumnWidths[]) => Promise<GoogleDocsSyncResult>;
   /** Reconcile a two-sided change. Merge is called twice: once to learn the
    *  conflicts, once with the user's answers. */
-  syncResolve: (filePath: string, mode: SyncResolveMode, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[], tableWidths?: TableColumnWidths[], resolutions?: SyncConflictChoice[]) => Promise<GoogleDocsResolveResult>;
+  syncResolve: (filePath: string, mode: SyncResolveMode, direction: SyncDirection, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[], tableWidths?: TableColumnWidths[], alsoWriteSource?: boolean) => Promise<GoogleDocsResolveResult>;
   onAuthChange: (callback: (state: GoogleAuthState) => void) => () => void;
   onSyncProgress: (callback: (update: SyncProgressUpdate) => void) => () => void;
   onSyncStatus: (callback: (status: { syncing: boolean; error?: string }) => void) => () => void;

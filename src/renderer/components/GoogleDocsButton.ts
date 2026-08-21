@@ -1,9 +1,19 @@
 /**
- * GoogleDocsButton - Toolbar button for Google Docs sync with contextual states
+ * GoogleDocsButton - the toolbar's push and pull actions for a linked Doc.
+ *
+ * Two buttons, one state machine. Direction is never inferred: the user says
+ * which way, and the answer is the same either way when there is nothing to
+ * carry -- "nothing to push" is a result, not a silence.
+ *
+ * Before a document is linked or the user is signed in, both buttons do the
+ * one thing that can be done, so neither is a dead end.
  */
 
+/** Which way the user asked to sync. */
+export type SyncButtonDirection = 'push' | 'pull';
+
 /**
- * Possible states for the Google Docs button
+ * Possible states for the Google Docs buttons
  */
 export type GoogleDocsButtonState = 'unlinked' | 'needs-auth' | 'ready' | 'syncing';
 
@@ -13,57 +23,55 @@ export type GoogleDocsButtonState = 'unlinked' | 'needs-auth' | 'ready' | 'synci
 export interface GoogleDocsButtonCallbacks {
   onLinkRequest?: () => void;     // State: unlinked -> show link dialog
   onSignInRequest?: () => void;   // State: needs-auth -> trigger OAuth
-  onSyncRequest?: () => void;     // State: ready -> trigger sync
+  onSyncRequest?: (direction: SyncButtonDirection) => void; // State: ready
   onShowProgressRequest?: () => void; // State: syncing -> reopen the progress bar
   onUnlinkRequest?: () => void;   // Context: right-click or long press
 }
 
-/**
- * GoogleDocsButton component
- * A toolbar button that changes behavior based on Google Docs link/auth state
- */
+const TITLES: Record<GoogleDocsButtonState, Record<SyncButtonDirection, string>> = {
+  unlinked: { push: 'Link to Google Docs', pull: 'Link to Google Docs' },
+  'needs-auth': { push: 'Sign in to Google', pull: 'Sign in to Google' },
+  ready: { push: 'Push to Google Doc', pull: 'Pull from Google Doc' },
+  syncing: { push: 'Syncing...', pull: 'Syncing...' },
+};
+
 export class GoogleDocsButton {
-  private button: HTMLButtonElement;
-  private icon: HTMLElement | null = null;
-  private spinner: HTMLElement | null = null;
+  private buttons: Array<{ el: HTMLButtonElement; direction: SyncButtonDirection }>;
   private state: GoogleDocsButtonState = 'unlinked';
   private callbacks: GoogleDocsButtonCallbacks = {};
   private enabled = false;
 
-  constructor(button: HTMLButtonElement) {
-    this.button = button;
-    this.icon = button.querySelector('#gdocs-icon');
-    this.spinner = button.querySelector('#gdocs-spinner');
+  constructor(pushButton: HTMLButtonElement, pullButton?: HTMLButtonElement | null) {
+    this.buttons = [
+      { el: pushButton, direction: 'push' as const },
+      ...(pullButton ? [{ el: pullButton, direction: 'pull' as const }] : []),
+    ];
     this.setupEventListeners();
   }
 
-  /**
-   * Set up event listeners
-   */
   private setupEventListeners(): void {
-    this.button.addEventListener('click', () => {
-      if (!this.enabled) return;
-      switch (this.state) {
-        case 'unlinked':
-          this.callbacks.onLinkRequest?.();
-          break;
-        case 'needs-auth':
-          this.callbacks.onSignInRequest?.();
-          break;
-        case 'ready':
-          this.callbacks.onSyncRequest?.();
-          break;
-        case 'syncing':
-          // Not a second sync -- the click reopens a dismissed progress bar.
-          this.callbacks.onShowProgressRequest?.();
-          break;
-      }
-    });
+    for (const { el, direction } of this.buttons) {
+      el.addEventListener('click', () => {
+        if (!this.enabled) return;
+        switch (this.state) {
+          case 'unlinked':
+            this.callbacks.onLinkRequest?.();
+            break;
+          case 'needs-auth':
+            this.callbacks.onSignInRequest?.();
+            break;
+          case 'ready':
+            this.callbacks.onSyncRequest?.(direction);
+            break;
+          case 'syncing':
+            // Not a second sync -- the click reopens a dismissed progress bar.
+            this.callbacks.onShowProgressRequest?.();
+            break;
+        }
+      });
+    }
   }
 
-  /**
-   * Set the callbacks for button interactions
-   */
   setCallbacks(callbacks: GoogleDocsButtonCallbacks): void {
     this.callbacks = { ...this.callbacks, ...callbacks };
   }
@@ -75,59 +83,41 @@ export class GoogleDocsButton {
     this.state = state;
     const syncing = state === 'syncing';
 
-    if (this.icon) this.icon.classList.toggle('hidden', syncing);
-    if (this.spinner) this.spinner.classList.toggle('hidden', !syncing);
+    for (const { el, direction } of this.buttons) {
+      el.querySelector('.gdocs-icon')?.classList.toggle('hidden', syncing);
+      el.querySelector('.gdocs-spinner')?.classList.toggle('hidden', !syncing);
 
-    // Deliberately NOT the `disabled` attribute while syncing: a disabled
-    // button never fires click, which would strand the user with no way to
-    // reopen a progress bar they dismissed. It still reads as busy.
-    this.button.disabled = !this.enabled;
-    this.button.setAttribute('aria-busy', syncing ? 'true' : 'false');
-    this.button.classList.toggle('is-syncing', syncing);
-
-    // Update title
-    const titles: Record<GoogleDocsButtonState, string> = {
-      unlinked: 'Link to Google Docs',
-      'needs-auth': 'Sign in to Google',
-      ready: 'Sync to Google Docs',
-      syncing: 'Syncing...',
-    };
-    this.button.title = titles[state];
+      // Deliberately NOT the `disabled` attribute while syncing: a disabled
+      // button never fires click, which would strand the user with no way to
+      // reopen a progress bar they dismissed. It still reads as busy.
+      el.disabled = !this.enabled;
+      el.setAttribute('aria-busy', syncing ? 'true' : 'false');
+      el.classList.toggle('is-syncing', syncing);
+      el.title = TITLES[state][direction];
+    }
   }
 
-  /**
-   * Enable or disable the button
-   */
   setEnabled(enabled: boolean): void {
     this.enabled = enabled;
-    this.button.disabled = !enabled;
+    for (const { el } of this.buttons) el.disabled = !enabled;
   }
 
-  /**
-   * Show or hide the button entirely
-   */
   setVisible(visible: boolean): void {
-    this.button.classList.toggle('hidden', !visible);
+    for (const { el } of this.buttons) el.classList.toggle('hidden', !visible);
   }
 
-  /**
-   * Get the current button state
-   */
   getState(): GoogleDocsButtonState {
     return this.state;
   }
 
-  /**
-   * Cleanup
-   */
   destroy(): void {
-    // Event listeners are on the button element, will be GC'd
+    // Event listeners are on the button elements, will be GC'd
   }
 }
 
-/**
- * Factory function to create a GoogleDocsButton
- */
-export function createGoogleDocsButton(button: HTMLButtonElement): GoogleDocsButton {
-  return new GoogleDocsButton(button);
+export function createGoogleDocsButton(
+  pushButton: HTMLButtonElement,
+  pullButton?: HTMLButtonElement | null,
+): GoogleDocsButton {
+  return new GoogleDocsButton(pushButton, pullButton);
 }

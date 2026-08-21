@@ -29,11 +29,10 @@ import type {
   OpenInEditorResult,
   GoogleAuthState,
   GoogleDocLink,
-  GoogleDocsSyncResult,
   GoogleDocsResolveResult,
   SyncProgressUpdate,
   SyncResolveMode,
-  SyncConflictChoice,
+  SyncDirection,
   TableColumnWidths,
   MermaidDiagramData,
 } from '@shared/types';
@@ -379,19 +378,16 @@ const electronAPI: ElectronAPI = {
       return ipcRenderer.invoke(IPC_CHANNELS.GOOGLE_DOCS.GET_LINK, filePath);
     },
 
-    sync: (filePath: string, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[], tableWidths?: TableColumnWidths[]): Promise<GoogleDocsSyncResult> => {
-      return ipcRenderer.invoke(IPC_CHANNELS.GOOGLE_DOCS.SYNC, filePath, markdownContent, mermaidDiagrams, tableWidths);
-    },
-
-    syncResolve: (filePath: string, mode: SyncResolveMode, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[], tableWidths?: TableColumnWidths[], resolutions?: SyncConflictChoice[]): Promise<GoogleDocsResolveResult> => {
+    syncResolve: (filePath: string, mode: SyncResolveMode, direction: SyncDirection, markdownContent: string, mermaidDiagrams?: MermaidDiagramData[], tableWidths?: TableColumnWidths[], alsoWriteSource?: boolean): Promise<GoogleDocsResolveResult> => {
       return ipcRenderer.invoke(
         IPC_CHANNELS.GOOGLE_DOCS.SYNC_RESOLVE,
         filePath,
         mode,
+        direction,
         markdownContent,
         mermaidDiagrams,
         tableWidths,
-        resolutions,
+        alsoWriteSource,
       ) as Promise<GoogleDocsResolveResult>;
     },
 

@@ -4,6 +4,7 @@
  */
 import './index.css';
 
+import { joinBlocks } from '@shared/markdown/blocks';
 import {
   createMarkdownViewer,
   createDropZone,
@@ -18,7 +19,7 @@ import {
   createOpenExternalDropdown,
   createGoogleDocsButton,
   createSyncProgressBar,
-  createSyncConflictDialog,
+  createSyncReviewDialog,
   Toast,
   type MarkdownViewer,
   type DropZone,
@@ -33,7 +34,8 @@ import {
   type OpenExternalDropdown,
   type GoogleDocsButton,
   type SyncProgressBar,
-  type SyncConflictDialog,
+  type SyncReviewDialog,
+  type SyncReviewOutcome,
 } from './renderer/components';
 import type { EditModeCallbacks } from './renderer/components/EditModeController';
 import {
@@ -45,7 +47,7 @@ import {
 } from './renderer/services';
 import { isDomainError } from '@shared/errors';
 import { BUILTIN_PLUGINS } from '@shared/constants';
-import { applyTheme as applyThemeCSS } from './themes';
+import { applyTheme as applyThemeCSS, generateCompleteThemeCSS } from './themes';
 
 import type {
   ThemeMode,
@@ -64,8 +66,8 @@ import type {
 import type {
   GoogleAuthState,
   GoogleDocsResolveResult,
-  SyncConflictChoice,
-  SyncConflictKind,
+  SyncChange,
+  SyncDirection,
   SyncResolveMode,
 } from '@shared/types/google-docs';
 import type { MermaidPlugin } from '@plugins/builtin/MermaidPlugin';
@@ -105,7 +107,10 @@ class App {
   private openExternalDropdown: OpenExternalDropdown | null = null;
   private googleDocsButton: GoogleDocsButton | null = null;
   private syncProgressBar: SyncProgressBar | null = null;
-  private syncConflictDialog: SyncConflictDialog | null = null;
+  private syncReviewDialog: SyncReviewDialog | null = null;
+
+  /** Bumped on every sync-status change, to spot a stale refresh. */
+  private syncStatusSeq = 0;
 
   private state: AppState = {
     currentFilePath: null,
@@ -264,18 +269,21 @@ class App {
     // Create Google Docs button
     const gdocsSyncBtn = document.getElementById('gdocs-sync-btn') as HTMLButtonElement | null;
     if (gdocsSyncBtn) {
-      this.googleDocsButton = createGoogleDocsButton(gdocsSyncBtn);
+      this.googleDocsButton = createGoogleDocsButton(
+        gdocsSyncBtn,
+        document.getElementById('gdocs-pull-btn') as HTMLButtonElement | null,
+      );
       this.syncProgressBar = createSyncProgressBar();
       this.googleDocsButton.setCallbacks({
         onLinkRequest: () => { void this.handleGoogleDocsPickAndSync(); },
         onSignInRequest: () => { void this.handleGoogleDocsSignIn(); },
-        onSyncRequest: () => { void this.handleGoogleDocsSync(); },
+        onSyncRequest: (direction) => { void this.handleGoogleDocsSync(direction); },
         onShowProgressRequest: () => { this.syncProgressBar?.show(); },
       });
     }
 
     // Asks how to reconcile when the file and the Doc have both changed.
-    this.syncConflictDialog = createSyncConflictDialog();
+    this.syncReviewDialog = createSyncReviewDialog();
 
     // Create zoom controller for the markdown content
     // Target: markdown-content (the element to scale)
@@ -582,6 +590,7 @@ class App {
     // Google Docs sync status listener
     const cleanupGDocsSync = window.electronAPI.googleDocs.onSyncStatus(
       (status: { syncing: boolean; error?: string }) => {
+        const seq = ++this.syncStatusSeq;
         if (status.syncing) {
           this.googleDocsButton?.setState('syncing');
           this.syncProgressBar?.show();
@@ -591,7 +600,12 @@ class App {
           // link must leave the button offering 'link', not 'sync'. The error
           // itself is reported by whoever invoked the sync, not here, so it is
           // not toasted twice.
-          void this.updateGoogleDocsButtonState();
+          void this.updateGoogleDocsButtonState().then(() => {
+            // One user action is two round trips -- preview then apply -- so
+            // this refresh can land after the next one has already started.
+            // Without the check it would quietly clear that spinner.
+            if (seq !== this.syncStatusSeq) this.googleDocsButton?.setState('syncing');
+          });
         }
       }
     );
@@ -1147,7 +1161,7 @@ class App {
         this.toast?.success('No document selected — nothing was linked.');
         return;
       }
-      await this.handleGoogleDocsSync();
+      await this.handleGoogleDocsSync('push');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to link';
       this.toast?.error(message);
@@ -1217,28 +1231,81 @@ class App {
 
     const containers = viewer.querySelectorAll('.mermaid-container[data-mermaid-source]');
     const diagrams: MermaidDiagramData[] = [];
+    const surface = this.createLightExportSurface();
 
-    for (const container of containers) {
-      const encodedSource = container.getAttribute('data-mermaid-source');
-      if (!encodedSource) continue;
+    try {
+      for (const container of containers) {
+        const encodedSource = container.getAttribute('data-mermaid-source');
+        if (!encodedSource) continue;
 
-      try {
-        const code = mermaidPlugin.decodeFromAttribute(encodedSource);
-        const pngBase64 = await mermaidPlugin.renderToPng(container as HTMLElement);
-        const liveUrl = await mermaidPlugin.generateMermaidLiveUrl(code);
-        diagrams.push({ code, pngBase64, liveUrl });
-      } catch (error) {
-        console.warn('Failed to extract mermaid diagram:', error);
+        try {
+          const code = mermaidPlugin.decodeFromAttribute(encodedSource);
+          // Re-rendered light rather than captured from screen: a Google Doc
+          // page is white, and the diagram on screen is whatever theme the
+          // app happens to be in.
+          const pngBase64 = await mermaidPlugin.renderToPngForExport(code, surface.host);
+          const liveUrl = await mermaidPlugin.generateMermaidLiveUrl(code);
+          diagrams.push({ code, pngBase64, liveUrl });
+        } catch (error) {
+          console.warn('Failed to extract mermaid diagram:', error);
+        }
       }
+    } finally {
+      surface.dispose();
     }
 
     return diagrams;
   }
 
   /**
-   * Handle Google Docs sync
+   * An off-screen element carrying the light palette.
+   *
+   * Diagrams resolve their colours from CSS variables on the document root,
+   * so rendering one for export inside the running app would pick up the
+   * app's theme however the diagram itself was themed. The real theme
+   * generator produces the light values -- rescoped from :root to this
+   * element, so the visible UI is untouched.
    */
-  private async handleGoogleDocsSync(allowReauth = true): Promise<void> {
+  private createLightExportSurface(): { host: HTMLElement; dispose: () => void } {
+    const declarations = this.markdownViewer?.getPluginThemeDeclarations() ?? {};
+    const css = generateCompleteThemeCSS(
+      'light',
+      declarations,
+      this.state.currentPreferences ?? undefined,
+    );
+
+    const style = document.createElement('style');
+    style.textContent = css.replace(':root', '.gdocs-export-surface');
+    document.head.appendChild(style);
+
+    const host = document.createElement('div');
+    host.className = 'gdocs-export-surface';
+    host.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(host);
+
+    return {
+      host,
+      dispose: () => {
+        host.remove();
+        style.remove();
+      },
+    };
+  }
+
+  /**
+   * Carry a sync in the direction the user asked for.
+   *
+   * Two trips to the main process. 'preview' works out every difference and
+   * touches nothing; 'apply' writes the markdown that came out of it. In
+   * between, the merge view opens only when something of the user's is at
+   * stake -- their own edits during a pull, the Doc's during a push. When the
+   * chosen direction has nothing to carry, that is said out loud rather than
+   * passing for success.
+   */
+  private async handleGoogleDocsSync(
+    direction: SyncDirection,
+    allowReauth = true,
+  ): Promise<void> {
     if (!this.state.currentFilePath) return;
 
     const content = this.markdownViewer?.getState().content;
@@ -1251,25 +1318,7 @@ class App {
       const mermaidData = await this.extractMermaidData();
       const tableWidths = this.extractTableColumnWidths();
 
-      const result = await window.electronAPI.googleDocs.sync(
-        this.state.currentFilePath,
-        content,
-        mermaidData.length > 0 ? mermaidData : undefined,
-        tableWidths.length > 0 ? tableWidths : undefined,
-      );
-
-      if (result.conflict) {
-        this.googleDocsButton?.setState('ready');
-        await this.handleSyncConflict(result.conflict, content, mermaidData, tableWidths);
-        return;
-      } else if (result.success) {
-        this.toast?.success('Synced to Google Docs');
-        await this.updateGoogleDocsButtonState();
-      } else {
-        console.error('Google Docs sync error result:', result);
-        this.toast?.error(result.error ?? 'Sync failed');
-        await this.updateGoogleDocsButtonState();
-      }
+      await this.runSync(direction, content, mermaidData, tableWidths);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Sync failed';
 
@@ -1292,7 +1341,7 @@ class App {
             return;
           }
           // Retry sync after successful re-auth
-          await this.handleGoogleDocsSync(false);
+          await this.handleGoogleDocsSync(direction, false);
         } catch {
           this.googleDocsButton?.setState('needs-auth');
         }
@@ -1307,74 +1356,84 @@ class App {
     await this.updateGoogleDocsButtonState();
   }
 
-  /**
-   * Ask the user how to reconcile, then carry it out.
-   *
-   * A merge takes two trips to the main process: the first reports the blocks
-   * it could not settle, the second carries the user's answers back.
-   */
-  private async handleSyncConflict(
-    kind: SyncConflictKind,
+  /** Preview, review if anything is at stake, then apply. */
+  private async runSync(
+    direction: SyncDirection,
     content: string,
     mermaidData?: MermaidDiagramData[],
     tableWidths?: TableColumnWidths[],
   ): Promise<void> {
-    let mode: SyncResolveMode | null;
-    if (kind === 'remote-only') {
-      // Nothing of the user's is at stake, so a full three-way choice would be
-      // noise -- there is only one sensible direction.
-      mode = (await this.syncConflictDialog?.confirmPull()) === true ? 'pull' : null;
-    } else {
-      mode = (await this.syncConflictDialog?.chooseMode()) ?? null;
-    }
-    if (mode === null) return;
-
-    let resolutions: SyncConflictChoice[] | undefined;
-    for (;;) {
-      this.googleDocsButton?.setState('syncing');
-      const result = await this.resolveSync(mode, content, mermaidData, tableWidths, resolutions);
-      if (result === null) return;
-
-      if (result.conflicts != null && result.conflicts.length > 0) {
-        this.googleDocsButton?.setState('ready');
-        const answers = await this.syncConflictDialog?.resolveConflicts(result.conflicts);
-        if (answers == null) return;
-        resolutions = answers;
-        continue;
-      }
-
-      if (!result.success) {
-        this.toast?.error(result.error ?? 'Sync failed');
-        await this.updateGoogleDocsButtonState();
-        return;
-      }
-
-      // pull and merge hand back new file content; push does not.
-      if (result.markdown != null) {
-        await this.applyPulledMarkdown(result.markdown);
-      }
-      this.toast?.success(mode === 'pull' ? 'Updated from Google Docs' : 'Synced to Google Docs');
+    const noun = direction === 'pull' ? 'pull' : 'push';
+    const preview = await this.resolveSync('preview', direction, content, mermaidData, tableWidths);
+    if (preview === null) return;
+    if (!preview.success) {
+      this.toast?.error(preview.error ?? 'Sync failed');
       await this.updateGoogleDocsButtonState();
       return;
     }
+
+    if (preview.nothingToDo === true) {
+      this.toast?.success(`Nothing to ${noun}`);
+      await this.updateGoogleDocsButtonState();
+      return;
+    }
+
+    const changes = preview.changes ?? [];
+    const blocks = preview.blocks ?? [];
+    // Nothing to review means nothing was overridden, so only the target side
+    // is written -- a pull that takes the Doc wholesale sends it no requests.
+    const settled = preview.needsReview === true
+      ? await this.reviewChanges(changes, blocks, direction, content)
+      : { markdown: joinBlocks(blocks), deviates: false };
+    if (settled == null) return;
+
+    this.googleDocsButton?.setState('syncing');
+    const applied = await this.resolveSync(
+      'apply', direction, settled.markdown, mermaidData, tableWidths, settled.deviates,
+    );
+    if (applied === null) return;
+    if (!applied.success) {
+      this.toast?.error(applied.error ?? 'Sync failed');
+      await this.updateGoogleDocsButtonState();
+      return;
+    }
+
+    if (applied.markdown != null && applied.markdown !== content) {
+      await this.applyPulledMarkdown(applied.markdown);
+    }
+    this.toast?.success(direction === 'pull' ? 'Pulled from Google Docs' : 'Pushed to Google Docs');
+    await this.updateGoogleDocsButtonState();
+  }
+
+  /** Hand the differences to the merge view, with the button idle. */
+  private async reviewChanges(
+    changes: SyncChange[],
+    blocks: string[],
+    direction: SyncDirection,
+    original: string,
+  ): Promise<SyncReviewOutcome | null> {
+    this.googleDocsButton?.setState('ready');
+    return (await this.syncReviewDialog?.review(changes, blocks, direction, original)) ?? null;
   }
 
   private async resolveSync(
     mode: SyncResolveMode,
+    direction: SyncDirection,
     content: string,
     mermaidData?: MermaidDiagramData[],
     tableWidths?: TableColumnWidths[],
-    resolutions?: SyncConflictChoice[],
+    alsoWriteSource?: boolean,
   ): Promise<GoogleDocsResolveResult | null> {
     if (!this.state.currentFilePath) return null;
     try {
       return await window.electronAPI.googleDocs.syncResolve(
         this.state.currentFilePath,
         mode,
+        direction,
         content,
         mermaidData && mermaidData.length > 0 ? mermaidData : undefined,
         tableWidths && tableWidths.length > 0 ? tableWidths : undefined,
-        resolutions,
+        alsoWriteSource,
       );
     } catch (error) {
       console.error('Google Docs resolve failed:', error);
@@ -1487,7 +1546,7 @@ class App {
     this.openExternalDropdown?.destroy();
     this.googleDocsButton?.destroy();
     this.syncProgressBar?.destroy();
-    this.syncConflictDialog?.destroy();
+    this.syncReviewDialog?.destroy();
   }
 }
 

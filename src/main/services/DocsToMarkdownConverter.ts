@@ -234,7 +234,10 @@ export function convertDocsToMarkdown(doc: GDocsApiDocument): string {
       if (!listLines) { flush(); listLines = []; }
       const depth = bullet.nestingLevel ?? 0;
       const marker = isOrderedList(doc, bullet.listId, depth) ? '1.' : '-';
-      listLines.push(`${'  '.repeat(depth)}${marker} ${inlineText(el)}`);
+      // An empty bullet is a Docs spacer, and a bare "- " in the middle of a
+      // list splits it into two blocks that the source markdown never had.
+      const item = inlineText(el);
+      if (item.trim() !== '') listLines.push(`${'  '.repeat(depth)}${marker} ${item}`);
       continue;
     }
 
@@ -248,7 +251,14 @@ export function convertDocsToMarkdown(doc: GDocsApiDocument): string {
     }
 
     const heading = headingPrefix(el);
-    if (heading) { flush(); blocks.push(`${heading} ${inlineText(el)}`); continue; }
+    if (heading) {
+      flush();
+      // An empty heading paragraph is a Docs spacer. Emitting "## " would put
+      // a block in the markdown that the file it came from never had.
+      const title = inlineText(el);
+      if (title.trim() !== '') blocks.push(`${heading} ${title}`);
+      continue;
+    }
 
     // An indented paragraph with no bullet is what a blockquote became.
     if (indentLevel(el) > 0) {

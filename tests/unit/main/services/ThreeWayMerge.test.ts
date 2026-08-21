@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { splitBlocks, joinBlocks, threeWayMerge, applyResolutions } from '@main/services/ThreeWayMerge';
+import { splitBlocks, joinBlocks, threeWayMerge, applyResolutions, twoWayReview } from '@main/services/ThreeWayMerge';
+import type { MergeOutcome } from '@main/services/ThreeWayMerge';
+
+/** Only the differences no default can settle. */
+const conflictsOf = (outcome: MergeOutcome): MergeOutcome['changes'] =>
+  outcome.changes.filter((change) => change.kind === 'conflict');
 
 describe('splitBlocks', () => {
   it('keeps a fenced code block whole despite its blank lines', () => {
@@ -35,7 +40,7 @@ describe('threeWayMerge', () => {
       remote: 'one\n\ntwo\n\nthree EDITED\n',
     });
 
-    expect(result.conflicts).toEqual([]);
+    expect(conflictsOf(result)).toEqual([]);
     expect(joinBlocks(result.blocks)).toBe('one EDITED\n\ntwo\n\nthree EDITED\n');
   });
 
@@ -47,7 +52,7 @@ describe('threeWayMerge', () => {
       remote: 'one\n\nthree\n',
     });
 
-    expect(result.conflicts).toEqual([]);
+    expect(conflictsOf(result)).toEqual([]);
     expect(joinBlocks(result.blocks)).toBe('one\n\nthree\n');
   });
 
@@ -59,8 +64,8 @@ describe('threeWayMerge', () => {
       remote: 'one\n\ntwo REMOTE\n',
     });
 
-    expect(result.conflicts).toHaveLength(1);
-    expect(result.conflicts[0]).toMatchObject({ local: 'two LOCAL', remote: 'two REMOTE' });
+    expect(conflictsOf(result)).toHaveLength(1);
+    expect(conflictsOf(result)[0]).toMatchObject({ local: 'two LOCAL', remote: 'two REMOTE' });
   });
 
   it('does not call it a conflict when both sides made the same edit', () => {
@@ -71,7 +76,7 @@ describe('threeWayMerge', () => {
       remote: 'one\n\ntwo SAME\n',
     });
 
-    expect(result.conflicts).toEqual([]);
+    expect(conflictsOf(result)).toEqual([]);
     expect(joinBlocks(result.blocks)).toBe('one\n\ntwo SAME\n');
   });
 
@@ -87,7 +92,7 @@ describe('threeWayMerge', () => {
       remote: '# Title\n\n![](https://drive/x)\n\nProse edited\n',
     });
 
-    expect(result.conflicts).toEqual([]);
+    expect(conflictsOf(result)).toEqual([]);
     expect(joinBlocks(result.blocks)).toBe('# Title\n\n```mermaid\ngraph A\n```\n\nProse edited\n');
   });
 
@@ -103,7 +108,7 @@ describe('threeWayMerge', () => {
       remote: '# Title\n\n![](https://drive/x)\n\n[Edit](https://mermaid.live/a)\n\nProse edited\n',
     });
 
-    expect(result.conflicts).toEqual([]);
+    expect(conflictsOf(result)).toEqual([]);
     expect(joinBlocks(result.blocks)).toBe('# Title\n\n```mermaid\ngraph A\n```\n\nProse edited\n');
   });
 
@@ -115,7 +120,7 @@ describe('threeWayMerge', () => {
       remote: '# Title\n\n![](https://drive/x)\n',
     });
 
-    expect(result.conflicts).toEqual([]);
+    expect(conflictsOf(result)).toEqual([]);
     expect(joinBlocks(result.blocks)).toBe('# Title\n\n```mermaid\ngraph A\n```\n');
   });
 });
@@ -129,17 +134,232 @@ describe('applyResolutions', () => {
   });
 
   it('keeps the local side', () => {
-    const blocks = applyResolutions(merged.blocks, merged.conflicts, ['local']);
+    const blocks = applyResolutions(merged.blocks, merged.changes, ['local']);
     expect(joinBlocks(blocks)).toBe('one\n\ntwo LOCAL\n');
   });
 
   it('keeps the remote side', () => {
-    const blocks = applyResolutions(merged.blocks, merged.conflicts, ['remote']);
+    const blocks = applyResolutions(merged.blocks, merged.changes, ['remote']);
     expect(joinBlocks(blocks)).toBe('one\n\ntwo REMOTE\n');
   });
 
   it('keeps both, local first', () => {
-    const blocks = applyResolutions(merged.blocks, merged.conflicts, ['both']);
+    const blocks = applyResolutions(merged.blocks, merged.changes, ['both']);
     expect(joinBlocks(blocks)).toBe('one\n\ntwo LOCAL\n\ntwo REMOTE\n');
+  });
+});
+
+describe('threeWayMerge change reporting', () => {
+  it('reports a change for every edit, not only the clashing ones', () => {
+    const result = threeWayMerge({
+      localBase: 'one\n\ntwo\n\nthree\n',
+      local: 'one EDITED\n\ntwo\n\nthree\n',
+      remoteBase: 'one\n\ntwo\n\nthree\n',
+      remote: 'one\n\ntwo\n\nthree EDITED\n',
+    });
+
+    expect(result.changes).toEqual([
+      { index: 0, kind: 'local-only', local: 'one EDITED', remote: 'one', choice: 'local' },
+      { index: 2, kind: 'remote-only', local: 'three', remote: 'three EDITED', choice: 'remote' },
+    ]);
+  });
+
+  it('marks a block both sides rewrote as a conflict', () => {
+    const result = threeWayMerge({
+      localBase: 'one\n\ntwo\n',
+      local: 'one MINE\n\ntwo\n',
+      remoteBase: 'one\n\ntwo\n',
+      remote: 'one THEIRS\n\ntwo\n',
+    });
+
+    expect(result.changes).toEqual([
+      { index: 0, kind: 'conflict', local: 'one MINE', remote: 'one THEIRS', choice: 'local' },
+    ]);
+  });
+
+  it('reports an empty side when one of them deleted the block', () => {
+    const result = threeWayMerge({
+      localBase: 'one\n\ntwo\n',
+      local: 'one\n\ntwo\n',
+      remoteBase: 'one\n\ntwo\n',
+      remote: 'one\n',
+    });
+
+    expect(result.changes).toEqual([
+      { index: 1, kind: 'remote-only', local: 'two', remote: '', choice: 'remote' },
+    ]);
+  });
+});
+
+describe('twoWayReview', () => {
+  it('finds nothing when the two sides already agree', () => {
+    const result = twoWayReview('one\n\ntwo\n', 'one\n\ntwo\n');
+    expect(result.changes).toEqual([]);
+    expect(joinBlocks(result.blocks)).toBe('one\n\ntwo\n');
+  });
+
+  it('reports a block only the Doc has, defaulting to the file', () => {
+    const result = twoWayReview('one\n', 'one\n\nextra\n');
+    expect(result.changes).toEqual([
+      { index: 1, kind: 'remote-only', local: '', remote: 'extra', choice: 'local' },
+    ]);
+    // Left at its default, the file wins and the Doc's block goes.
+    expect(joinBlocks(result.blocks)).toBe('one\n');
+  });
+
+  it('reports a block only the file has', () => {
+    const result = twoWayReview('one\n\nmine\n', 'one\n');
+    expect(result.changes).toEqual([
+      { index: 1, kind: 'local-only', local: 'mine', remote: '', choice: 'local' },
+    ]);
+  });
+
+  it('reports a differing block as a conflict', () => {
+    const result = twoWayReview('one\n\ntwo MINE\n', 'one\n\ntwo THEIRS\n');
+    expect(result.changes).toEqual([
+      { index: 1, kind: 'conflict', local: 'two MINE', remote: 'two THEIRS', choice: 'local' },
+    ]);
+  });
+
+  it('lets the Doc win when the choice is flipped', () => {
+    const result = twoWayReview('one\n\ntwo MINE\n', 'one\n\ntwo THEIRS\n');
+    const blocks = applyResolutions(result.blocks, result.changes, ['remote']);
+    expect(joinBlocks(blocks)).toBe('one\n\ntwo THEIRS\n');
+  });
+});
+
+describe('splitBlocks on markdown written without blank lines', () => {
+  // A real synced document had headings, prose and tables on consecutive
+  // lines with no blank line anywhere. Splitting only on blank lines turned
+  // whole sections into single blocks, so nothing lined up against the Doc's
+  // paragraph-per-block conversion and every remote edit looked like an
+  // insertion into a void.
+  it('splits a heading from the prose directly below it', () => {
+    expect(splitBlocks('# Title\nProse here\n')).toEqual(['# Title', 'Prose here']);
+  });
+
+  it('splits consecutive headings', () => {
+    expect(splitBlocks('# One\n## Two\n')).toEqual(['# One', '## Two']);
+  });
+
+  it('splits a table from the heading directly above it', () => {
+    expect(splitBlocks('### H\n| a | b |\n| --- | --- |\n| 1 | 2 |\n')).toEqual([
+      '### H',
+      '| a | b |\n| --- | --- |\n| 1 | 2 |',
+    ]);
+  });
+
+  it('splits a list from the prose directly above it', () => {
+    expect(splitBlocks('intro\n- a\n- b\n')).toEqual(['intro', '- a\n- b']);
+  });
+
+  it('splits prose that follows a table', () => {
+    expect(splitBlocks('| a |\n| --- |\nafter\n')).toEqual(['| a |\n| --- |', 'after']);
+  });
+
+  it('keeps consecutive prose lines as one paragraph, the way the Doc does', () => {
+    expect(splitBlocks('one line\ntwo line\n')).toEqual(['one line\ntwo line']);
+  });
+
+  it('splits a horizontal rule out on its own', () => {
+    expect(splitBlocks('intro\n\n---\nafter\n')).toEqual(['intro', '---', 'after']);
+  });
+
+  it('treats dashes under a line of prose as a setext heading, not a rule', () => {
+    expect(splitBlocks('Title\n---\nafter\n')).toEqual(['Title\n---', 'after']);
+  });
+
+  it('splits a blockquote from the prose above it', () => {
+    expect(splitBlocks('intro\n> quoted\n> more\n')).toEqual(['intro', '> quoted\n> more']);
+  });
+
+  it('splits a fence that starts immediately after prose', () => {
+    expect(splitBlocks('intro\n```ts\ncode\n```\n')).toEqual(['intro', '```ts\ncode\n```']);
+  });
+});
+
+describe('a block whose two dialects differ', () => {
+  // The reverse conversion is lossy, so the same paragraph is not always
+  // byte-identical on the two sides. diffArrays then reports it as a removed
+  // run plus an added run, and treating those independently maps a remote
+  // edit onto an empty local range -- which is an insertion. The Doc's
+  // version then lands beside the file's instead of replacing it, and the
+  // paragraph appears twice.
+  const BASE = {
+    localBase: 'one\n\ntwo plain\n\nthree\n',
+    local: 'one\n\ntwo plain\n\nthree\n',
+    remoteBase: 'one\n\ntwo **p**lain\n\nthree\n',
+  };
+
+  it('replaces the local block rather than duplicating it', () => {
+    const result = threeWayMerge({ ...BASE, remote: 'one\n\ntwo **p**lain EDITED\n\nthree\n' });
+
+    expect(joinBlocks(result.blocks)).toBe('one\n\ntwo **p**lain EDITED\n\nthree\n');
+  });
+
+  it('shows the file\'s version of that block as the other side', () => {
+    const result = threeWayMerge({ ...BASE, remote: 'one\n\ntwo **p**lain EDITED\n\nthree\n' });
+
+    expect(result.changes).toHaveLength(1);
+    expect(result.changes[0]).toMatchObject({
+      kind: 'remote-only',
+      local: 'two plain',
+      remote: 'two **p**lain EDITED',
+    });
+  });
+
+  it('still treats a genuinely new remote block as an insertion', () => {
+    const result = threeWayMerge({ ...BASE, remote: 'one\n\ntwo **p**lain\n\nbrand new\n\nthree\n' });
+
+    expect(joinBlocks(result.blocks)).toBe('one\n\ntwo plain\n\nbrand new\n\nthree\n');
+  });
+});
+
+describe('an edit on one side that swallows an edit on the other', () => {
+  // Emptying the Doc is one remote edit spanning the whole document. If the
+  // file has any edit of its own, the two overlap -- and a conflict recorded
+  // as "your replacement versus theirs" throws away every untouched block
+  // inside the larger range. On a real document that is the entire file.
+  it('keeps the untouched blocks when the Doc is emptied', () => {
+    const result = threeWayMerge({
+      localBase: 'one\n\ntwo\n\nthree\n',
+      local: 'one\n\ntwo EDITED\n\nthree\n',
+      remoteBase: 'one\n\ntwo\n\nthree\n',
+      remote: '',
+    });
+
+    expect(result.changes).toHaveLength(1);
+    expect(result.changes[0]).toMatchObject({
+      kind: 'conflict',
+      local: 'one\n\ntwo EDITED\n\nthree',
+      remote: '',
+    });
+  });
+
+  it('restores the whole file when that conflict is settled the file\'s way', () => {
+    const result = threeWayMerge({
+      localBase: 'one\n\ntwo\n\nthree\n',
+      local: 'one\n\ntwo EDITED\n\nthree\n',
+      remoteBase: 'one\n\ntwo\n\nthree\n',
+      remote: '',
+    });
+
+    const blocks = applyResolutions(result.blocks, result.changes, ['local']);
+    expect(joinBlocks(blocks)).toBe('one\n\ntwo EDITED\n\nthree\n');
+  });
+
+  it('gathers every edit the region reaches, not just the first of each', () => {
+    const result = threeWayMerge({
+      localBase: 'one\n\ntwo\n\nthree\n\nfour\n',
+      local: 'one A\n\ntwo\n\nthree\n\nfour B\n',
+      remoteBase: 'one\n\ntwo\n\nthree\n\nfour\n',
+      remote: 'replaced\n',
+    });
+
+    expect(result.changes).toHaveLength(1);
+    expect(result.changes[0]).toMatchObject({
+      local: 'one A\n\ntwo\n\nthree\n\nfour B',
+      remote: 'replaced',
+    });
   });
 });

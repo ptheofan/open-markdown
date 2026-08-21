@@ -133,21 +133,52 @@ export interface GoogleDocLink {
 /** Why a sync stopped to ask the user. */
 export type SyncConflictKind = 'both' | 'remote-only';
 
-/** How the user chose to reconcile a two-sided change. */
-export type SyncResolveMode = 'push' | 'pull' | 'merge';
+/**
+ * Which way the user asked to sync.
+ *
+ * The direction names the intent and sets every change's default: a pull
+ * makes the file say what the Doc says, a push the reverse. It is not a
+ * read-only lock on the other side -- keeping one of your own blocks during
+ * a pull sends that block to the Doc, because an apply that left the two
+ * sides holding different content would make the next sync blind to the
+ * difference. The snapshots record what both sides agree on, so a divergence
+ * baked into them can never be found again.
+ */
+export type SyncDirection = 'push' | 'pull';
 
-/** One block both sides edited, which no algorithm can settle on its own. */
-export interface SyncConflict {
-  /** Position in the merged block list, used to apply the resolution. */
-  index: number;
-  /** The block as it stands in the local markdown file. */
-  local: string;
-  /** The block as it stands in the Google Doc. */
-  remote: string;
-}
+/**
+ * The two halves of carrying out a sync.
+ *
+ * 'preview' computes every difference and hands it back without touching
+ * either side; 'apply' takes the markdown the user settled on and makes both
+ * the file and the Doc hold it.
+ */
+export type SyncResolveMode = 'preview' | 'apply';
 
-/** What the user picked for a single conflicting block. */
+/** What the user picked for a single difference. */
 export type SyncConflictChoice = 'local' | 'remote' | 'both';
+
+/**
+ * What kind of difference a change represents.
+ *
+ * 'local-only' and 'remote-only' have an obvious default, but they are still
+ * reported: the user asked to see every difference before it is applied, and
+ * a silently-applied hunk is one they cannot decline.
+ */
+export type SyncChangeKind = 'conflict' | 'local-only' | 'remote-only';
+
+/** One difference between the file and the Doc, for the user to settle. */
+export interface SyncChange {
+  /** Position in the merged block list, used to apply the choice. */
+  index: number;
+  kind: SyncChangeKind;
+  /** The block as it stands in the local markdown file. Empty if absent. */
+  local: string;
+  /** The block as it stands in the Google Doc. Empty if absent. */
+  remote: string;
+  /** What happens if the user changes nothing. */
+  choice: SyncConflictChoice;
+}
 
 /** Result of a sync operation */
 export interface GoogleDocsSyncResult {
@@ -169,12 +200,35 @@ export interface GoogleDocsSyncResult {
 export interface GoogleDocsResolveResult extends GoogleDocsSyncResult {
   /** New content for the local markdown file, when the choice changed it. */
   markdown?: string;
-  /** Blocks the user must settle before a merge can finish. */
-  conflicts?: SyncConflict[];
+  /** Every difference between the file and the Doc, for the review screen. */
+  changes?: SyncChange[];
+  /**
+   * The merged document with each change at its default, one block per slot.
+   * The review screen substitutes into this to preview a different choice.
+   */
+  blocks?: string[];
+  /**
+   * The chosen direction has nothing to carry: a pull where the Doc has not
+   * moved, or a push where the file has not. Reported rather than applied
+   * silently, so the user gets an answer either way.
+   */
+  nothingToDo?: boolean;
+  /**
+   * Something of the user's is at stake -- their own edits during a pull, the
+   * Doc's during a push -- so the defaults must not be applied unseen.
+   */
+  needsReview?: boolean;
 }
 
 /** Which stage of a sync is running. */
-export type SyncPhase = 'reading' | 'converting' | 'diagrams' | 'applying' | 'tables' | 'done';
+export type SyncPhase =
+  | 'reading'
+  | 'converting'
+  | 'diagrams'
+  | 'applying'
+  | 'tables'
+  | 'formatting'
+  | 'done';
 
 /** A point in a sync's progress, as reported to the UI. */
 export interface SyncProgressUpdate {

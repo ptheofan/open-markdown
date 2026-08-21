@@ -143,11 +143,12 @@ export {
   createGoogleDocsSettings,
 } from './GoogleDocsSettings';
 
-// SyncConflictDialog
+// SyncReviewDialog
 export {
-  createSyncConflictDialog,
-  type SyncConflictDialog,
-} from './SyncConflictDialog';
+  createSyncReviewDialog,
+  type SyncReviewDialog,
+  type SyncReviewOutcome,
+} from './SyncReviewDialog';
 
 // SyncProgressBar
 export {

@@ -216,3 +216,37 @@ describe('convertDocsToMarkdown', () => {
     });
   });
 });
+
+describe('artefacts that make a document differ from itself', () => {
+  // Each of these produced a block with no counterpart in the markdown that
+  // built the Doc, so the merge reported a change on text nobody had touched.
+  it('drops an empty heading rather than emitting a bare marker', () => {
+    const md = convertDocsToMarkdown(doc([
+      para([{ text: 'Real\n' }], { namedStyleType: 'HEADING_2' }),
+      para([{ text: '\n' }], { namedStyleType: 'HEADING_2' }),
+      para([{ text: 'After\n' }]),
+    ]));
+
+    expect(md).toBe('### Real\n\nAfter\n');
+  });
+
+  it('drops an empty list item rather than emitting a bare dash', () => {
+    const md = convertDocsToMarkdown(doc([
+      para([{ text: 'one\n' }], undefined, { listId: 'L' }),
+      para([{ text: '\n' }], undefined, { listId: 'L' }),
+      para([{ text: 'two\n' }], undefined, { listId: 'L' }),
+    ]));
+
+    expect(md).toBe('- one\n- two\n');
+  });
+
+  it('leaves a lone tilde alone, since only a doubled one means anything', () => {
+    const md = convertDocsToMarkdown(doc([para([{ text: '~11 columns\n' }])]));
+    expect(md).toBe('~11 columns\n');
+  });
+
+  it('still escapes a doubled tilde, which would read as strikethrough', () => {
+    const md = convertDocsToMarkdown(doc([para([{ text: 'a ~~b~~ c\n' }])]));
+    expect(md).toContain('\\~~b');
+  });
+});

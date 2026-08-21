@@ -347,3 +347,32 @@ describe('GoogleDocsService', () => {
     });
   });
 });
+
+describe('when batchUpdate is rejected', () => {
+  it('names the request Google objected to, not just its index', async () => {
+    // "Invalid requests[6]" is unactionable on its own: the requests are
+    // built in reverse and never logged past the first three, so the one
+    // that failed is exactly the one nobody can see.
+    const requests = Array.from({ length: 8 }, (_, i) => ({
+      insertText: { text: `t${i}`, location: { index: i + 1 } },
+    })) as unknown as Parameters<GoogleDocsService['batchUpdate']>[1];
+    requests[6] = {
+      deleteContentRange: { range: { startIndex: 40, endIndex: 40 } },
+    } as (typeof requests)[number];
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      text: () => Promise.resolve(
+        '{"error":{"code":400,"message":"Invalid requests[6].deleteContentRange: '
+        + 'Invalid deletion range. Cannot delete the requested range."}}',
+      ),
+    }) as unknown as typeof fetch;
+
+    const service = new GoogleDocsService(() => Promise.resolve('token'));
+
+    await expect(service.batchUpdate('doc-1', requests)).rejects.toThrow(
+      /"startIndex":40,"endIndex":40/,
+    );
+  });
+});

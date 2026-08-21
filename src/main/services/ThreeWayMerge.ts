@@ -26,9 +26,9 @@
 
 import { diffArrays } from 'diff';
 import type { SyncChange, SyncChangeKind, SyncConflictChoice } from '@shared/types/google-docs';
-import { joinBlocks, applyResolutions } from '@shared/markdown/blocks';
+import { splitBlocks, joinBlocks, applyResolutions } from '@shared/markdown/blocks';
 
-export { joinBlocks, applyResolutions };
+export { splitBlocks, joinBlocks, applyResolutions };
 
 /** A replacement of a range of baseline blocks. */
 interface Edit {
@@ -57,50 +57,6 @@ export interface MergeOutcome {
   blocks: string[];
   /** Every difference found, in document order. */
   changes: SyncChange[];
-}
-
-/**
- * Split markdown into top-level blocks.
- *
- * Blocks are what the merge reasons about, so a fenced code block stays whole
- * even though it contains blank lines -- splitting it would let a merge insert
- * something into the middle of someone's code.
- */
-export function splitBlocks(md: string): string[] {
-  const blocks: string[] = [];
-  let current: string[] = [];
-  let fence: string | null = null;
-
-  const flush = (): void => {
-    while (current.length > 0 && current.at(-1)?.trim() === '') current.pop();
-    if (current.length > 0) blocks.push(current.join('\n'));
-    current = [];
-  };
-
-  for (const line of md.split('\n')) {
-    const fenceMatch = /^\s*(`{3,}|~{3,})/.exec(line);
-    if (fence !== null) {
-      current.push(line);
-      if (fenceMatch && line.trim().startsWith(fence)) {
-        fence = null;
-        flush();
-      }
-      continue;
-    }
-    if (fenceMatch?.[1] != null) {
-      flush();
-      fence = fenceMatch[1];
-      current.push(line);
-      continue;
-    }
-    if (line.trim() === '') {
-      flush();
-      continue;
-    }
-    current.push(line);
-  }
-  flush();
-  return blocks;
 }
 
 /**

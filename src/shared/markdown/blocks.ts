@@ -8,6 +8,100 @@
  */
 import type { SyncChange, SyncConflictChoice } from '@shared/types/google-docs';
 
+/** What sort of markdown line this is, for deciding where a block ends. */
+type LineKind = 'blank' | 'heading' | 'rule' | 'table' | 'list' | 'quote' | 'text';
+
+function lineKind(line: string): LineKind {
+  const trimmed = line.trim();
+  if (trimmed === '') return 'blank';
+  if (/^#{1,6}\s/.test(trimmed)) return 'heading';
+  if (/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)) return 'rule';
+  if (trimmed.startsWith('|')) return 'table';
+  if (/^([-*+]\s|\d+[.)]\s)/.test(trimmed)) return 'list';
+  if (trimmed.startsWith('>')) return 'quote';
+  return 'text';
+}
+
+/**
+ * Split markdown into top-level blocks.
+ *
+ * Blank lines are not the boundary -- structure is. Markdown written without
+ * any blank lines is perfectly legal and common (a heading, its paragraph and
+ * a table on consecutive lines), and splitting only on blank lines turns a
+ * whole section into one block. That matters because the Doc's reverse
+ * conversion always emits one block per paragraph: if the file is segmented
+ * differently, no block on one side ever equals a block on the other, nothing
+ * aligns, and every remote edit is reported as an insertion into a void.
+ *
+ * A fenced code block stays whole despite its blank lines -- splitting one
+ * would let a merge drop something into the middle of someone's code.
+ */
+export function splitBlocks(md: string): string[] {
+  const blocks: string[] = [];
+  let current: string[] = [];
+  let currentKind: LineKind | null = null;
+  let fence: string | null = null;
+
+  const flush = (): void => {
+    while (current.length > 0 && current.at(-1)?.trim() === '') current.pop();
+    if (current.length > 0) blocks.push(current.join('\n'));
+    current = [];
+    currentKind = null;
+  };
+
+  for (const line of md.split('\n')) {
+    const fenceMatch = /^\s*(`{3,}|~{3,})/.exec(line);
+
+    if (fence !== null) {
+      current.push(line);
+      if (fenceMatch && line.trim().startsWith(fence)) {
+        fence = null;
+        flush();
+      }
+      continue;
+    }
+
+    if (fenceMatch?.[1] != null) {
+      flush();
+      fence = fenceMatch[1];
+      current.push(line);
+      continue;
+    }
+
+    let kind = lineKind(line);
+
+    if (kind === 'blank') {
+      flush();
+      continue;
+    }
+
+    // A run of dashes under a paragraph is a setext heading, not a rule, and
+    // belongs to the line above it.
+    if (kind === 'rule' && currentKind === 'text') {
+      current.push(line);
+      flush();
+      continue;
+    }
+
+    // An indented line continues whatever run it sits under -- a wrapped list
+    // item, a nested bullet -- rather than starting a paragraph of its own.
+    if (currentKind !== null && /^[ \t]/.test(line)) kind = currentKind;
+
+    if (kind === 'heading' || kind === 'rule') {
+      flush();
+      blocks.push(line.trim());
+      continue;
+    }
+
+    if (currentKind !== null && currentKind !== kind) flush();
+    currentKind = kind;
+    current.push(line);
+  }
+
+  flush();
+  return blocks;
+}
+
 /**
  * Reassemble blocks into a markdown document.
  *

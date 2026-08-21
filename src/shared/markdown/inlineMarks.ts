@@ -9,8 +9,9 @@
 
 /** Characters that, appearing literally in rendered text, would be re-parsed
  *  as markdown syntax. Block-level characters (#, -, etc.) are intentionally
- *  not escaped — they are inert inside inline content. */
-const ESCAPE_RE = /([\\`*_~[\]])/g;
+ *  not escaped — they are inert inside inline content. A lone tilde is inert
+ *  too; only a doubled one opens strikethrough, so only that is escaped. */
+const ESCAPE_RE = /([\\`*_[\]]|~~)/g;
 
 export function escapeText(text: string): string {
   return text.replace(ESCAPE_RE, '\\$1');

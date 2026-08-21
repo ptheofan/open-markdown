@@ -227,3 +227,53 @@ describe('twoWayReview', () => {
     expect(joinBlocks(blocks)).toBe('one\n\ntwo THEIRS\n');
   });
 });
+
+describe('splitBlocks on markdown written without blank lines', () => {
+  // A real synced document had headings, prose and tables on consecutive
+  // lines with no blank line anywhere. Splitting only on blank lines turned
+  // whole sections into single blocks, so nothing lined up against the Doc's
+  // paragraph-per-block conversion and every remote edit looked like an
+  // insertion into a void.
+  it('splits a heading from the prose directly below it', () => {
+    expect(splitBlocks('# Title\nProse here\n')).toEqual(['# Title', 'Prose here']);
+  });
+
+  it('splits consecutive headings', () => {
+    expect(splitBlocks('# One\n## Two\n')).toEqual(['# One', '## Two']);
+  });
+
+  it('splits a table from the heading directly above it', () => {
+    expect(splitBlocks('### H\n| a | b |\n| --- | --- |\n| 1 | 2 |\n')).toEqual([
+      '### H',
+      '| a | b |\n| --- | --- |\n| 1 | 2 |',
+    ]);
+  });
+
+  it('splits a list from the prose directly above it', () => {
+    expect(splitBlocks('intro\n- a\n- b\n')).toEqual(['intro', '- a\n- b']);
+  });
+
+  it('splits prose that follows a table', () => {
+    expect(splitBlocks('| a |\n| --- |\nafter\n')).toEqual(['| a |\n| --- |', 'after']);
+  });
+
+  it('keeps consecutive prose lines as one paragraph, the way the Doc does', () => {
+    expect(splitBlocks('one line\ntwo line\n')).toEqual(['one line\ntwo line']);
+  });
+
+  it('splits a horizontal rule out on its own', () => {
+    expect(splitBlocks('intro\n\n---\nafter\n')).toEqual(['intro', '---', 'after']);
+  });
+
+  it('treats dashes under a line of prose as a setext heading, not a rule', () => {
+    expect(splitBlocks('Title\n---\nafter\n')).toEqual(['Title\n---', 'after']);
+  });
+
+  it('splits a blockquote from the prose above it', () => {
+    expect(splitBlocks('intro\n> quoted\n> more\n')).toEqual(['intro', '> quoted\n> more']);
+  });
+
+  it('splits a fence that starts immediately after prose', () => {
+    expect(splitBlocks('intro\n```ts\ncode\n```\n')).toEqual(['intro', '```ts\ncode\n```']);
+  });
+});

@@ -54,8 +54,16 @@ describe('serializeInline — links, breaks, nesting, escaping', () => {
   });
 
   it('escapes literal markdown characters in text nodes', () => {
-    expect(serializeInline(div('a literal * and _ and ` and ~ and [ and ]')))
-      .toBe('a literal \\* and \\_ and \\` and \\~ and \\[ and \\]');
+    expect(serializeInline(div('a literal * and _ and ` and [ and ]')))
+      .toBe('a literal \\* and \\_ and \\` and \\[ and \\]');
+  });
+
+  it('leaves a lone tilde alone but escapes a doubled one', () => {
+    // Only ~~ opens strikethrough. Escaping a single ~ made the Doc's
+    // reverse conversion differ from the markdown that produced it, so every
+    // paragraph holding one was reported as changed.
+    expect(serializeInline(div('about ~11 rows'))).toBe('about ~11 rows');
+    expect(serializeInline(div('not ~~struck~~ here'))).toBe('not \\~~struck\\~~ here');
   });
 
   it('does not escape inside inline code', () => {

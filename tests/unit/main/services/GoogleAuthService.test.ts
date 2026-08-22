@@ -14,6 +14,7 @@ vi.mock('electron', () => ({
   shell: { openExternal: vi.fn().mockResolvedValue(undefined) },
 }));
 
+import http from 'http';
 import { shell } from 'electron';
 import {
   GoogleAuthService,
@@ -107,6 +108,50 @@ describe('GoogleAuthService', () => {
       const pending = service.pickDocument();
       await respondOnCallback('code=auth-code');
       await expect(pending).resolves.toBeNull();
+    });
+  });
+
+
+  describe('when the loopback server cannot listen', () => {
+    // Under the macOS App Sandbox, listen() fails with EPERM unless the app
+    // carries com.apple.security.network.server. The MAS build did not, and
+    // the failure was doubly confusing: the server object was assigned before
+    // listen threw, so the *next* attempt saw a live-looking server, skipped
+    // startup, and sent Google a redirect_uri on port 0 -- which the browser
+    // then refused with ERR_UNSAFE_PORT.
+    function stubDeniedListen(): ReturnType<typeof vi.spyOn> {
+      const listen = (): never => {
+        const error: NodeJS.ErrnoException = new Error(
+          'listen EPERM: operation not permitted 0.0.0.0',
+        );
+        error.code = 'EPERM';
+        throw error;
+      };
+      return vi.spyOn(http, 'createServer').mockReturnValue({
+        listen,
+        address: () => null,
+        close: vi.fn(),
+        on: vi.fn(),
+      } as unknown as http.Server);
+    }
+
+    it('says which entitlement is missing instead of failing opaquely', async () => {
+      const spy = stubDeniedListen();
+      await expect(service.pickDocument()).rejects.toThrow(/network\.server/);
+      spy.mockRestore();
+    });
+
+    it('never sends Google a redirect on port 0', async () => {
+      const spy = stubDeniedListen();
+      vi.mocked(shell.openExternal).mockClear();
+
+      await expect(service.pickDocument()).rejects.toThrow();
+      // A second attempt must retry the listen, not reuse a dead server.
+      await expect(service.pickDocument()).rejects.toThrow();
+
+      expect(spy).toHaveBeenCalledTimes(2);
+      expect(shell.openExternal).not.toHaveBeenCalled();
+      spy.mockRestore();
     });
   });
 

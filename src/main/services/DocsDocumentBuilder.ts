@@ -665,6 +665,25 @@ function applyElementFormatting(
 
   // ── Inline text styles ───────────────────────────────────────
   if (elem.runs && elem.runs.length > 0) {
+    // Clear first. Replacement text is inserted with no styling of its own, so
+    // Docs gives it whatever the character before the insertion point had --
+    // land a block after a heading and every word of it comes out bold. Only
+    // runs that *want* a style are written below, so without this nothing ever
+    // takes the inherited one away.
+    requests.push({
+      updateTextStyle: {
+        range: { startIndex: apiPara.startIndex, endIndex: apiPara.endIndex },
+        textStyle: {
+          bold: false,
+          italic: false,
+          strikethrough: false,
+          link: null,
+          weightedFontFamily: null,
+        },
+        fields: 'bold,italic,strikethrough,link,weightedFontFamily',
+      },
+    });
+
     let runOffset = 0;
     for (const run of elem.runs) {
       const textStyle = buildTextStyleForRun(run);

@@ -221,6 +221,19 @@ function generateParagraphDiffOperations(
   return diffOpsToRequests(allOps, maxDeleteEnd);
 }
 
+/** A paragraph with nothing in it but its newline. */
+function isBlankParagraph(el: GDocsStructuralElement | undefined): boolean {
+  if (!el?.paragraph) return false;
+  const text = (el.paragraph.elements ?? []).map((pe) => pe.textRun?.content ?? '').join('');
+  return text.replace(/\n$/, '') === '';
+}
+
+/** Headings carry space below them, so they need no blank before a table. */
+function isHeading(el: GDocsStructuralElement): boolean {
+  const style = el.paragraph?.paragraphStyle?.['namedStyleType'];
+  return typeof style === 'string' && (style.startsWith('HEADING') || style === 'TITLE');
+}
+
 /**
  * Where each table, table of contents or section break begins.
  *
@@ -1250,34 +1263,79 @@ export class GoogleDocsSyncService {
    */
 
   /**
-   * Remove the blank paragraph Docs puts before a table.
+   * Bring the blank paragraphs in front of a structural element back to what
+   * the document should have: one after body text, which separates the two,
+   * and none after a heading, which already carries space below it.
    *
-   * insertTable always writes a newline ahead of the table, so the table starts
-   * one index after the requested location. This runs after the cells and
-   * widths, because deleting the newline shifts every index inside the table.
+   * They accumulate because Docs writes a newline ahead of every table it
+   * inserts, and because emptying a paragraph that precedes a table cannot
+   * take that paragraph's own newline with it.
+   *
+   * The obvious range is illegal. The blank's own newline is "the newline
+   * character before a Table", which Google refuses to delete unless the
+   * table goes too -- and the table is exactly what a comment-preserving sync
+   * protects. So the newlines above it go instead: the blanks merge upward,
+   * the surviving paragraph keeps the text and style of the one above, and
+   * the newline in front of the table is never touched.
+   *
+   * Returns the request for one element, or null when there is nothing to do.
+   */
+  private blankMergeRequest(
+    doc: GDocsApiDocument,
+    structuralStartIndex: number,
+  ): DocsBatchUpdateRequest | null {
+    const content = doc?.body?.content ?? [];
+    const at = content.findIndex((el) => el.startIndex === structuralStartIndex);
+    if (at < 1) return null;
+
+    let first = at;
+    while (first > 0 && isBlankParagraph(content[first - 1])) first--;
+    const blanks = at - first;
+    if (blanks === 0) return null;
+
+    const above = content[first - 1];
+    // Only a paragraph's newline can be taken. A table above ends in its own
+    // undeletable boundary, and the top of the body has nothing at all -- in
+    // either case the blanks stay, because deleting their own newlines is
+    // what Google refuses.
+    if (!above?.paragraph) return null;
+
+    const wanted = isHeading(above) ? 0 : 1;
+    const excess = blanks - wanted;
+    if (excess <= 0) return null;
+
+    const from = above.endIndex;
+    if (from == null || from - 1 < 1) return null;
+
+    return {
+      deleteContentRange: { range: { startIndex: from - 1, endIndex: from - 1 + excess } },
+    };
+  }
+
+  /**
+   * Apply blankMergeRequest to every table, table of contents and section
+   * break in the document.
    *
    * Failure is tolerated: the spacing is cosmetic and must not take down a
    * sync that has otherwise succeeded.
    */
-  private async removeLeadingBlankParagraph(
-    docId: string,
-    tableStartIndex: number,
-  ): Promise<void> {
-    // Index 1 is the start of the body; there is nothing before it to remove.
-    if (tableStartIndex <= 1) return;
-
+  private async removeBlanksBeforeStructuralElements(docId: string): Promise<void> {
     try {
-      await this.docsService.batchUpdate(docId, [
-        {
-          deleteContentRange: {
-            range: { startIndex: tableStartIndex - 1, endIndex: tableStartIndex },
-          },
-        },
-      ]);
+      const doc = await this.docsService.getDocument(docId);
+      // Bottom-up, so an earlier deletion cannot shift a later range.
+      const starts = [...structuralStartIndices(doc)].sort((a, b) => b - a);
+      const requests = starts
+        .map((start) => this.blankMergeRequest(doc, start))
+        .filter((r): r is DocsBatchUpdateRequest => r != null);
+
+      if (requests.length > 0) {
+        await this.docsService.batchUpdate(docId, requests);
+      }
     } catch (error) {
-      console.warn('[SyncService] Could not remove the blank line before a table:', error);
+      console.warn('[SyncService] Could not tidy the blank lines before a table:', error);
     }
   }
+
 
   private async populateTables(
     docId: string,
@@ -1354,10 +1412,9 @@ export class GoogleDocsSyncService {
         await this.docsService.batchUpdate(docId, allRequests);
       }
 
-      if (table.suppressLeadingBlank && tableEl.startIndex !== undefined) {
-        await this.removeLeadingBlankParagraph(docId, tableEl.startIndex);
-      }
     }
+
+    await this.removeBlanksBeforeStructuralElements(docId);
   }
 
   /**
@@ -1400,6 +1457,10 @@ export class GoogleDocsSyncService {
 
     // Phase 2: Structural element sync (tables and images)
     await this.syncStructuralElements(docId, newDocsDoc);
+
+    // Emptying a paragraph that sits in front of a table cannot take its
+    // newline with it, so the paragraph is left behind as a blank line.
+    await this.removeBlanksBeforeStructuralElements(docId);
 
     // Phase 3: Read doc back and apply formatting
     this.report('Applying formatting', 'formatting');
@@ -1863,9 +1924,6 @@ export class GoogleDocsSyncService {
       await this.docsService.batchUpdate(docId, allRequests);
     }
 
-    if (table.suppressLeadingBlank && tableEl.startIndex !== undefined) {
-      await this.removeLeadingBlankParagraph(docId, tableEl.startIndex);
-    }
   }
 
   /**

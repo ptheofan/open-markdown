@@ -282,7 +282,7 @@ class App {
       });
       this.syncProgressBar = createSyncProgressBar();
       this.googleDocsButton.setCallbacks({
-        onLinkRequest: () => { void this.handleGoogleDocsPickAndSync(); },
+        onLinkRequest: () => { void this.handleGoogleDocsPickTarget(); },
         onSignInRequest: () => { void this.handleGoogleDocsSignIn(); },
         onSyncRequest: (direction) => { void this.handleGoogleDocsSync(direction); },
         onShowProgressRequest: () => { this.syncProgressBar?.show(); },
@@ -1151,36 +1151,28 @@ class App {
   }
 
   /**
-   * Link the current file to a Google Doc chosen in the Google Picker, then sync.
+   * Point the current file at a Google Doc chosen in the Google Picker.
    *
-   * The picker runs through Google's consent screen, so it signs the user in as
-   * a side effect -- there is no separate sign-in step to sequence here.
+   * Linking only. Which way to reconcile the two sides is the user's call --
+   * they have a push button and a pull button, and picking a document says
+   * nothing about which one they want.
+   *
+   * The picker runs through Google's consent screen, so it signs the user in
+   * as a side effect -- there is no separate sign-in step to sequence here.
    */
-  private async handleGoogleDocsPickAndSync(): Promise<void> {
+  private async handleGoogleDocsPickTarget(): Promise<void> {
     if (!this.state.currentFilePath) return;
 
     try {
-      const before = await window.electronAPI.googleDocs.getLink(this.state.currentFilePath);
       const link = await window.electronAPI.googleDocs.pickAndLink(this.state.currentFilePath);
       await this.updateGoogleDocsButtonState();
-      if (!link) {
-        // Either the user closed the picker, or Google returned no selection.
-        // Say so rather than appearing to do nothing at all.
-        this.toast?.success('No document selected — nothing was linked.');
-        return;
-      }
-      if (before) {
-        // Re-pointing an already-linked file: which way to reconcile with the
-        // new document is the user's call, so stop here rather than pushing
-        // over whatever they just chose.
-        this.toast?.success(
-          before.docId === link.docId
-            ? 'Still linked to the same document.'
-            : 'Linked to the new document — push or pull to sync it.',
-        );
-        return;
-      }
-      await this.handleGoogleDocsSync('push');
+      // A closed picker or an empty selection is not a failure, but it must
+      // still say something rather than appear to do nothing at all.
+      this.toast?.success(
+        link
+          ? 'Linked — push or pull when you are ready.'
+          : 'No document selected — nothing was linked.',
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to link';
       this.toast?.error(message);

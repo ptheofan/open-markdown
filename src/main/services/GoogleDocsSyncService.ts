@@ -216,13 +216,26 @@ function generateParagraphDiffOperations(
 /**
  * Turn diff operations into batchUpdate requests.
  *
- * Emitted in reverse order so that every index an earlier request refers to is
- * still valid when it runs.
+ * Google applies a batch sequentially: each request sees the document as the
+ * previous ones left it. So the whole batch is ordered from the end of the
+ * document backwards -- nothing that runs earlier can then shift an index a
+ * later request depends on.
+ *
+ * Reversing the generated order is not enough. Operations are produced in
+ * document order, and a replacement emits its deletes before its insert; the
+ * reversal put the insert first, at the same index the deletes started from.
+ * That insert shifted every delete after it by its own length, so the deletes
+ * ate the newly inserted text and, past the end of the body, Google rejected
+ * the batch outright. Hence an explicit sort, with deletes winning ties: clear
+ * the old text out of a position before putting new text there.
  */
 function diffOpsToRequests(ops: DiffOp[], maxDeleteEnd?: number): DocsBatchUpdateRequest[] {
+  const ordered = [...ops].sort((a, b) =>
+    a.index !== b.index ? b.index - a.index : rankForSameIndex(a) - rankForSameIndex(b)
+  );
+
   const requests: DocsBatchUpdateRequest[] = [];
-  for (let i = ops.length - 1; i >= 0; i--) {
-    const op = ops[i]!;
+  for (const op of ordered) {
     if (op.type === 'delete') {
       let endIdx = op.endIndex ?? op.index;
       // Exclude the trailing newline from paragraph-level deletes only. A
@@ -247,6 +260,11 @@ function diffOpsToRequests(ops: DiffOp[], maxDeleteEnd?: number): DocsBatchUpdat
     }
   }
   return requests;
+}
+
+/** Deletes run before inserts at the same index; see diffOpsToRequests. */
+function rankForSameIndex(op: DiffOp): number {
+  return op.type === 'delete' ? 0 : 1;
 }
 
 // ── Structural element extraction from API doc ──────────��───────────

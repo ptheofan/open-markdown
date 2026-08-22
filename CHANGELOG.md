@@ -7,27 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-08-22
+
 ### Added
 
-- **Sync progress snackbar**: a bar at the bottom of the window reporting what a Google Docs sync is doing and how far along it is. Diagram uploads and table inserts each advance it, so the slowest part of a sync visibly moves instead of appearing to hang. Dismiss it with the ✕; clicking the spinning sync button brings it back, still tracking the sync in progress.
-
-### Fixed
-
-- **Syncing no longer leaves stray characters behind when a paragraph changes.** Every delete had one character trimmed off its range to avoid removing a paragraph's trailing newline, but character-level deletes inside a paragraph have no newline to trim — so the last character of every removed run survived. Correcting `**bold**` markers left a lone `*` in the document.
-
-### Changed
-
-- **Syncing now only sends what actually changed.** Formatting was re-applied to every paragraph on every sync — a paragraph-style request, one request per text run, and a colour reset, for the whole document — which on a large file meant thousands of no-op requests and dominated sync time. Paragraphs whose formatting already matches are now left untouched. A sync where nothing changed at all is detected up front and does no API work beyond reading the document.
-- **Diagrams are only uploaded when they change.** Each rendered image is remembered by a hash of its bytes, so an unchanged diagram reuses the file already in Drive instead of uploading a duplicate on every sync.
-
-### Fixed
-
-- **Saving straight from an open editor no longer loses the edit.** Text being typed only reaches the document when the editor commits, and committing is also what marks the document as changed. Save checked "is there anything to change?" before that happened, so an edit the user never clicked away from looked like no change at all: nothing was written to disk, exiting edit mode committed it into the view anyway, and the change was gone the next time the file was opened. Pending edits are now committed before the document is read or judged unchanged.
-- **Bolding a word mid-sentence no longer leaves literal asterisks.** Selecting a word by double-click takes its trailing space with it, so the editor wrapped `Testt2 ` rather than `Testt2` and wrote `**Testt2 **`. A closing `**` preceded by a space is not a valid CommonMark closer, so the markers survived as text instead of becoming bold. Emphasis markers are now placed inside any surrounding whitespace, for bold, italic and strikethrough alike.
+- **Google Docs sync** (experimental, off by default): link a markdown file to a Google Doc and keep the two in step. Enable under Preferences → Experimental Features.
+- **Comment-preserving sync**: paragraph-level diffing with character-level diffs inside modified paragraphs, so comments anchored to untouched text survive a sync. Unchanged paragraphs, tables and images are skipped entirely.
+- **Pull as well as push.** The toolbar has a button for each direction, so the app never decides which way to reconcile on the user's behalf. Either answers even when there is nothing to carry — "nothing to push" is a result, not silence.
+- **Review every difference before it is applied.** A three-pane merge screen lists each changed block with the file's version, the Doc's version and the result, and lets the user settle them one at a time. It appears only when something of theirs is at stake: their own edits during a pull, the Doc's during a push.
+- **A panel for the linked document.** Pull, push and "choose the document" are drawn as one segmented control. A sync disables the whole panel behind a single spinner rather than spinning each button, and the spinner stays clickable so a dismissed progress bar can be reopened. The target document can be changed at any time, not only before the first link.
+- **Sync progress snackbar**: a bar at the bottom of the window reporting what a sync is doing and how far along it is. Diagram uploads and table inserts each advance it, so the slowest part of a sync visibly moves instead of appearing to hang.
+- **Sign-in with Google** via OAuth2 with PKCE; tokens are encrypted at rest with the system keychain. Optional custom OAuth credentials for users who prefer their own Google Cloud project.
+- **Tables**, inserted with their inline formatting intact and their column widths matched to the proportions shown in the app.
+- **Mermaid diagrams**, rendered to images and uploaded, each with a link back to mermaid.live for editing.
+- **Code blocks**, shaded and set in Consolas with syntax colours computed locally. Untagged fences have their language detected against a constrained candidate list, and are left plain when detection is not confident.
+- **Google Docs section in Preferences** with sign-out and custom credential settings, shown whenever the feature is enabled or an account is still signed in.
 
 ### Changed
 
-- **Linking a file to a Google Doc now goes through Google's own file picker** instead of pasting a document URL. Picking a document is what grants access to it, so the app no longer needs the sensitive `documents` scope ("see, edit, create and delete all your Google Docs documents") and requests only per-file `drive.file` access.
+- **Linking a file to a Google Doc goes through Google's own file picker** instead of pasting a document URL. Picking a document is what grants access to it, so the app no longer needs the sensitive `documents` scope ("see, edit, create and delete all your Google Docs documents") and requests only per-file `drive.file` access.
+- **Choosing a document links it and stops there.** Picking a target says nothing about which way the user wants to reconcile, and there is a button for each.
+- **Syncing only sends what actually changed.** Formatting was re-applied to every paragraph on every sync — a paragraph-style request, one request per text run, and a colour reset, for the whole document — which on a large file meant thousands of no-op requests and dominated sync time. Paragraphs whose formatting already matches are left untouched, and a sync where nothing changed does no API work beyond reading the document.
+- **Diagrams are only uploaded when they change.** Each rendered image is remembered by a hash of its bytes, so an unchanged diagram reuses the file already in Drive.
+- **Diagrams are exported in light mode**, whatever theme the app is in, so a dark-theme window no longer produces unreadable images in the document.
+- **Preferences sidebar**: Experimental Features stays at the bottom, Reset to Defaults is pinned to the panel rather than riding up the scrolling list, and sections that exist only because an experimental feature is on carry an `exp` badge.
+
+### Fixed
+
+- **Sign-in and document picking work in the Mac App Store build.** Google's desktop OAuth flow redirects to a loopback HTTP server, and the sandbox denied `listen()` because the app carried `network.client` but not `network.server`. The failure compounded itself: the server was kept even though it never bound, so every later attempt skipped startup and sent Google a redirect on port 0, which browsers refuse outright.
+- **A wholesale rewrite no longer destroys the document.** Google applies a batch sequentially, each request seeing what the previous ones left. Ordering the batch by reversing the generated list put an insert ahead of the deletes it shared a position with, so every delete after it landed thousands of characters late — eating the newly inserted text and, past the end of the body, failing the whole request.
+- **A wrapped source line no longer costs a document its formatting.** A soft break became a literal newline, which `insertText` reads as the end of a paragraph rather than a line break. One paragraph became two, nothing after it matched its model element, and the text kept whatever style sat above the insertion point — an entire document rendered as headings.
+- **Pushed text no longer inherits the style above it.** Only runs that wanted a style were written, so text inserted with no styling of its own kept whatever `insertText` gave it. Bold, italic, strikethrough, link and font are now cleared before the real formatting goes on.
+- **Replaced paragraphs no longer leave blank lines behind.** Every delete stopped one character short — a blanket workaround for a restriction that applies only in front of a table, table of contents or section break, and at the end of the body.
+- **Blank lines in front of a table can finally be removed.** The old attempt deleted the newline the API refuses to touch unless the table goes with it, inside a `try/catch` that logged and moved on, so it never once worked. Merging the blank into the paragraph above it does the same job legally.
+- **Tables, rows and diagrams keep their identity.** They were matched by position, so deleting one table shifted every later one onto the wrong content and a restored row was appended at the bottom — moving every comment anchored below it. Tables now pair by header row, diagrams by their mermaid.live link, and rows by their cell content.
+- **Deletes no longer span a table.** Paragraph runs that look adjacent can have a whole table between them, and a range crossing one is refused outright.
+- **A markdown table written directly under a list item is recognised as a table**, rather than pushed into the document as literal pipe characters.
+- **Syncing no longer leaves stray characters behind when a paragraph changes.** Every delete had one character trimmed to protect a paragraph's trailing newline, but a character-level delete inside a paragraph has no newline to trim — so the last character of every removed run survived. Correcting `**bold**` markers left a lone `*` in the document.
+- **Saving straight from an open editor no longer loses the edit.** Text being typed only reaches the document when the editor commits, and committing is also what marks the document as changed. Save checked "is there anything to change?" before that happened, so an edit the user never clicked away from looked like no change at all. Pending edits are now committed before the document is read or judged unchanged.
+- **Bolding a word mid-sentence no longer leaves literal asterisks.** Selecting a word by double-click takes its trailing space with it, and a closing `**` preceded by a space is not a valid CommonMark closer. Emphasis markers are now placed inside any surrounding whitespace, for bold, italic and strikethrough alike.
+- Select All no longer picks up app chrome. The toolbar, status bar, find bar and drop zone are excluded, so Cmd+A copies the document and nothing else — including the find bar's own search term, which sits inside the viewer.
+- Mac App Store uploads no longer fail code-signing validation. The `keychain-access-groups` entitlement used the Xcode build variable `$(AppIdentifierPrefix)`, which nothing in this pipeline expands, so the literal text shipped as the group name and did not match the provisioning profile.
+- Window dragging works again across the whole toolbar. Both toolbar halves span the full width, and their `no-drag` region had covered the bar's own drag region, leaving nowhere to grab the window.
 
 ### Removed
 
@@ -36,25 +57,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Migration
 
 - Existing links created by pasting a URL will stop working, and signing in again is required. Re-link the affected files through the picker.
-
-## [1.5.0] - 2026-08-20
-
-### Added
-
-- **Google Docs sync** (experimental, off by default): link a markdown file to a Google Doc and push changes to it. Enable under Preferences → Experimental Features.
-- **Comment-preserving sync**: paragraph-level diffing with character-level diffs inside modified paragraphs, so comments anchored to untouched text survive a sync. Unchanged paragraphs, tables and images are skipped entirely.
-- **Sign-in with Google** via OAuth2 with PKCE; tokens are encrypted at rest with the system keychain. Optional custom OAuth credentials for users who prefer their own Google Cloud project.
-- **Tables**, inserted with their inline formatting intact and their column widths matched to the proportions shown in the app.
-- **Mermaid diagrams**, rendered to images and uploaded, each with a link back to mermaid.live for editing.
-- **Code blocks**, shaded and set in Consolas with syntax colours computed locally. Untagged fences have their language detected against a constrained candidate list, and are left plain when detection is not confident.
-- **Google Docs section in Preferences** with sign-out and custom credential settings, shown whenever the feature is enabled or an account is still signed in.
-
-### Fixed
-
-- Select All no longer picks up app chrome. The toolbar, status bar, find bar and drop zone are excluded, so Cmd+A copies the document and nothing else — including the find bar's own search term, which sits inside the viewer.
-- Mac App Store uploads no longer fail code-signing validation. The `keychain-access-groups` entitlement used the Xcode build variable `$(AppIdentifierPrefix)`, which nothing in this pipeline expands, so the literal text shipped as the group name and did not match the provisioning profile.
-- No blank line between a heading and a table that follows it. Google Docs always writes a newline before an inserted table, which after a heading left a gap on top of the heading's own spacing.
-- Window dragging works again across the whole toolbar. Both toolbar halves span the full width, and their `no-drag` region had covered the bar's own drag region, leaving nowhere to grab the window.
 
 ## [1.4.0] - 2026-05-16
 

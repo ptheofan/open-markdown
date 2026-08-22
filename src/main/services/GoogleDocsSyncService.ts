@@ -1294,14 +1294,17 @@ export class GoogleDocsSyncService {
     if (blanks === 0) return null;
 
     const above = content[first - 1];
-    // A table above, or the top of the body: no text to merge into, and no
-    // spacing to keep either.
-    const wanted = above?.paragraph && !isHeading(above) ? 1 : 0;
+    // Only a paragraph's newline can be taken. A table above ends in its own
+    // undeletable boundary, and the top of the body has nothing at all -- in
+    // either case the blanks stay, because deleting their own newlines is
+    // what Google refuses.
+    if (!above?.paragraph) return null;
+
+    const wanted = isHeading(above) ? 0 : 1;
     const excess = blanks - wanted;
     if (excess <= 0) return null;
 
-    // Nothing above to absorb them -- their own newlines are undeletable.
-    const from = above?.endIndex;
+    const from = above.endIndex;
     if (from == null || from - 1 < 1) return null;
 
     return {

@@ -136,4 +136,40 @@ describe('blank paragraphs in front of a table', () => {
     expect(deletesAt(await push(docWith('Title\n', 1, true)), 7)).toBe(false);
     expect(deletesAt(await push(docWith('Intro\n', 2)), 8)).toBe(false);
   });
+
+  it('leaves a blank between two tables alone', async () => {
+    // Nothing above it whose newline may be taken: a table ends in its own
+    // undeletable boundary. Reaching for it fails the whole request --
+    // "Cannot delete the requested range" against a real document.
+    const doc = {
+      body: {
+        content: [
+          {
+            startIndex: 1,
+            endIndex: 33,
+            table: {
+              tableRows: [
+                { tableCells: [{ content: [{ paragraph: { elements: [{ textRun: { content: 'A\n' } }] } }] }] },
+              ],
+            },
+          },
+          para('\n', 33),
+          {
+            startIndex: 34,
+            endIndex: 66,
+            table: {
+              tableRows: [
+                { tableCells: [{ content: [{ paragraph: { elements: [{ textRun: { content: 'B\n' } }] } }] }] },
+              ],
+            },
+          },
+        ],
+      },
+    };
+
+    const requests = await push(doc);
+
+    expect(deletesAt(requests, 32)).toBe(false); // the first table's last index
+    expect(deletesAt(requests, 33)).toBe(false); // the blank's own newline
+  });
 });

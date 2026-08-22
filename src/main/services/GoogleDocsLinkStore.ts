@@ -43,17 +43,33 @@ export class GoogleDocsLinkStore {
   }
 
   async setLink(filePath: string, docId: string): Promise<void> {
+    const previous = this.links[filePath]?.docId;
     this.links[filePath] = { docId, lastSyncedAt: null };
     await this.save();
+    // Pointing the file at another Doc strands the old one's snapshots: they
+    // are keyed by docId, and nothing would ever look at them again. Dropping
+    // them also puts the new Doc on the first-sync path, which is the honest
+    // state -- this pair has never been reconciled.
+    if (previous) await this.dropUnreferenced(previous);
   }
 
   async removeLink(filePath: string): Promise<void> {
     const link = this.links[filePath];
-    if (link) {
-      await this.deleteBaseline(link.docId);
-    }
     delete this.links[filePath];
     await this.save();
+    if (link) await this.dropUnreferenced(link.docId);
+  }
+
+  /**
+   * Delete a document's snapshots, unless another file is still linked to it.
+   *
+   * Links are many-to-one -- two files can target the same Doc -- so the last
+   * link to leave is the one that cleans up.
+   */
+  private async dropUnreferenced(docId: string): Promise<void> {
+    const stillUsed = Object.values(this.links).some((l) => l.docId === docId);
+    if (stillUsed) return;
+    await this.deleteBaseline(docId);
   }
 
   async updateLastSynced(filePath: string, timestamp: string): Promise<void> {

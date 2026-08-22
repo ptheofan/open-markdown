@@ -69,26 +69,37 @@
               <button id="cancel-edit-btn" class="dropdown-item">Cancel (discard changes)</button>
             </div>
           </div>
-          <!-- Google Docs: push and pull are separate so the button never
-               decides a direction on the user's behalf -->
-          <button id="gdocs-pull-btn" class="toolbar-btn" title="Pull from Google Doc" disabled>
-            <svg class="gdocs-icon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
-              <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
-            </svg>
-            <svg class="gdocs-spinner spinner-icon hidden" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M8 0a8 8 0 1 0 8 8h-1.5A6.5 6.5 0 1 1 8 1.5V0z"/>
-            </svg>
-          </button>
-          <button id="gdocs-sync-btn" class="toolbar-btn" title="Push to Google Doc" disabled>
-            <svg class="gdocs-icon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
-              <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708l3-3z"/>
-            </svg>
-            <svg class="gdocs-spinner spinner-icon hidden" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M8 0a8 8 0 1 0 8 8h-1.5A6.5 6.5 0 1 1 8 1.5V0z"/>
-            </svg>
-          </button>
+          <!-- Google Docs: one panel, because it is one linked document.
+               Push and pull are separate buttons so the app never decides a
+               direction on the user's behalf, and the third re-points the
+               file at another Doc. -->
+          <div id="gdocs-group" class="gdocs-group">
+            <button id="gdocs-pull-btn" class="toolbar-btn" title="Pull from Google Doc" disabled>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+                <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
+              </svg>
+            </button>
+            <button id="gdocs-sync-btn" class="toolbar-btn" title="Push to Google Doc" disabled>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+                <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708l3-3z"/>
+              </svg>
+            </button>
+            <button id="gdocs-target-btn" class="toolbar-btn" title="Choose the Google Doc to sync with" disabled>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M4.715 6.542 3.343 7.914a3 3 0 1 0 4.243 4.243l1.828-1.829A3 3 0 0 0 8.586 5.5L8 6.086a1 1 0 0 0-.154.199 2 2 0 0 1 .861 3.337L6.88 11.45a2 2 0 1 1-2.83-2.83l.793-.792a4 4 0 0 1-.128-1.287z"/>
+                <path d="M6.586 4.672A3 3 0 0 0 7.414 9.5l.775-.776a2 2 0 0 1-.896-3.346L9.12 3.55a2 2 0 1 1 2.83 2.83l-.793.792c.112.42.155.855.128 1.287l1.372-1.372a3 3 0 1 0-4.243-4.243L6.586 4.672z"/>
+              </svg>
+            </button>
+            <!-- One spinner for the whole panel: a sync is one operation, and
+                 it stays clickable so a dismissed progress bar can be reopened. -->
+            <button id="gdocs-busy" class="gdocs-busy hidden" title="Syncing — click to show progress">
+              <svg class="spinner-icon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M8 0a8 8 0 1 0 8 8h-1.5A6.5 6.5 0 1 1 8 1.5V0z"/>
+              </svg>
+            </button>
+          </div>
           <!-- Copy Document Dropdown -->
           <div id="copy-dropdown" class="toolbar-dropdown">
             <button id="copy-dropdown-btn" class="toolbar-btn toolbar-btn-dropdown" title="Copy document" disabled>

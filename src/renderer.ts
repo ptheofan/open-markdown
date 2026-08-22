@@ -266,13 +266,20 @@ class App {
       });
     }
 
-    // Create Google Docs button
+    // Create the Google Docs panel
+    const gdocsGroup = document.getElementById('gdocs-group');
     const gdocsSyncBtn = document.getElementById('gdocs-sync-btn') as HTMLButtonElement | null;
-    if (gdocsSyncBtn) {
-      this.googleDocsButton = createGoogleDocsButton(
-        gdocsSyncBtn,
-        document.getElementById('gdocs-pull-btn') as HTMLButtonElement | null,
-      );
+    const gdocsPullBtn = document.getElementById('gdocs-pull-btn') as HTMLButtonElement | null;
+    const gdocsTargetBtn = document.getElementById('gdocs-target-btn') as HTMLButtonElement | null;
+    const gdocsBusy = document.getElementById('gdocs-busy');
+    if (gdocsGroup && gdocsSyncBtn && gdocsPullBtn && gdocsTargetBtn && gdocsBusy) {
+      this.googleDocsButton = createGoogleDocsButton({
+        group: gdocsGroup,
+        push: gdocsSyncBtn,
+        pull: gdocsPullBtn,
+        target: gdocsTargetBtn,
+        busy: gdocsBusy,
+      });
       this.syncProgressBar = createSyncProgressBar();
       this.googleDocsButton.setCallbacks({
         onLinkRequest: () => { void this.handleGoogleDocsPickAndSync(); },
@@ -1153,12 +1160,24 @@ class App {
     if (!this.state.currentFilePath) return;
 
     try {
+      const before = await window.electronAPI.googleDocs.getLink(this.state.currentFilePath);
       const link = await window.electronAPI.googleDocs.pickAndLink(this.state.currentFilePath);
       await this.updateGoogleDocsButtonState();
       if (!link) {
         // Either the user closed the picker, or Google returned no selection.
         // Say so rather than appearing to do nothing at all.
         this.toast?.success('No document selected — nothing was linked.');
+        return;
+      }
+      if (before) {
+        // Re-pointing an already-linked file: which way to reconcile with the
+        // new document is the user's call, so stop here rather than pushing
+        // over whatever they just chose.
+        this.toast?.success(
+          before.docId === link.docId
+            ? 'Still linked to the same document.'
+            : 'Linked to the new document — push or pull to sync it.',
+        );
         return;
       }
       await this.handleGoogleDocsSync('push');

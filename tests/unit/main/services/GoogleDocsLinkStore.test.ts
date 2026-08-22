@@ -81,4 +81,42 @@ describe('GoogleDocsLinkStore', () => {
     const baseline = await store.loadBaseline('1aBcDeFg');
     expect(baseline).toBeNull();
   });
+
+  // Snapshots are keyed by docId while links are many-to-one: several files can
+  // point at the same Doc. So "is anyone else still using this?" is the only
+  // safe question to ask before deleting, on either path into it.
+
+  it('drops the old snapshots when a file is pointed at a different Doc', async () => {
+    await store.setLink('/some/file.md', 'doc-old');
+    await store.saveBaseline('doc-old', 'baseline content');
+    await store.saveModelFingerprint('doc-old', 'abc123');
+    await store.saveMarkdownSnapshots('doc-old', 'local', 'remote');
+
+    await store.setLink('/some/file.md', 'doc-new');
+
+    expect(await store.loadBaseline('doc-old')).toBeNull();
+    expect(await store.getModelFingerprint('doc-old')).toBeNull();
+    expect(await store.loadMarkdownSnapshots('doc-old')).toBeNull();
+  });
+
+  it('keeps snapshots another file is still linked to', async () => {
+    await store.setLink('/a.md', 'doc-shared');
+    await store.setLink('/b.md', 'doc-shared');
+    await store.saveBaseline('doc-shared', 'baseline content');
+
+    await store.setLink('/a.md', 'doc-new');
+    expect(await store.loadBaseline('doc-shared')).toBe('baseline content');
+
+    await store.removeLink('/b.md');
+    expect(await store.loadBaseline('doc-shared')).toBeNull();
+  });
+
+  it('keeps its own snapshots when re-linked to the same Doc', async () => {
+    await store.setLink('/some/file.md', 'doc-1');
+    await store.saveBaseline('doc-1', 'baseline content');
+
+    await store.setLink('/some/file.md', 'doc-1');
+
+    expect(await store.loadBaseline('doc-1')).toBe('baseline content');
+  });
 });

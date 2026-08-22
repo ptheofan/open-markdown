@@ -53,15 +53,9 @@ import type { DocsBatchUpdateRequest } from '@main/services/GoogleDocsService';
 interface DiffOp {
   type: 'delete' | 'insert';
   index: number;
+  /** Exclusive, and exact: whatever must survive is already excluded. */
   endIndex?: number;
   text?: string;
-  /**
-   * True for ranges *inside* a paragraph, which carry no trailing newline.
-   * Paragraph-level deletes have one and must exclude it; character-level
-   * deletes must not have their range shortened, or one character of every
-   * removed run survives.
-   */
-  withinParagraph?: boolean;
 }
 
 /**
@@ -82,7 +76,6 @@ function charDiffWithinParagraph(
         type: 'delete',
         index,
         endIndex: index + change.value.length,
-        withinParagraph: true,
       });
       index += change.value.length;
     } else if (change.added) {
@@ -103,7 +96,20 @@ function generateParagraphDiffOperations(
   apiParas: ApiParagraph[],
   modelElements: DocsElement[],
   docBodyEndIndex?: number,
+  structuralStarts?: ReadonlySet<number>,
 ): DocsBatchUpdateRequest[] {
+  // A paragraph's trailing newline usually goes with it -- stopping short
+  // leaves an empty paragraph where the content used to be. Two newlines
+  // cannot be removed, though: the one in front of a table (or table of
+  // contents, or section break), which Google refuses to delete unless the
+  // element goes too, and the one that ends the body, which every document
+  // must have. A run's end index is the following element's start, so a hit
+  // in structuralStarts is exactly that boundary.
+  const keepsNewline = (end: number): boolean =>
+    structuralStarts?.has(end) === true ||
+    (docBodyEndIndex != null && end >= docBodyEndIndex);
+  const deleteEndFor = (end: number): number => (keepsNewline(end) ? end - 1 : end);
+
   const oldTexts = apiParas.map(p => p.text.replace(/\n$/, ''));
   const newTexts = modelElements.map(e => getLeafText(e));
 
@@ -157,20 +163,27 @@ function generateParagraphDiffOperations(
           // exactly where something else lives.
           let runStart = apiParas[apiIdx]!.startIndex;
           let deleteEnd = apiParas[apiIdx]!.endIndex;
+          // Whether the run the new text lands in keeps its final newline.
+          let firstRunKeepsNewline: boolean | null = null;
           for (let i = 1; i < removedCount; i++) {
             const para = apiParas[apiIdx + i]!;
             if (para.startIndex !== deleteEnd) {
-              allOps.push({ type: 'delete', index: runStart, endIndex: deleteEnd });
+              firstRunKeepsNewline ??= keepsNewline(deleteEnd);
+              allOps.push({ type: 'delete', index: runStart, endIndex: deleteEndFor(deleteEnd) });
               runStart = para.startIndex;
             }
             deleteEnd = para.endIndex;
           }
-          allOps.push({ type: 'delete', index: runStart, endIndex: deleteEnd });
-          // Insert new paragraphs as text
+          firstRunKeepsNewline ??= keepsNewline(deleteEnd);
+          allOps.push({ type: 'delete', index: runStart, endIndex: deleteEndFor(deleteEnd) });
+          // Insert new paragraphs as text. When the run keeps its newline,
+          // that surviving newline terminates the last inserted paragraph --
+          // adding another would show up as a blank line.
           let newText = '';
           for (let i = 0; i < addedCount; i++) {
             newText += getLeafText(modelElements[modelIdx + i]!) + '\n';
           }
+          if (firstRunKeepsNewline) newText = newText.slice(0, -1);
           allOps.push({ type: 'insert', index: insertAt, text: newText });
           lastKeptEndIndex = deleteEnd;
           apiIdx += removedCount;
@@ -181,7 +194,11 @@ function generateParagraphDiffOperations(
         // ── REMOVED ONLY — delete paragraphs ──
         for (let i = 0; i < count; i++) {
           const para = apiParas[apiIdx]!;
-          allOps.push({ type: 'delete', index: para.startIndex, endIndex: para.endIndex });
+          allOps.push({
+            type: 'delete',
+            index: para.startIndex,
+            endIndex: deleteEndFor(para.endIndex),
+          });
           apiIdx++;
         }
       }
@@ -197,20 +214,29 @@ function generateParagraphDiffOperations(
     }
   }
 
-  // Build API requests in reverse order for index stability.
-  //
-  // Google Docs rule: deleteContentRange cannot include the trailing
-  // newline of any segment (body, table cell, section).  We handle this
-  // by subtracting 1 from endIndex on every delete — paragraph endIndex
-  // always includes the trailing `\n`, and the next paragraph's
-  // startIndex will be right after it, so the `\n` gets deleted when
-  // the adjacent paragraph is processed or stays as a harmless boundary.
-  //
-  // Additionally, clamp against the document body end to protect the
-  // mandatory document-ending newline.
+  // Every delete range is already exact. The clamp stays as a backstop: an
+  // off-by-one that reached Google would fail the whole batch.
   const maxDeleteEnd = docBodyEndIndex != null ? docBodyEndIndex - 1 : undefined;
 
   return diffOpsToRequests(allOps, maxDeleteEnd);
+}
+
+/**
+ * Where each table, table of contents or section break begins.
+ *
+ * These are the boundaries a paragraph delete has to stop short of: Google
+ * refuses to delete the newline in front of one unless the element goes with
+ * it, and the element is exactly what a sync is protecting -- comments anchor
+ * inside tables.
+ */
+function structuralStartIndices(apiDoc: GDocsApiDocument): Set<number> {
+  const starts = new Set<number>();
+  for (const el of apiDoc?.body?.content ?? []) {
+    if ((el.table || el.tableOfContents || el.sectionBreak) && el.startIndex != null) {
+      starts.add(el.startIndex);
+    }
+  }
+  return starts;
 }
 
 /**
@@ -238,13 +264,6 @@ function diffOpsToRequests(ops: DiffOp[], maxDeleteEnd?: number): DocsBatchUpdat
   for (const op of ordered) {
     if (op.type === 'delete') {
       let endIdx = op.endIndex ?? op.index;
-      // Exclude the trailing newline from paragraph-level deletes only. A
-      // character-level range has no newline to exclude, and shortening it
-      // leaves the last character of every removed run behind.
-      if (!op.withinParagraph) {
-        endIdx = endIdx - 1;
-      }
-      // Also clamp to doc body end
       if (maxDeleteEnd != null && endIdx > maxDeleteEnd) {
         endIdx = maxDeleteEnd;
       }
@@ -1368,7 +1387,12 @@ export class GoogleDocsSyncService {
     const modelElements = flattenElements(newDocsDoc.elements);
 
     const docBodyEndIndex = currentApiDoc?.body?.content?.at(-1)?.endIndex;
-    const operations = generateParagraphDiffOperations(apiParas, modelElements, docBodyEndIndex);
+    const operations = generateParagraphDiffOperations(
+      apiParas,
+      modelElements,
+      docBodyEndIndex,
+      structuralStartIndices(currentApiDoc),
+    );
     if (operations.length > 0) {
       console.warn('[SyncService] applyDiff: %d paragraph-diff operations', operations.length);
       await this.docsService.batchUpdate(docId, operations);

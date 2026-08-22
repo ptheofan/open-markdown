@@ -161,8 +161,10 @@ describe('generateParagraphDiffOperations', () => {
     const deletes = ops.filter((r) => r.deleteContentRange);
     expect(deletes.length).toBe(1);
     expect(deletes[0]!.deleteContentRange!.range.startIndex).toBe(6);
-    // endIndex excludes trailing newline (segment boundary protection)
-    expect(deletes[0]!.deleteContentRange!.range.endIndex).toBe(15);
+    // The whole paragraph goes, newline included -- another paragraph follows
+    // it, so there is no segment boundary to protect and nothing to leave a
+    // blank line behind.
+    expect(deletes[0]!.deleteContentRange!.range.endIndex).toBe(16);
   });
 
   it('should handle paragraph addition', () => {
@@ -386,18 +388,43 @@ describe('applying the batch the way Google does', () => {
       apiParas,
       model,
       1 + body.length,
+      new Set([11, 45]), // where each table starts
     ) as TestDocsRequest[];
 
     const result = applySequentially(body, requests, 1);
 
-    // The new text is there, none of the old prose is, and both tables are
-    // untouched. Each deleted run leaves its final newline behind -- a
-    // paragraph delete has to stop short of it, or it would take the newline
-    // before a table with it, which Google rejects.
-    expect(result).toContain('ZZZZ\nYYYY\n');
-    expect(result).not.toMatch(/AAAA|BBBB|CCCC|DDDD/);
-    expect(result).toContain(TABLE.repeat(29));
-    expect(result).toContain(TABLE.repeat(15));
-    expect(result.split(TABLE).join('')).toBe('ZZZZ\nYYYY\n\n\n\n');
+    // No blank line after the new content: the newline that has to survive in
+    // front of the table is the one that terminates it.
+    //
+    // The paragraph mark between the two tables is the only thing left over,
+    // and it cannot be removed -- deleting the newline before a table without
+    // deleting the table is invalid, and the table is what we are protecting.
+    // Same for the one that ends the body, which every document must have.
+    expect(result).toBe(
+      'ZZZZ\nYYYY\n' + TABLE.repeat(29) + '\n' + TABLE.repeat(15) + '\n',
+    );
+  });
+
+  it('leaves no blank line where a paragraph was removed', () => {
+    // Nothing structural follows the removed paragraph, so its newline goes
+    // with it. Stopping short would leave an empty paragraph behind.
+    const body = 'Keep\nDelete me\nAlso keep\n';
+    const apiParas: ApiParagraph[] = [
+      makePara('Keep', 1),
+      makePara('Delete me', 6),
+      makePara('Also keep', 16),
+    ];
+    const model: DocsElement[] = [
+      makeElem('paragraph', 'Keep'),
+      makeElem('paragraph', 'Also keep'),
+    ];
+
+    const requests = generateParagraphDiffOperations(
+      apiParas,
+      model,
+      1 + body.length,
+    ) as TestDocsRequest[];
+
+    expect(applySequentially(body, requests, 1)).toBe('Keep\nAlso keep\n');
   });
 });

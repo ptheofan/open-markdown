@@ -913,10 +913,12 @@ button:focus:not(:focus-visible) {
 /* Marks a section that exists only because an experimental feature is on. */
 .collapsible-badge {
   flex-shrink: 0;
+  /* Flex items sit flush against each other -- no whitespace to inherit. */
+  margin-left: 8px;
   padding: 1px 5px;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--warning-color);
   border-radius: 4px;
-  color: var(--text-muted);
+  color: var(--warning-color);
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.04em;

@@ -323,3 +323,81 @@ describe('character-level deletes inside a modified paragraph', () => {
     expect(applyToText(oldText, requests, 1)).toBe(newText);
   });
 });
+
+/**
+ * Google applies a batch sequentially: every request sees the document as the
+ * previous ones left it. An early insert therefore shifts every index a later
+ * request refers to -- which is what "Cannot delete the requested range" means
+ * when the shifted range runs off the end of the body.
+ */
+describe('applying the batch the way Google does', () => {
+  /** Structural elements the paragraph diff must never touch. */
+  const TABLE = '#';
+
+  interface Req {
+    deleteContentRange?: { range: { startIndex: number; endIndex: number } };
+    insertText?: { text: string; location: { index: number } };
+  }
+
+  /** Apply requests in order, refusing an out-of-range delete as Google does. */
+  function applySequentially(body: string, requests: Req[], base: number): string {
+    let out = body;
+    for (const r of requests) {
+      if (r.deleteContentRange) {
+        const { startIndex, endIndex } = r.deleteContentRange.range;
+        if (endIndex - base > out.length || startIndex < base || endIndex <= startIndex) {
+          throw new Error(
+            `Invalid deletion range. Cannot delete the requested range. ` +
+            `{${startIndex},${endIndex}} against a body of ${out.length + base}`,
+          );
+        }
+        out = out.slice(0, startIndex - base) + out.slice(endIndex - base);
+      } else if (r.insertText) {
+        const at = r.insertText.location.index - base;
+        out = out.slice(0, at) + r.insertText.text + out.slice(at);
+      }
+    }
+    return out;
+  }
+
+  it('replaces a document whose paragraphs are split by tables', () => {
+    // Two tables leave three runs of paragraphs. Replacing the lot emits one
+    // insert near the top and three deletes further down -- the exact shape
+    // that failed against a real document.
+    const body =
+      'AAAA\nBBBB\n' +          //  1..11
+      TABLE.repeat(29) +         // 11..40
+      'CCCC\n' +                // 40..45
+      TABLE.repeat(15) +         // 45..60
+      'DDDD\n';                 // 60..65
+
+    const apiParas: ApiParagraph[] = [
+      makePara('AAAA', 1),
+      makePara('BBBB', 6),
+      makePara('CCCC', 40),
+      makePara('DDDD', 60),
+    ];
+    const model: DocsElement[] = [
+      makeElem('paragraph', 'ZZZZ'),
+      makeElem('paragraph', 'YYYY'),
+    ];
+
+    const requests = generateParagraphDiffOperations(
+      apiParas,
+      model,
+      1 + body.length,
+    ) as TestDocsRequest[];
+
+    const result = applySequentially(body, requests, 1);
+
+    // The new text is there, none of the old prose is, and both tables are
+    // untouched. Each deleted run leaves its final newline behind -- a
+    // paragraph delete has to stop short of it, or it would take the newline
+    // before a table with it, which Google rejects.
+    expect(result).toContain('ZZZZ\nYYYY\n');
+    expect(result).not.toMatch(/AAAA|BBBB|CCCC|DDDD/);
+    expect(result).toContain(TABLE.repeat(29));
+    expect(result).toContain(TABLE.repeat(15));
+    expect(result.split(TABLE).join('')).toBe('ZZZZ\nYYYY\n\n\n\n');
+  });
+});

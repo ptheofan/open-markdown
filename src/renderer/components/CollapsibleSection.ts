@@ -8,6 +8,8 @@
 export interface CollapsibleSectionOptions {
   title: string;
   initiallyOpen?: boolean;
+  /** Short marker beside the title, e.g. 'exp' for an experimental feature. */
+  badge?: string;
 }
 
 /**
@@ -21,7 +23,7 @@ export class CollapsibleSection {
 
   constructor(options: CollapsibleSectionOptions) {
     this.isOpen = options.initiallyOpen ?? false;
-    this.element = this.createElement(options.title);
+    this.element = this.createElement(options.title, options.badge);
     this.header = this.element.querySelector('.collapsible-header')!;
     this.content = this.element.querySelector('.collapsible-content')!;
     this.setupEventListeners();
@@ -31,13 +33,14 @@ export class CollapsibleSection {
   /**
    * Create the DOM element
    */
-  private createElement(title: string): HTMLElement {
+  private createElement(title: string, badge?: string): HTMLElement {
     const section = document.createElement('div');
     section.className = 'collapsible-section';
 
     section.innerHTML = `
       <button class="collapsible-header" type="button">
         <span class="collapsible-title">${title}</span>
+        ${badge ? `<span class="collapsible-badge">${badge}</span>` : ''}
         <svg class="collapsible-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none">
           <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>

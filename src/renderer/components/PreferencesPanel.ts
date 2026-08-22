@@ -56,6 +56,7 @@ export class PreferencesPanel {
   private customCommandField: HTMLElement | null = null;
   private googleDocsSyncToggle: Toggle | null = null;
   private googleDocsSection: HTMLElement | null = null;
+  private experimentalSection: HTMLElement | null = null;
   private googleDocsClientIdField: HTMLElement | null = null;
   private googleDocsSignOutBtn: HTMLButtonElement | null = null;
   private googleDocsAuthStatus: HTMLElement | null = null;
@@ -90,9 +91,9 @@ export class PreferencesPanel {
         </header>
         <div class="preferences-content">
           <div class="preferences-sections"></div>
-          <div class="preferences-footer">
-            <button class="preferences-reset-btn" type="button">Reset to Defaults</button>
-          </div>
+        </div>
+        <div class="preferences-footer">
+          <button class="preferences-reset-btn" type="button">Reset to Defaults</button>
         </div>
       </aside>
     `;
@@ -273,7 +274,8 @@ export class PreferencesPanel {
     });
 
     section.setContent([this.googleDocsSyncToggle.getElement()]);
-    this.sectionsContainer.appendChild(section.getElement());
+    this.experimentalSection = section.getElement();
+    this.sectionsContainer.appendChild(this.experimentalSection);
   }
 
   /**
@@ -302,6 +304,9 @@ export class PreferencesPanel {
     const section = new CollapsibleSection({
       title: 'Google Docs',
       initiallyOpen: false,
+      // It exists only because the experimental toggle is on -- say so here,
+      // where the section is met, not only in the Experimental list.
+      badge: 'exp',
     });
 
     const fields: HTMLElement[] = [];
@@ -384,7 +389,14 @@ export class PreferencesPanel {
 
     section.setContent(fields);
     this.googleDocsSection = section.getElement();
-    this.sectionsContainer.appendChild(this.googleDocsSection);
+    // Experimental Features stays last: it is where the feature is turned on,
+    // so it reads as the bottom of the list. This section is built behind an
+    // await, so appending would land it below -- insert above it instead.
+    const before =
+      this.experimentalSection?.parentNode === this.sectionsContainer
+        ? this.experimentalSection
+        : null;
+    this.sectionsContainer.insertBefore(this.googleDocsSection, before);
 
     this.updateGoogleDocsAuthUI();
     this.updateGoogleDocsSectionVisibility();

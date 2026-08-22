@@ -312,12 +312,31 @@ export class GoogleAuthService {
   private startCallbackServerSync(): void {
     if (this.callbackServer) return;
 
-    this.callbackServer = http.createServer();
-    this.callbackServer.listen(0);
-    const address = this.callbackServer.address();
-    if (address && typeof address !== 'string') {
-      this.callbackPort = address.port;
+    // Assigned only once it is genuinely listening. Keeping a server that
+    // failed to bind would make the next attempt skip startup and build a
+    // redirect_uri on port 0, which browsers refuse outright.
+    const server = http.createServer();
+    try {
+      server.listen(0);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code ?? 'unknown error';
+      // EPERM here is the App Sandbox refusing to bind a listening socket.
+      // The raw error names neither the sandbox nor the entitlement, so say
+      // it plainly -- Google's desktop flow has no alternative to loopback.
+      throw new Error(
+        `Could not start the local sign-in callback server (${code}). ` +
+        'A sandboxed build needs the com.apple.security.network.server entitlement.'
+      );
     }
+
+    const address = server.address();
+    if (!address || typeof address === 'string' || address.port === 0) {
+      server.close();
+      throw new Error('The local sign-in callback server did not report a port.');
+    }
+
+    this.callbackServer = server;
+    this.callbackPort = address.port;
   }
 
   /**

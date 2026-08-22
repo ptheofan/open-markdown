@@ -32,6 +32,14 @@
     <!-- Network client - for loading remote images/resources in markdown -->
     <key>com.apple.security.network.client</key>
     <true/>
+    <!-- Network server - Google's OAuth flow for desktop apps redirects to a
+         loopback HTTP server we start on a random port. Without this the
+         sandbox denies listen() with EPERM and sign-in cannot complete.
+         Google no longer supports custom URI schemes, so loopback is the only
+         option. Nothing is reachable from outside: the socket is bound for the
+         seconds the browser round-trip takes and closed afterwards. -->
+    <key>com.apple.security.network.server</key>
+    <true/>
     <!-- Keychain access group - required for safeStorage to persist its
          Keychain ACL inside the sandbox without prompting on every launch.
          Used by GoogleAuthService to encrypt Google OAuth tokens at rest.

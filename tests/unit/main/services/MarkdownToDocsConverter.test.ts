@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { convertMarkdownToDocs } from '@main/services/MarkdownToDocsConverter';
+import { flattenElements, getLeafText } from '@main/services/DocsDocumentBuilder';
 
 describe('MarkdownToDocsConverter', () => {
   it('should convert a plain paragraph', () => {
@@ -169,5 +170,42 @@ describe('a table written directly under the line above it', () => {
     const doc = convertMarkdownToDocs('- item | with a pipe\n| still the same item\n');
 
     expect(doc.elements.map((e) => e.type)).toEqual(['list_item']);
+  });
+});
+
+describe('line breaks inside a paragraph', () => {
+  // A newline in a run's text is not a line break to Docs -- insertText splits
+  // it into a whole new paragraph. Every later paragraph then fails to match
+  // its model element, so nothing gets styled and the inserted text keeps
+  // whatever heading style it inherited. A soft-wrapped source file was enough
+  // to lose the formatting of an entire document.
+  const leafText = (md: string): string[] =>
+    flattenElements(convertMarkdownToDocs(md).elements).map((e) => getLeafText(e));
+
+  it('joins a soft-wrapped line with a space, as markdown renders it', () => {
+    expect(leafText('Scaffolds the thing if absent,\nthen reloads Caddy.\n')).toEqual([
+      'Scaffolds the thing if absent, then reloads Caddy.',
+    ]);
+  });
+
+  it('keeps a hard break inside the paragraph, as Docs spells it', () => {
+    // Docs writes a within-paragraph line break as a vertical tab.
+    expect(leafText('First line.  \nSecond line.\n')).toEqual([
+      'First line.\u000bSecond line.',
+    ]);
+  });
+
+  it('never leaves a newline in an inline element', () => {
+    const md = [
+      '# A heading that\nwraps',
+      '',
+      '- a list item that\n  wraps too',
+      '',
+      'Body text that\nwraps as well.',
+    ].join('\n');
+
+    for (const text of leafText(md)) {
+      expect(text).not.toContain('\n');
+    }
   });
 });

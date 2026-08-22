@@ -66,3 +66,11 @@ export const THEMES = {
   GITHUB_LIGHT: 'github-light',
   GITHUB_DARK: 'github-dark',
 } as const;
+
+/**
+ * How Google Docs spells a line break inside a paragraph (SHIFT+ENTER).
+ *
+ * A plain newline is not one: insertText ends the paragraph there and starts
+ * another, which breaks every later paragraph's match against the model.
+ */
+export const DOCS_LINE_BREAK = '\u000b';

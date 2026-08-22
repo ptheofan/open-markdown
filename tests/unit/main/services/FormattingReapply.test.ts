@@ -274,3 +274,63 @@ describe('buildFormattingFromApiDoc', () => {
     });
   });
 });
+
+describe('text inserted as plain text, which inherits the style before it', () => {
+  /** A paragraph whose every run is already bold, as Docs left it. */
+  function boldPara(text: string, startIndex: number): GDocsStructuralElement {
+    return {
+      paragraph: {
+        elements: [{ textRun: { content: text + '\n', textStyle: { bold: true } }, startIndex }],
+      },
+      startIndex,
+      endIndex: startIndex + text.length + 1,
+    };
+  }
+
+  // The paragraph diff inserts replacement text with no styling at all, and
+  // Docs gives it whatever the character before the insertion point had. Land
+  // that after a heading and the whole block comes out bold. Only runs that
+  // *want* a style used to be written, so nothing ever took the bold away.
+  const apiDoc: GDocsApiDocument = {
+    body: { content: [boldPara('enabled/ — flat labels', 1)] },
+  };
+  const docsDoc: DocsDocument = {
+    elements: [
+      {
+        type: 'paragraph',
+        runs: [
+          { text: 'enabled/', bold: true },
+          { text: ' — flat labels' },
+        ],
+      },
+    ],
+  };
+
+  it('clears the inherited styles across the paragraph', () => {
+    const requests = buildFormattingFromApiDoc(apiDoc, docsDoc);
+
+    const reset = requests.filter(hasTextStyle).find(
+      (r) => r.updateTextStyle.fields.includes('bold') &&
+        r.updateTextStyle.textStyle['bold'] !== true,
+    );
+    expect(reset).toBeDefined();
+    expect(reset!.updateTextStyle.fields).toContain('italic');
+    expect(reset!.updateTextStyle.fields).toContain('weightedFontFamily');
+  });
+
+  it('clears before it styles, so the runs that want bold keep it', () => {
+    const requests = buildFormattingFromApiDoc(apiDoc, docsDoc);
+    const styles = requests.filter(hasTextStyle);
+
+    const resetAt = styles.findIndex(
+      (r) => r.updateTextStyle.fields.includes('bold') &&
+        r.updateTextStyle.textStyle['bold'] !== true,
+    );
+    const boldAt = styles.findIndex((r) => r.updateTextStyle.textStyle['bold'] === true);
+
+    expect(resetAt).toBeGreaterThanOrEqual(0);
+    expect(boldAt).toBeGreaterThan(resetAt);
+    // ...and only over "enabled/", not the whole paragraph.
+    expect(styles[boldAt]!.updateTextStyle.range).toEqual({ startIndex: 1, endIndex: 9 });
+  });
+});

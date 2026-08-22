@@ -69,6 +69,9 @@ export interface GDocsStructuralElement {
   paragraph?: GDocsParagraph;
   table?: GDocsTable;
   sectionBreak?: Record<string, unknown>;
+  /** Never written by this app, but a user's document may already have one,
+   *  and it shares a table's deletion restrictions. */
+  tableOfContents?: Record<string, unknown>;
 }
 
 interface GDocsBody {

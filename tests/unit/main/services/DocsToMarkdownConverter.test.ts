@@ -250,3 +250,24 @@ describe('artefacts that make a document differ from itself', () => {
     expect(md).toContain('\\~~b');
   });
 });
+
+describe('a line break inside a paragraph', () => {
+  it('comes back as a markdown hard break, not a control character', () => {
+    // Docs spells a within-paragraph break as a vertical tab. Left raw it
+    // would read as a difference against the file on every later sync.
+    const md = convertDocsToMarkdown({
+      body: {
+        content: [
+          {
+            startIndex: 1,
+            endIndex: 26,
+            paragraph: { elements: [{ textRun: { content: 'First line.\u000bSecond line.\n' } }] },
+          },
+        ],
+      },
+    });
+
+    expect(md).not.toContain('\u000b');
+    expect(md).toContain('First line.  \nSecond line.');
+  });
+});

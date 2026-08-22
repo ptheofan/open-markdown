@@ -23,6 +23,7 @@
  */
 
 import { delimit, escapeText } from '@shared/markdown/inlineMarks';
+import { DOCS_LINE_BREAK } from '@shared/constants';
 import { CODE_FONT_FAMILY } from './DocsDocumentBuilder';
 import type {
   GDocsApiDocument,
@@ -51,7 +52,10 @@ function readRuns(el: GDocsStructuralElement): Run[] {
     const ts = (pe.textRun?.textStyle ?? {}) as StyleBag;
     const family = (ts['weightedFontFamily'] as { fontFamily?: string } | undefined)?.fontFamily;
     runs.push({
-      text: content,
+      // A vertical tab is a line break inside the paragraph; markdown spells
+      // that as two spaces and a newline. Leaving it as a raw control
+      // character would show up as a difference on every later sync.
+      text: content.split(DOCS_LINE_BREAK).join('  \n'),
       bold: ts['bold'] === true,
       italic: ts['italic'] === true,
       strikethrough: ts['strikethrough'] === true,

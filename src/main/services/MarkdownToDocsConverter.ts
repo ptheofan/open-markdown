@@ -5,6 +5,7 @@
  * to build an array of DocsElement objects suitable for the Google Docs API.
  */
 import MarkdownIt from 'markdown-it';
+import { DOCS_LINE_BREAK } from '@shared/constants';
 import type Token from 'markdown-it/lib/token.mjs';
 import type { DocsDocument, DocsElement, DocsTextRun } from '@shared/types/google-docs';
 
@@ -62,9 +63,18 @@ function parseInlineTokens(children: Token[]): DocsTextRun[] {
       case 'link_close':
         link = undefined;
         break;
+      // A newline inside a run is not a line break to Docs: insertText ends
+      // the paragraph there and starts another. Every later paragraph then
+      // fails to match its model element, so nothing is styled and the text
+      // keeps whatever it inherited. A soft-wrapped source file was enough to
+      // lose the formatting of a whole document.
       case 'softbreak':
+        // Markdown renders a wrapped line as a single space.
+        runs.push({ text: ' ' });
+        break;
       case 'hardbreak':
-        runs.push({ text: '\n' });
+        // Docs spells a within-paragraph line break as a vertical tab.
+        runs.push({ text: DOCS_LINE_BREAK });
         break;
       case 'image':
         // Inline images: use alt text from children content, src from attrs

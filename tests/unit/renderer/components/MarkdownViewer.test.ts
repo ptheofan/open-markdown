@@ -76,8 +76,11 @@ describe('MarkdownViewer link handling', () => {
   let container: HTMLElement;
   let viewer: MarkdownViewer;
   let openExternal: ReturnType<typeof vi.fn>;
+  let openLocalFile: ReturnType<typeof vi.fn>;
+  let checkLinks: ReturnType<typeof vi.fn>;
   let resolvePath: ReturnType<typeof vi.fn>;
   let onOpenLocalFile: ReturnType<typeof vi.fn>;
+  let onOpenLightbox: ReturnType<typeof vi.fn>;
   let scrollIntoView: ReturnType<typeof vi.fn>;
 
   const BASE = '/docs/project/README.md';
@@ -87,8 +90,11 @@ describe('MarkdownViewer link handling', () => {
     container = document.getElementById('markdown-content')!;
 
     openExternal = vi.fn();
+    openLocalFile = vi.fn().mockResolvedValue({ success: true });
+    checkLinks = vi.fn().mockResolvedValue({});
     resolvePath = vi.fn();
     onOpenLocalFile = vi.fn();
+    onOpenLightbox = vi.fn();
     scrollIntoView = vi.fn();
     Element.prototype.scrollIntoView = scrollIntoView;
 
@@ -98,12 +104,14 @@ describe('MarkdownViewer link handling', () => {
     };
 
     (window as unknown as { electronAPI: unknown }).electronAPI = {
-      shell: { openExternal },
+      shell: { openExternal, openLocalFile },
       assets: { resolve: vi.fn(() => null), resolvePath },
+      file: { checkLinks, resolveReferences: vi.fn().mockResolvedValue({}) },
     };
 
     viewer = createMarkdownViewer(container);
     viewer.setOnOpenLocalFile(onOpenLocalFile);
+    viewer.setOnOpenLightbox(onOpenLightbox);
   });
 
   /** Click the first link in the rendered document, returning the event. */
@@ -144,7 +152,19 @@ describe('MarkdownViewer link handling', () => {
     clickLink();
 
     expect(resolvePath).toHaveBeenCalledWith(BASE, './guide.md');
-    expect(onOpenLocalFile).toHaveBeenCalledWith('/docs/project/guide.md', null);
+    expect(onOpenLocalFile).toHaveBeenCalledWith('/docs/project/guide.md', null, { newWindow: false });
+  });
+
+  it('asks for a new window on a Cmd/Ctrl-click', async () => {
+    resolvePath.mockReturnValue('/docs/project/guide.md');
+    await viewer.render('[guide](./guide.md)', BASE);
+
+    const anchor = container.querySelector('a')!;
+    anchor.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0, metaKey: true }));
+    expect(onOpenLocalFile).toHaveBeenLastCalledWith('/docs/project/guide.md', null, { newWindow: true });
+
+    anchor.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0, ctrlKey: true }));
+    expect(onOpenLocalFile).toHaveBeenLastCalledWith('/docs/project/guide.md', null, { newWindow: true });
   });
 
   it('passes the fragment along so the new file scrolls to the section', async () => {
@@ -155,21 +175,61 @@ describe('MarkdownViewer link handling', () => {
 
     expect(onOpenLocalFile).toHaveBeenCalledWith(
       '/docs/project/guide.md',
-      'getting started'
+      'getting started',
+      { newWindow: false }
     );
   });
 
   // Negative cases: the handler must stay silent on everything else, while
   // still swallowing the navigation that would blank the app.
 
-  it('does not open a local file that is not markdown', async () => {
+  it('hands a local file that is not markdown to the system instead', async () => {
     resolvePath.mockReturnValue('/docs/project/notes.txt');
     await viewer.render('[notes](./notes.txt)', BASE);
 
     const event = clickLink();
 
     expect(onOpenLocalFile).not.toHaveBeenCalled();
+    expect(openLocalFile).toHaveBeenCalledWith('/docs/project/notes.txt');
     expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('reports when the system refuses the file', async () => {
+    resolvePath.mockReturnValue('/docs/project/run.sh');
+    openLocalFile.mockResolvedValue({ success: false, error: 'Executable files are not opened from links' });
+    await viewer.render('[run](./run.sh)', BASE);
+
+    clickLink();
+    await vi.waitFor(() =>
+      expect(document.querySelector('.toast-error')?.textContent).toContain('Executable files')
+    );
+  });
+
+  it('marks links to files that are not there, with the path it looked for', async () => {
+    checkLinks.mockResolvedValue({
+      './gone.md': { path: '/docs/project/gone.md', exists: false },
+      './here.md': { path: '/docs/project/here.md', exists: true },
+    });
+    await viewer.render('[a](./gone.md) [b](./here.md) [c](https://x.y) [d](#top)', BASE);
+    await vi.waitFor(() => expect(container.querySelector('.local-link-broken')).not.toBeNull());
+
+    expect(checkLinks).toHaveBeenCalledWith(BASE, ['./gone.md', './here.md']);
+    const [gone, here] = Array.from(container.querySelectorAll('a'));
+    expect(gone?.title).toBe('Not found: /docs/project/gone.md');
+    expect(here?.classList.contains('local-link-broken')).toBe(false);
+    expect(here?.title).toBe('/docs/project/here.md');
+  });
+
+  it('opens a clicked image in the lightbox, but not one inside a link', async () => {
+    await viewer.render('![shot](./shot.png)\n\n[![badge](./badge.png)](https://x.y)', BASE);
+
+    const [shot, badge] = Array.from(container.querySelectorAll('img'));
+    shot!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+    expect(onOpenLightbox).toHaveBeenCalledWith({ src: expect.stringContaining('shot.png'), caption: 'shot' });
+
+    badge!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+    expect(onOpenLightbox).toHaveBeenCalledTimes(1);
+    expect(openExternal).toHaveBeenCalledWith('https://x.y');
   });
 
   it('does nothing when the reference does not resolve to a local file', async () => {

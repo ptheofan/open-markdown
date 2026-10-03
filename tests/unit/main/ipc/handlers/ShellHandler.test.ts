@@ -7,6 +7,7 @@ import { spawn } from 'child_process';
 import { IPC_CHANNELS } from '@shared/types/api';
 import {
   buildEditorCommand,
+  isExecutablePath,
   registerShellHandlers,
   unregisterShellHandlers,
 } from '@main/ipc/handlers/ShellHandler';
@@ -471,5 +472,16 @@ describe('buildEditorCommand', () => {
 
   it('quotes paths with spaces and quotes', () => {
     expect(buildEditorCommand('vscode', '', "/a/my file's.md")).toBe(`code '/a/my file'\\''s.md'`);
+  });
+});
+
+describe('isExecutablePath', () => {
+  it('names the files the system would run rather than show', () => {
+    for (const p of ['/a/b.sh', '/a/b.EXE', '/a/b.command', '/a/Thing.app', '/a/b.py', '/a/b.jar']) {
+      expect(isExecutablePath(p), p).toBe(true);
+    }
+    for (const p of ['/a/b.pdf', '/a/b.png', '/a/b.txt', '/a/b.docx', '/a/b', '/a/b.json']) {
+      expect(isExecutablePath(p), p).toBe(false);
+    }
   });
 });

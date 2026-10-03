@@ -8,6 +8,8 @@ import {
   findGitRoot,
   resolveFileReference,
   resolveFileReferences,
+  resolveRelativeLink,
+  resolveRelativeLinks,
   type ReferenceProbe,
 } from '@main/services/FileReferenceResolver';
 
@@ -89,5 +91,41 @@ describe('resolveFileReferences', () => {
     const probe = fakeFs(['/repo/src/app.ts'], ['/repo/.git']);
     const result = await resolveFileReferences(['src/app.ts', 'src/app.ts', 'missing.md'], DOC, { probe });
     expect(result).toEqual({ 'src/app.ts': '/repo/src/app.ts', 'missing.md': null });
+  });
+});
+
+describe('resolveRelativeLink', () => {
+  const probe = fakeFs(['/repo/docs/guide.md', '/repo/docs/img/a b.png', '/repo/README.md'], []);
+
+  it('resolves against the document folder and says whether the file is there', async () => {
+    expect(await resolveRelativeLink('./guide.md', DOC.replace('/plans/plan.md', '/plan.md'), probe)).toEqual({
+      path: '/repo/docs/guide.md',
+      exists: true,
+    });
+    expect(await resolveRelativeLink('../README.md', '/repo/docs/plan.md', probe)).toEqual({
+      path: '/repo/README.md',
+      exists: true,
+    });
+    expect(await resolveRelativeLink('missing.md', '/repo/docs/plan.md', probe)).toEqual({
+      path: '/repo/docs/missing.md',
+      exists: false,
+    });
+  });
+
+  it('ignores fragments and queries and decodes percent-encoding', async () => {
+    expect(await resolveRelativeLink('guide.md#install?x=1', '/repo/docs/plan.md', probe)).toMatchObject({ exists: true });
+    expect(await resolveRelativeLink('img/a%20b.png', '/repo/docs/plan.md', probe)).toMatchObject({ exists: true });
+  });
+
+  it('is null for anchors, URLs and empty hrefs', async () => {
+    expect(await resolveRelativeLink('#top', '/repo/docs/plan.md', probe)).toBeNull();
+    expect(await resolveRelativeLink('https://x.y/a.md', '/repo/docs/plan.md', probe)).toBeNull();
+    expect(await resolveRelativeLink('mailto:a@b.c', '/repo/docs/plan.md', probe)).toBeNull();
+    expect(await resolveRelativeLink('', '/repo/docs/plan.md', probe)).toBeNull();
+  });
+
+  it('resolves many, keyed as written', async () => {
+    const result = await resolveRelativeLinks(['guide.md', '#top', 'guide.md'], '/repo/docs/plan.md', probe);
+    expect(result).toEqual({ 'guide.md': { path: '/repo/docs/guide.md', exists: true }, '#top': null });
   });
 });

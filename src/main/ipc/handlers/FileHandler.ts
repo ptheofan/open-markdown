@@ -4,7 +4,9 @@
 import { ipcMain, BrowserWindow } from 'electron';
 
 import { getFileService } from '../../services/FileService';
-import { resolveFileReferences } from '../../services/FileReferenceResolver';
+import { resolveFileReferences, resolveRelativeLinks } from '../../services/FileReferenceResolver';
+
+import type { LinkTarget } from '@shared/types/api';
 import { getFileWatcherService } from '../../services/FileWatcherService';
 import { getPreferencesService } from '../../services/PreferencesService';
 import { getWindowManager } from '@main/window/WindowManager';
@@ -62,6 +64,18 @@ export function registerFileHandlers(): void {
         refs.filter((ref): ref is string => typeof ref === 'string').slice(0, 500),
         documentPath,
         { projectRoot }
+      );
+    }
+  );
+
+  // Which of a document's relative links point at files that exist
+  ipcMain.handle(
+    IPC_CHANNELS.FILE.CHECK_LINKS,
+    async (_event, documentPath: string, hrefs: string[]): Promise<Record<string, LinkTarget | null>> => {
+      if (typeof documentPath !== 'string' || !Array.isArray(hrefs)) return {};
+      return resolveRelativeLinks(
+        hrefs.filter((h): h is string => typeof h === 'string').slice(0, 500),
+        documentPath
       );
     }
   );
@@ -150,6 +164,7 @@ export function unregisterFileHandlers(): void {
   ipcMain.removeHandler(IPC_CHANNELS.FILE.OPEN_DIALOG);
   ipcMain.removeHandler(IPC_CHANNELS.FILE.RESOLVE_PATH);
   ipcMain.removeHandler(IPC_CHANNELS.FILE.RESOLVE_REFERENCES);
+  ipcMain.removeHandler(IPC_CHANNELS.FILE.CHECK_LINKS);
   ipcMain.removeHandler(IPC_CHANNELS.FILE.READ);
   ipcMain.removeHandler(IPC_CHANNELS.FILE.WRITE);
   ipcMain.removeHandler(IPC_CHANNELS.FILE.WATCH);

@@ -2675,6 +2675,264 @@ pre.sync-merge-cell {
 }
 
 /* ===========================================
+   Navigation: back/forward, broken links, quick switcher, lightbox, diagrams
+   =========================================== */
+
+.toolbar-nav {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.toolbar-nav .toolbar-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* A link to a local file that is not there */
+.markdown-body a.local-link-broken {
+  color: var(--error-text);
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+.quick-switcher {
+  position: fixed;
+  inset: 0;
+  z-index: 3001;
+  display: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.quick-switcher-visible {
+  display: block;
+}
+
+.quick-switcher-backdrop {
+  position: absolute;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.35);
+}
+
+.quick-switcher-panel {
+  position: absolute;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(620px, calc(100% - 48px));
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.quick-switcher-input {
+  width: 100%;
+  padding: 12px 14px;
+  border: none;
+  border-bottom: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-color);
+  font-size: 15px;
+  outline: none;
+}
+
+.quick-switcher-list {
+  list-style: none;
+  margin: 0;
+  padding: 6px 0;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.quick-switcher-item {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 14px;
+  cursor: pointer;
+}
+
+.quick-switcher-item:hover {
+  background-color: var(--hover-bg);
+}
+
+.quick-switcher-item-selected,
+.quick-switcher-item-selected:hover {
+  background-color: var(--active-bg);
+}
+
+.quick-switcher-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+.quick-switcher-badge {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+}
+
+.quick-switcher-path {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.quick-switcher-empty {
+  padding: 16px 14px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.quick-switcher-hint {
+  padding: 6px 14px;
+  border-top: 1px solid var(--border-color);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 3002;
+  display: flex;
+  flex-direction: column;
+  background-color: rgba(0, 0, 0, 0.88);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.lightbox-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 10px 14px;
+}
+
+.lightbox-btn {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.lightbox-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.lightbox-zoom {
+  min-width: 48px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 12px;
+}
+
+.lightbox-stage {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  cursor: zoom-out;
+}
+
+.lightbox-stage-zoomed {
+  cursor: grab;
+}
+
+.lightbox-picture {
+  max-width: none;
+  max-height: none;
+  transform-origin: center center;
+  transition: transform 0.08s ease-out;
+  cursor: default;
+  background-color: #fff;
+}
+
+.lightbox-stage-zoomed .lightbox-picture {
+  cursor: grab;
+}
+
+.lightbox-caption {
+  padding: 10px 14px 14px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.markdown-body .mermaid-container {
+  position: relative;
+}
+
+.markdown-body .mermaid-container.diagram-zoomed {
+  overflow: hidden;
+  cursor: grab;
+}
+
+.markdown-body .mermaid-container svg {
+  transition: transform 0.08s ease-out;
+}
+
+.diagram-toolbar {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.mermaid-container:hover .diagram-toolbar,
+.diagram-toolbar:focus-within {
+  opacity: 1;
+}
+
+.diagram-btn {
+  min-width: 26px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background-color: var(--bg-color);
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.diagram-btn:hover {
+  color: var(--text-color);
+  background-color: var(--hover-bg);
+}
+
+/* ===========================================
    Export dialog
    =========================================== */
 

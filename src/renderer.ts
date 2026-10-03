@@ -26,6 +26,8 @@ import {
   createSyncProgressBar,
   createSyncReviewDialog,
   createExportDialog,
+  createQuickSwitcher,
+  createLightbox,
   Toast,
   type MarkdownViewer,
   type DropZone,
@@ -47,6 +49,8 @@ import {
   type SyncReviewOutcome,
   type ExportDialog,
   type ExportKind,
+  type QuickSwitcher,
+  type Lightbox,
 } from './renderer/components';
 import type { EditModeCallbacks } from './renderer/components/EditModeController';
 import type { SectionCopyFormat } from './renderer/components/MarkdownViewer';
@@ -56,6 +60,7 @@ import {
   DocumentExportService,
   DiffService,
   FindService,
+  NavigationHistory,
   type DocumentCopyService,
   type CopyDocumentType,
 } from './renderer/services';
@@ -137,6 +142,10 @@ class App {
   private syncReviewDialog: SyncReviewDialog | null = null;
   private exportDialog: ExportDialog | null = null;
   private documentExportService: DocumentExportService | null = null;
+  private quickSwitcher: QuickSwitcher | null = null;
+  private lightbox: Lightbox | null = null;
+  /** Documents this window has shown, for Back and Forward */
+  private readonly history = new NavigationHistory();
 
   /** Bumped on every sync-status change, to spot a stale refresh. */
   private syncStatusSeq = 0;
@@ -388,6 +397,20 @@ class App {
     this.exportDialog = createExportDialog();
     this.documentExportService = createDocumentExportService(window.electronAPI.export);
 
+    // Keyboard-first switching between documents
+    this.quickSwitcher = createQuickSwitcher(document.body, {
+      loadSnapshot: () => window.electronAPI.documentBrowser.getSnapshot(),
+      onSelectOpenDocument: (entry) => {
+        void window.electronAPI.documentBrowser.focusWindow(entry.windowId);
+      },
+      onSelectRecentFile: (entry) => {
+        void this.loadFile(entry.filePath);
+      },
+    });
+
+    // Images and diagrams, large
+    this.lightbox = createLightbox(document.body);
+
     // Create zoom controller for the markdown content
     // Target: markdown-content (the element to scale)
     // Scroll container: markdown-viewer (the scrollable wrapper)
@@ -428,14 +451,28 @@ class App {
       onToggleOutline: () => {
         this.outlinePanel?.toggle();
       },
+      onNavigateBack: () => {
+        void this.navigateHistory('back');
+      },
+      onNavigateForward: () => {
+        void this.navigateHistory('forward');
+      },
     });
 
-    this.markdownViewer.setOnOpenLocalFile((filePath, fragment) => {
+    this.markdownViewer.setOnOpenLocalFile((filePath, fragment, { newWindow }) => {
+      if (newWindow) {
+        void window.electronAPI.documentBrowser.openFile(filePath);
+        return;
+      }
       void this.loadFile(filePath).then(() => {
         if (fragment) {
           this.markdownViewer?.scrollToHeading(fragment);
         }
       });
+    });
+
+    this.markdownViewer.setOnOpenLightbox((content) => {
+      this.lightbox?.open(content);
     });
 
     this.markdownViewer.setOnTaskToggle((markdown) => {
@@ -692,6 +729,15 @@ class App {
           case 'print':
             void this.handleExport('print');
             break;
+          case 'navigate-back':
+            void this.navigateHistory('back');
+            break;
+          case 'navigate-forward':
+            void this.navigateHistory('forward');
+            break;
+          case 'quick-switch':
+            this.quickSwitcher?.toggle();
+            break;
           case 'export-pdf':
             void this.handleExport('pdf');
             break;
@@ -862,12 +908,18 @@ class App {
   /**
    * Load and display a markdown file
    */
-  private async loadFile(filePath: string): Promise<void> {
+  private async loadFile(
+    filePath: string,
+    options: { fromHistory?: boolean; scrollTop?: number } = {}
+  ): Promise<void> {
     try {
       // Exit edit mode if active
       if (this.state.isEditMode) {
         await this.exitEditMode();
       }
+
+      // Where the reader was, for Back
+      this.history.rememberScroll(document.getElementById('markdown-viewer')?.scrollTop ?? 0);
 
       // Stop watching previous file
       if (this.state.currentFilePath && this.state.isWatching) {
@@ -899,6 +951,13 @@ class App {
 
       // Show viewer
       this.showViewer();
+
+      // Record the visit, or restore the place Back/Forward returns to
+      if (!options.fromHistory) {
+        this.history.push(filePath);
+      }
+      this.restoreScroll(options.scrollTop ?? 0);
+      this.updateNavigationButtons();
 
       // Start watching
       await this.startWatching(filePath);
@@ -1013,9 +1072,44 @@ class App {
 
     // Show drop zone
     this.showWelcomeScreen();
+    this.history.remove(event.filePath);
+    this.updateNavigationButtons();
 
     // Show notification
     this.showError('The file has been deleted');
+  }
+
+  /**
+   * Go back or forward through the documents this window has shown, landing
+   * where the reader left each one.
+   */
+  private async navigateHistory(direction: 'back' | 'forward'): Promise<void> {
+    this.history.rememberScroll(document.getElementById('markdown-viewer')?.scrollTop ?? 0);
+    const entry = direction === 'back' ? this.history.back() : this.history.forward();
+    if (!entry) return;
+    await this.loadFile(entry.filePath, { fromHistory: true, scrollTop: entry.scrollTop });
+  }
+
+  /**
+   * Put the viewer at a remembered offset. Images and fonts still loading
+   * make the document grow for a moment after the render, and a scroll set
+   * too early is clamped to the shorter page, so it is applied again shortly
+   * after while the view is still above where it should be.
+   */
+  private restoreScroll(scrollTop: number): void {
+    const viewer = document.getElementById('markdown-viewer');
+    if (!viewer) return;
+    viewer.scrollTop = scrollTop;
+    if (scrollTop === 0) return;
+    for (const delay of [50, 200, 600]) {
+      setTimeout(() => {
+        if (viewer.scrollTop < scrollTop) viewer.scrollTop = scrollTop;
+      }, delay);
+    }
+  }
+
+  private updateNavigationButtons(): void {
+    this.toolbar?.setNavigationState(this.history.canGoBack(), this.history.canGoForward());
   }
 
   private handleResetBaseline(): void {

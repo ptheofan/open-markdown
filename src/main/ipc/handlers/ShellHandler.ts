@@ -3,6 +3,8 @@
  */
 import { ipcMain, shell } from 'electron';
 import { spawn } from 'child_process';
+import { stat } from 'node:fs/promises';
+import path from 'node:path';
 
 import { getPreferencesService } from '@main/services/PreferencesService';
 import { IPC_CHANNELS } from '@shared/types/api';
@@ -78,6 +80,20 @@ export function buildEditorCommand(
 }
 
 /**
+ * Files a link may not launch: anything the system would run rather than show.
+ */
+const EXECUTABLE_EXTENSIONS = new Set([
+  '.exe', '.msi', '.bat', '.cmd', '.com', '.scr', '.ps1', '.vbs', '.js', '.jse', '.wsf',
+  '.sh', '.bash', '.zsh', '.command', '.app', '.pkg', '.dmg', '.jar', '.pl', '.py', '.rb',
+  '.desktop', '.run', '.bin', '.appimage', '.deb', '.rpm',
+]);
+
+/** Whether a file would be executed, rather than opened for viewing, by the system */
+export function isExecutablePath(filePath: string): boolean {
+  return EXECUTABLE_EXTENSIONS.has(path.extname(filePath).toLowerCase());
+}
+
+/**
  * Protocols allowed to be opened in the default system browser/handler
  */
 const ALLOWED_EXTERNAL_PROTOCOLS = new Set([
@@ -131,6 +147,28 @@ export function registerShellHandlers(): void {
     }
   );
 
+  // Open a local file a document links to with its default app. Executables
+  // are refused: a click on a link must never run a program.
+  ipcMain.handle(
+    IPC_CHANNELS.SHELL.OPEN_LOCAL_FILE,
+    async (_event, filePath: string): Promise<OpenInEditorResult> => {
+      if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) {
+        return { success: false, error: 'Not a file path' };
+      }
+      if (isExecutablePath(filePath)) {
+        return { success: false, error: 'Executable files are not opened from links' };
+      }
+      try {
+        const info = await stat(filePath);
+        if (!info.isFile()) return { success: false, error: 'Not a file' };
+      } catch {
+        return { success: false, error: 'File not found' };
+      }
+      const error = await shell.openPath(filePath);
+      return error ? { success: false, error } : { success: true };
+    }
+  );
+
   // Open an external URL in the default system browser/handler
   ipcMain.handle(
     IPC_CHANNELS.SHELL.OPEN_EXTERNAL,
@@ -158,4 +196,5 @@ export function unregisterShellHandlers(): void {
   ipcMain.removeHandler(IPC_CHANNELS.SHELL.REVEAL_IN_FILE_MANAGER);
   ipcMain.removeHandler(IPC_CHANNELS.SHELL.OPEN_IN_EDITOR);
   ipcMain.removeHandler(IPC_CHANNELS.SHELL.OPEN_EXTERNAL);
+  ipcMain.removeHandler(IPC_CHANNELS.SHELL.OPEN_LOCAL_FILE);
 }

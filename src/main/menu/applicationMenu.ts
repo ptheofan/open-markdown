@@ -133,6 +133,22 @@ export function setupApplicationMenu(): void {
           accelerator: 'CmdOrCtrl+Shift+O',
           click: () => sendMenuAction('toggle-outline'),
         },
+        { type: 'separator' },
+        {
+          label: 'Back',
+          accelerator: 'CmdOrCtrl+[',
+          click: () => sendMenuAction('navigate-back'),
+        },
+        {
+          label: 'Forward',
+          accelerator: 'CmdOrCtrl+]',
+          click: () => sendMenuAction('navigate-forward'),
+        },
+        {
+          label: 'Quick Switch...',
+          accelerator: 'CmdOrCtrl+T',
+          click: () => sendMenuAction('quick-switch'),
+        },
         {
           label: 'Browse Open Documents...',
           accelerator: 'CmdOrCtrl+Shift+D',

@@ -6,6 +6,7 @@ import { spawn } from 'child_process';
 
 import { IPC_CHANNELS } from '@shared/types/api';
 import {
+  buildEditorCommand,
   registerShellHandlers,
   unregisterShellHandlers,
 } from '@main/ipc/handlers/ShellHandler';
@@ -56,7 +57,7 @@ function createMockPreferences(
       typography: {} as AppPreferences['core']['typography'],
       lists: {} as AppPreferences['core']['lists'],
       editor: { autoSave: true, autoSaveDelay: 1000 },
-      viewer: { interactiveTaskLists: true },
+      viewer: { interactiveTaskLists: true, projectRoot: '' },
       externalEditor: { editor, customCommand },
       googleDocs: { useCustomCredentials: false, customClientId: '' },
       experimental: { googleDocsSync: false },
@@ -226,7 +227,7 @@ describe('ShellHandler', () => {
       const result = handler?.({}, '/path/to/file.md') as OpenInEditorResult;
 
       expect(result.success).toBe(true);
-      expect(spawn).toHaveBeenCalledWith('code', ['/path/to/file.md'], {
+      expect(spawn).toHaveBeenCalledWith("code '/path/to/file.md'", [], {
         detached: true,
         stdio: 'ignore',
         shell: true,
@@ -245,7 +246,7 @@ describe('ShellHandler', () => {
       const result = handler?.({}, '/test.md') as OpenInEditorResult;
 
       expect(result.success).toBe(true);
-      expect(spawn).toHaveBeenCalledWith('cursor', ['/test.md'], expect.any(Object));
+      expect(spawn).toHaveBeenCalledWith("cursor '/test.md'", [], expect.any(Object));
     });
 
     it('should spawn "webstorm" for webstorm preset', () => {
@@ -259,7 +260,7 @@ describe('ShellHandler', () => {
       const result = handler?.({}, '/test.md') as OpenInEditorResult;
 
       expect(result.success).toBe(true);
-      expect(spawn).toHaveBeenCalledWith('webstorm', ['/test.md'], expect.any(Object));
+      expect(spawn).toHaveBeenCalledWith("webstorm '/test.md'", [], expect.any(Object));
     });
 
     it('should spawn "subl" for sublime preset', () => {
@@ -273,7 +274,7 @@ describe('ShellHandler', () => {
       const result = handler?.({}, '/test.md') as OpenInEditorResult;
 
       expect(result.success).toBe(true);
-      expect(spawn).toHaveBeenCalledWith('subl', ['/test.md'], expect.any(Object));
+      expect(spawn).toHaveBeenCalledWith("subl '/test.md'", [], expect.any(Object));
     });
 
     it('should spawn "zed" for zed preset', () => {
@@ -287,7 +288,7 @@ describe('ShellHandler', () => {
       const result = handler?.({}, '/test.md') as OpenInEditorResult;
 
       expect(result.success).toBe(true);
-      expect(spawn).toHaveBeenCalledWith('zed', ['/test.md'], expect.any(Object));
+      expect(spawn).toHaveBeenCalledWith("zed '/test.md'", [], expect.any(Object));
     });
 
     it('should use custom command when editor is "custom"', () => {
@@ -301,7 +302,7 @@ describe('ShellHandler', () => {
       const result = handler?.({}, '/path/to/file.md') as OpenInEditorResult;
 
       expect(result.success).toBe(true);
-      expect(spawn).toHaveBeenCalledWith('my-editor', ['/path/to/file.md'], {
+      expect(spawn).toHaveBeenCalledWith("my-editor '/path/to/file.md'", [], {
         detached: true,
         stdio: 'ignore',
         shell: true,
@@ -349,7 +350,7 @@ describe('ShellHandler', () => {
       const result = handler?.({}, '/test.md') as OpenInEditorResult;
 
       expect(result.success).toBe(true);
-      expect(spawn).toHaveBeenCalledWith('nvim', ['/test.md'], expect.any(Object));
+      expect(spawn).toHaveBeenCalledWith("nvim '/test.md'", [], expect.any(Object));
     });
 
     it('should return error when spawn throws', () => {
@@ -410,14 +411,14 @@ describe('ShellHandler', () => {
         createMockPreferences('vscode')
       );
       handler?.({}, '/file1.md');
-      expect(spawn).toHaveBeenLastCalledWith('code', ['/file1.md'], expect.any(Object));
+      expect(spawn).toHaveBeenLastCalledWith("code '/file1.md'", [], expect.any(Object));
 
       // Second call: changed to sublime
       mockPreferencesService.getPreferences.mockReturnValue(
         createMockPreferences('sublime')
       );
       handler?.({}, '/file2.md');
-      expect(spawn).toHaveBeenLastCalledWith('subl', ['/file2.md'], expect.any(Object));
+      expect(spawn).toHaveBeenLastCalledWith("subl '/file2.md'", [], expect.any(Object));
 
       expect(mockPreferencesService.getPreferences).toHaveBeenCalledTimes(2);
     });
@@ -434,10 +435,40 @@ describe('ShellHandler', () => {
 
       expect(result.success).toBe(true);
       expect(spawn).toHaveBeenCalledWith(
-        'code',
-        ['/path/to/my file (1).md'],
+        "code '/path/to/my file (1).md'",
+        [],
         expect.any(Object)
       );
     });
+  });
+});
+
+describe('buildEditorCommand', () => {
+  it('opens a file without a position in every preset', () => {
+    expect(buildEditorCommand('vscode', '', '/a/b.ts')).toBe("code '/a/b.ts'");
+    expect(buildEditorCommand('cursor', '', '/a/b.ts')).toBe("cursor '/a/b.ts'");
+    expect(buildEditorCommand('webstorm', '', '/a/b.ts')).toBe("webstorm '/a/b.ts'");
+    expect(buildEditorCommand('sublime', '', '/a/b.ts')).toBe("subl '/a/b.ts'");
+    expect(buildEditorCommand('zed', '', '/a/b.ts')).toBe("zed '/a/b.ts'");
+  });
+
+  it('passes a line and column the way each editor takes them', () => {
+    expect(buildEditorCommand('vscode', '', '/a/b.ts', 42, 7)).toBe("code -g '/a/b.ts:42:7'");
+    expect(buildEditorCommand('cursor', '', '/a/b.ts', 42)).toBe("cursor -g '/a/b.ts:42'");
+    expect(buildEditorCommand('webstorm', '', '/a/b.ts', 42, 7)).toBe("webstorm --line 42 --column 7 '/a/b.ts'");
+    expect(buildEditorCommand('sublime', '', '/a/b.ts', 42, 7)).toBe("subl '/a/b.ts:42:7'");
+    expect(buildEditorCommand('zed', '', '/a/b.ts', 42)).toBe("zed '/a/b.ts:42'");
+  });
+
+  it('substitutes placeholders in a custom command, else appends the file', () => {
+    expect(buildEditorCommand('custom', 'vim +{line} {file}', '/a/b.ts', 42)).toBe("vim +42 '/a/b.ts'");
+    expect(buildEditorCommand('custom', 'vim +{line} {file}', '/a/b.ts')).toBe("vim + '/a/b.ts'");
+    expect(buildEditorCommand('custom', 'nvim', '/a/b.ts', 42)).toBe("nvim '/a/b.ts'");
+    expect(buildEditorCommand('custom', '   ', '/a/b.ts')).toBeNull();
+    expect(buildEditorCommand('none', '', '/a/b.ts')).toBeNull();
+  });
+
+  it('quotes paths with spaces and quotes', () => {
+    expect(buildEditorCommand('vscode', '', "/a/my file's.md")).toBe(`code '/a/my file'\\''s.md'`);
   });
 });

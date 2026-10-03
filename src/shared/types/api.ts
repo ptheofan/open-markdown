@@ -24,6 +24,7 @@ export const IPC_CHANNELS = {
   FILE: {
     OPEN_DIALOG: 'file:open-dialog',
     RESOLVE_PATH: 'file:resolve-path',
+    RESOLVE_REFERENCES: 'file:resolve-references',
     READ: 'file:read',
     WATCH: 'file:watch',
     UNWATCH: 'file:unwatch',
@@ -137,6 +138,15 @@ export interface FileAPI {
   openDialog: () => Promise<FileOpenResult>;
   /** Resolve a typed or pasted path against this window's document */
   resolvePath: (input: string) => Promise<PathResolveResult>;
+  /**
+   * Resolve file references written in a document (`src/app.ts`) to the
+   * absolute paths of existing files, keyed by the reference; null for the
+   * ones that go nowhere.
+   */
+  resolveReferences: (
+    documentPath: string,
+    refs: string[]
+  ) => Promise<Record<string, string | null>>;
   read: (filePath: string) => Promise<FileReadResult>;
   write: (filePath: string, content: string) => Promise<FileWriteResult>;
   watch: (filePath: string) => Promise<void>;
@@ -299,7 +309,8 @@ export interface OpenInEditorResult {
  */
 export interface ShellAPI {
   revealInFileManager: (filePath: string) => Promise<void>;
-  openInEditor: (filePath: string) => Promise<OpenInEditorResult>;
+  /** Open a file in the configured editor, at a line and column when given */
+  openInEditor: (filePath: string, line?: number, column?: number) => Promise<OpenInEditorResult>;
   openExternal: (url: string) => Promise<void>;
 }
 

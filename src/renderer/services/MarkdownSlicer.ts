@@ -6,6 +6,8 @@
  */
 import MarkdownIt from 'markdown-it';
 
+import { frontMatterBlockRule } from '@plugins/builtin/FrontMatterPlugin';
+
 /**
  * Type of markdown slice
  */
@@ -48,6 +50,8 @@ export class MarkdownSlicer {
       linkify: true,
       typographer: true,
     });
+    // Front matter is one block, edited raw, not a rule plus a paragraph
+    frontMatterBlockRule(this.md);
   }
 
   /**

@@ -44,6 +44,9 @@ export const BUILTIN_PLUGINS = {
   SYNTAX_HIGHLIGHT: 'syntax-highlight',
   MERMAID: 'mermaid',
   GITHUB_FLAVORED: 'github-flavored',
+  MATH: 'math',
+  FRONT_MATTER: 'front-matter',
+  FILE_REFERENCES: 'file-references',
 } as const;
 
 /**

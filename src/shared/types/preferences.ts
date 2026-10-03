@@ -117,6 +117,11 @@ export interface CorePreferences {
   viewer: {
     /** Clicking a task-list checkbox toggles it in the file, outside edit mode */
     interactiveTaskLists: boolean;
+    /**
+     * Folder that file references like `src/app.ts` are resolved against, after
+     * the document's own folder. Empty: the nearest ancestor with a .git folder.
+     */
+    projectRoot: string;
   };
   externalEditor: ExternalEditorPreferences;
   googleDocs: {

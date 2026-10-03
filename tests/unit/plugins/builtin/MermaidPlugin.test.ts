@@ -506,4 +506,15 @@ describe('rendering a diagram for a document with a white page', () => {
 
     expect(vi.mocked(mermaid.default.render).mock.calls[0]?.[1]).toBe('graph LR; X-->Y;');
   });
+
+  describe('fence info strings', () => {
+    it('treats a fence as mermaid by its first word, whatever follows', async () => {
+      const { MarkdownRenderer } = await import('@plugins/core/MarkdownRenderer');
+      const { MermaidPlugin } = await import('@plugins/builtin/MermaidPlugin');
+      const renderer = new MarkdownRenderer();
+      await renderer.registerPlugin(new MermaidPlugin());
+      expect(renderer.render('```mermaid title="Flow"\nflowchart LR\n  A --> B\n```')).toContain('mermaid-container');
+      expect(renderer.render('```mermaidish\nflowchart LR\n```')).not.toContain('mermaid-container');
+    });
+  });
 });

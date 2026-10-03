@@ -70,8 +70,16 @@ describe('SyntaxHighlightPlugin', () => {
       expect(result).toContain('<div class="code-block" data-lang="js">');
       expect(result).toContain('class="code-copy-btn"');
       expect(result).toContain('aria-label="Copy code"');
-      expect(result).toMatch(/<pre class="hljs"><code class="language-js">/);
+      expect(result).toMatch(/<pre class="hljs"[^>]*><code class="language-js">/);
       expect(result).toContain('</pre></div>');
+      // One block, not markdown-it's <pre><code> around ours
+      expect(result.match(/<pre/g)?.length).toBe(1);
+      expect(result.startsWith('<div class="code-block"')).toBe(true);
+    });
+
+    it('carries the fence\'s source lines on the pre', () => {
+      const result = renderer.render('text\n\n```js\nx\n```');
+      expect(result).toContain('<pre class="hljs" data-source-lines="2-5">');
     });
 
     it('labels only a language the author declared', () => {
@@ -82,7 +90,7 @@ describe('SyntaxHighlightPlugin', () => {
     it('labels an unknown language as written while highlighting falls back', () => {
       const result = renderer.render('```nosuchlang\nhello\n```');
       expect(result).toContain('data-lang="nosuchlang"');
-      expect(result).toContain('<pre class="hljs">');
+      expect(result).toMatch(/<pre class="hljs"[^>]*>/);
     });
 
     it('escapes the label', () => {
@@ -100,8 +108,70 @@ describe('SyntaxHighlightPlugin', () => {
     it('styles the button and label', () => {
       const styles = plugin.getStyles();
       expect(styles).toContain('.code-copy-btn');
-      expect(styles).toContain('.code-block[data-lang]::before');
+      expect(styles).toContain('.code-block[data-lang]::after');
       expect(styles).toContain('.code-block.is-copied');
+    });
+  });
+
+  describe('info strings', () => {
+    it('ignores everything after the language when highlighting', () => {
+      const result = renderer.render('```ts title="x.ts" {1}\nconst a: number = 1;\n```');
+      expect(result).toContain('data-lang="ts"');
+      expect(result).toContain('language-ts');
+      expect(result).toContain('hljs-keyword');
+    });
+
+    it('shows a title bar from title= or filename=', () => {
+      expect(renderer.render('```bash title="setup.sh"\nls\n```')).toContain('data-title="setup.sh"');
+      expect(renderer.render('```bash filename=run.sh\nls\n```')).toContain('data-title="run.sh"');
+      expect(renderer.render('```bash\nls\n```')).not.toContain('data-title');
+    });
+
+    it('marks highlighted lines from {ranges}', () => {
+      const result = renderer.render('```js {2-3}\nlet a = 1;\nlet b = 2;\nlet c = 3;\nlet d = 4;\n```');
+      expect(result.match(/code-line-highlighted/g)?.length).toBe(2);
+      expect(result.match(/class="code-line/g)?.length).toBe(4);
+      // The text is untouched
+      expect(result.replace(/<[^>]+>/g, '')).toContain('let a = 1;\nlet b = 2;\nlet c = 3;\nlet d = 4;\n');
+    });
+
+    it('leaves blocks without highlights unwrapped', () => {
+      expect(renderer.render('```js\nlet a = 1;\n```')).not.toContain('code-line');
+    });
+
+    it('marks whole diff lines as additions and deletions', () => {
+      const result = renderer.render('```diff\n- old\n+ new\n  same\n```');
+      expect(result).toContain('code-line code-line-deletion');
+      expect(result).toContain('code-line code-line-addition');
+      expect(result.match(/class="code-line"/g)?.length).toBe(1);
+    });
+
+    it('knows the aliases generated markdown uses', () => {
+      for (const lang of ['jsonc', 'tsx', 'jsx', 'toml', 'dockerfile', 'env', 'http', 'sh', 'yml', 'mdx', 'vue']) {
+        const result = renderer.render(`\`\`\`${lang}\nx = 1\n\`\`\``);
+        expect(result, lang).toContain(`language-${lang}`);
+      }
+    });
+
+    it('styles the title bar and line marks', () => {
+      const styles = plugin.getStyles();
+      expect(styles).toContain('.code-block[data-title]::before');
+      expect(styles).toContain('.code-line-highlighted');
+      expect(styles).toContain('.code-line-addition');
+    });
+  });
+
+  describe('nested fences', () => {
+    it('keeps a four-backtick fence holding a three-backtick fence as one block', () => {
+      const result = renderer.render('````md\nouter\n\n```js\ninner\n```\n````');
+      expect(result.match(/<pre class="hljs"/g)?.length).toBe(1);
+      expect(result).toContain('```js');
+    });
+
+    it('keeps a tilde fence holding a backtick fence as one block', () => {
+      const result = renderer.render('~~~text\n```\ninner\n```\n~~~');
+      expect(result.match(/<pre class="hljs"/g)?.length).toBe(1);
+      expect(result).toContain('inner');
     });
   });
 

@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Front matter**: a document that opens with a `---` YAML block shows it as a collapsible key/value table (nested maps as nested tables, lists as lists) instead of a horizontal rule and a paragraph of `name: foo`. TOML between `+++` is shown as written. Only a block that parses as a YAML mapping counts, so a document that merely starts with a rule is unaffected. Collapsing or expanding the block is remembered (Preferences → Front Matter).
+
+- **GitHub alerts**: `> [!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` and `[!CAUTION]` render with GitHub's icon, title and colour bar, in both themes. The marker may stand on its own line or run into the text, as generated markdown often has it.
+
+- **Math**: `$…$`, `$$…$$`, `\(…\)` and `\[…\]` render with KaTeX, inline or as display blocks, entirely offline. `$5 and $10` stays text: a single dollar only opens math when not followed by a space, and only closes when not preceded by one and not followed by a digit. Math inside code is left alone, and a broken formula shows in red instead of blanking the document.
+
+- **File references**: `src/app.ts:42`, `README.md`, `path/to/file.ts#L42` and `file.ts:42:7` in code spans, and paths with a folder or line number in prose, become links. Each is resolved against the document's folder, then each parent up to the project root (Preferences → Document → Project Root, or the nearest `.git`); a reference to a file that does not exist reads as plain text. Clicking opens markdown in the viewer and anything else in the external editor at that line (VS Code, Cursor, Sublime, Zed and WebStorm each get their own flag; a custom command may use `{file}`, `{line}` and `{column}`). Hovering shows the resolved path.
+
+- **Code block info strings**: the language is the first word of the fence; `title="src/app.ts"`, `filename=…` or `file=…` draws a title bar; `{2-3}`, `highlight=` or `hl_lines=` call out lines; `diff` blocks colour whole added and removed lines; `env`, `dotenv`, `mdx`, `vue`, `svelte`, `hcl`, `terraform` and `jsonl` fences highlight. A ```` ```mermaid title="…" ```` fence is still a diagram.
+
+- **Footnotes**: `[^1]` references and definitions render with a separator, numbered notes and back links.
+
+- `<details>`/`<summary>` blocks have a border, a clickable summary and spacing in both themes. A fixture covering all of the above lives in `examples/llm-markdown.md`.
+
 - **Clickable task lists**: clicking a checkbox in a rendered task list ticks or unticks it in the file, without entering edit mode. Only the `[ ]`/`[x]` marker on that one line changes; indentation, list marker, casing, CRLF line endings and the rest of the document stay as they were. The write does not re-render the view, and a write that fails (a read-only file, say) puts the view back to what the file says. Preferences → Document → "Clickable task lists" turns it off.
 
 - **Copy button on code blocks**: hovering a fenced code block shows a button in its top-right corner that copies the raw code (not the highlighted HTML), with a check mark for a moment afterwards. A language written on the fence is shown as a small label. `Cmd+Shift+C` copies the block holding the selection, or the one under the mouse. Neither the button nor the label shows up in Select All, find-in-page or a copied document.

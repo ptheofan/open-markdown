@@ -79,7 +79,7 @@ function createMockPreferencesService(initialMode: ThemeMode = 'system'): MockPr
         typography: {} as AppPreferences['core']['typography'],
         lists: {} as AppPreferences['core']['lists'],
         editor: { autoSave: true, autoSaveDelay: 1000 },
-        viewer: { interactiveTaskLists: true },
+        viewer: { interactiveTaskLists: true, projectRoot: '' },
         externalEditor: { editor: 'none', customCommand: '' },
         googleDocs: { useCustomCredentials: false, customClientId: '' },
         experimental: { googleDocsSync: false },

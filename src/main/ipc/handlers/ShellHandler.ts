@@ -22,6 +22,62 @@ const EDITOR_COMMANDS: Record<Exclude<ExternalEditorId, 'none' | 'custom'>, stri
 };
 
 /**
+ * Quote one argument for the shell the command runs through.
+ */
+function shellQuote(arg: string): string {
+  if (process.platform === 'win32') {
+    return `"${arg.replace(/"/g, '""')}"`;
+  }
+  return `'${arg.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * The command line that opens a file in an editor, at a position when one is
+ * given. Each editor has its own way of taking a line. A custom command may
+ * use {file}, {line} and {column} placeholders; without them the file is
+ * appended.
+ */
+export function buildEditorCommand(
+  editor: ExternalEditorId,
+  customCommand: string,
+  filePath: string,
+  line?: number,
+  column?: number
+): string | null {
+  const position = line ? `${filePath}:${line}${column ? `:${column}` : ''}` : filePath;
+
+  switch (editor) {
+    case 'none':
+      return null;
+    case 'custom': {
+      const command = customCommand.trim();
+      if (!command) return null;
+      if (/\{file\}/.test(command)) {
+        return command
+          .replace(/\{file\}/g, shellQuote(filePath))
+          .replace(/\{line\}/g, line ? String(line) : '')
+          .replace(/\{column\}/g, column ? String(column) : '');
+      }
+      return `${command} ${shellQuote(filePath)}`;
+    }
+    case 'vscode':
+    case 'cursor':
+      return line
+        ? `${EDITOR_COMMANDS[editor]} -g ${shellQuote(position)}`
+        : `${EDITOR_COMMANDS[editor]} ${shellQuote(filePath)}`;
+    case 'webstorm':
+      return line
+        ? `${EDITOR_COMMANDS[editor]} --line ${line}${column ? ` --column ${column}` : ''} ${shellQuote(filePath)}`
+        : `${EDITOR_COMMANDS[editor]} ${shellQuote(filePath)}`;
+    case 'sublime':
+    case 'zed':
+      return `${EDITOR_COMMANDS[editor]} ${shellQuote(position)}`;
+    default:
+      return null;
+  }
+}
+
+/**
  * Protocols allowed to be opened in the default system browser/handler
  */
 const ALLOWED_EXTERNAL_PROTOCOLS = new Set([
@@ -45,7 +101,7 @@ export function registerShellHandlers(): void {
   // Open file in configured external editor
   ipcMain.handle(
     IPC_CHANNELS.SHELL.OPEN_IN_EDITOR,
-    (_event, filePath: string): OpenInEditorResult => {
+    (_event, filePath: string, line?: number, column?: number): OpenInEditorResult => {
       const prefs = getPreferencesService().getPreferences();
       const { editor, customCommand } = prefs.core.externalEditor;
 
@@ -53,18 +109,15 @@ export function registerShellHandlers(): void {
         return { success: false, error: 'No external editor configured' };
       }
 
-      let command: string;
-      if (editor === 'custom') {
-        command = customCommand.trim();
-        if (!command) {
-          return { success: false, error: 'No custom editor command configured' };
-        }
-      } else {
-        command = EDITOR_COMMANDS[editor];
+      const safeLine = Number.isInteger(line) && line! > 0 ? line : undefined;
+      const safeColumn = Number.isInteger(column) && column! > 0 ? column : undefined;
+      const command = buildEditorCommand(editor, customCommand, filePath, safeLine, safeColumn);
+      if (!command) {
+        return { success: false, error: 'No custom editor command configured' };
       }
 
       try {
-        const child = spawn(command, [filePath], {
+        const child = spawn(command, [], {
           detached: true,
           stdio: 'ignore',
           shell: true,

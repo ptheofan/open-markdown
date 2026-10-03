@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Clickable task lists**: clicking a checkbox in a rendered task list ticks or unticks it in the file, without entering edit mode. Only the `[ ]`/`[x]` marker on that one line changes; indentation, list marker, casing, CRLF line endings and the rest of the document stay as they were. The write does not re-render the view, and a write that fails (a read-only file, say) puts the view back to what the file says. Preferences → Document → "Clickable task lists" turns it off.
+
+- **Copy button on code blocks**: hovering a fenced code block shows a button in its top-right corner that copies the raw code (not the highlighted HTML), with a check mark for a moment afterwards. A language written on the fence is shown as a small label. `Cmd+Shift+C` copies the block holding the selection, or the one under the mouse. Neither the button nor the label shows up in Select All, find-in-page or a copied document.
+
+- **Copy as Rich Text**: the Copy dropdown has a new entry that puts `text/html` and `text/plain` on the clipboard, so pasting into Slack, Gmail, Notion or Apple Notes keeps headings, bold, lists, tables and code. With text selected in the document it copies the selection; otherwise the whole document, with the markdown source as the plain-text alternative. Right-clicking a heading offers "Copy Section as Rich Text" and "Copy Section as Markdown" for that heading and everything under it.
+
+### Fixed
+
+- Task-list items no longer print their `[ ]` / `[x]` marker next to the checkbox.
+
 - **Open by path**: `Cmd+P` (File → Open Path…) opens a bar to type or paste the path of a document and open it in the current window. A full path, `~/…`, a `file://` URL, a quoted path and a path with shell-escaped spaces are all accepted; anything else is taken as relative to the folder of the document the window shows, or to the home folder when the window is empty. The resolved path is shown as you type, with the reason when it cannot be opened (missing, a folder, not markdown); Enter opens, Esc closes.
 
 - **Open Documents browser**: `Cmd+Shift+D` (View → Browse Open Documents) opens a grid of every open document, each shown as a capture of its document view at its current scroll position, change markers included, without the window chrome. Type to filter by file name or by document content; arrow keys move, Enter brings that window to the front, Esc closes. Recently opened files that are not open anywhere are listed below, filtered by name; picking one fills the current window if it is empty, otherwise opens it in a new one.

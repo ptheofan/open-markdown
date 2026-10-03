@@ -52,6 +52,7 @@ export class PreferencesPanel {
   private linkColorPicker: ColorPairPicker | null = null;
   private headingControls: Map<string, { color: ColorPairPicker; size: TextInput; weight: NumberInput }> = new Map();
   private externalEditorSelect: Select | null = null;
+  private interactiveTaskListsToggle: Toggle | null = null;
   private customCommandInput: TextInput | null = null;
   private customCommandField: HTMLElement | null = null;
   private googleDocsSyncToggle: Toggle | null = null;
@@ -198,6 +199,7 @@ export class PreferencesPanel {
     this.updateCustomCommandVisibility(preferences.core.externalEditor.editor);
 
     this.googleDocsSyncToggle?.setValue(preferences.core.experimental.googleDocsSync);
+    this.interactiveTaskListsToggle?.setValue(preferences.core.viewer.interactiveTaskLists);
 
     for (const [level, controls] of this.headingControls) {
       const style = preferences.core.typography[level as keyof typeof preferences.core.typography] as { color: ColorPair; fontSize: string; fontWeight: number };
@@ -236,6 +238,7 @@ export class PreferencesPanel {
 
     void this.renderSystemSection(this.renderGeneration);
     this.renderExternalEditorSection();
+    this.renderDocumentSection();
     this.renderAppearanceSection();
     this.renderTypographySection();
     this.renderPluginSections();
@@ -603,6 +606,32 @@ export class PreferencesPanel {
     fields.push(this.customCommandField);
 
     section.setContent(fields);
+    this.sectionsContainer.appendChild(section.getElement());
+  }
+
+  /**
+   * Render the Document section: how the rendered document responds to the
+   * reader, outside edit mode.
+   */
+  private renderDocumentSection(): void {
+    if (!this.currentPreferences) return;
+
+    const section = new CollapsibleSection({
+      title: 'Document',
+      initiallyOpen: true,
+    });
+
+    this.interactiveTaskListsToggle = new Toggle({
+      label: 'Clickable task lists',
+      description:
+        'Clicking a checkbox in a task list ticks or unticks it in the file, without entering edit mode.',
+      value: this.currentPreferences.core.viewer.interactiveTaskLists,
+    });
+    this.interactiveTaskListsToggle.setOnChange((value) => {
+      this.emitChange({ core: { viewer: { interactiveTaskLists: value } } });
+    });
+
+    section.setContent([this.interactiveTaskListsToggle.getElement()]);
     this.sectionsContainer.appendChild(section.getElement());
   }
 

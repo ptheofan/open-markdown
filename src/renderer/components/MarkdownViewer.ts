@@ -10,6 +10,7 @@ import {
   MermaidPlugin,
 } from '@plugins/index';
 import { BUILTIN_PLUGINS, MARKDOWN_EXTENSIONS } from '@shared/constants';
+import { toggleTaskAtLine } from '@shared/markdown/taskList';
 import { Toast } from './Toast';
 
 import { EditModeController, createEditModeController } from './EditModeController';
@@ -33,6 +34,24 @@ export interface MarkdownViewerState {
   isRendering: boolean;
 }
 
+/** Formats a section can be copied in from a heading's context menu */
+export type SectionCopyFormat = 'rich-text' | 'markdown';
+
+/** How long the copy button shows its check mark after a copy */
+const COPIED_FEEDBACK_MS = 1500;
+
+/**
+ * The 0-based source line a rendered block starts on, from the
+ * `data-source-lines="start-end"` the renderer stamps on every block, or
+ * null when the element carries none.
+ */
+function sourceStartLine(element: Element | null | undefined): number | null {
+  const attr = element?.getAttribute('data-source-lines');
+  if (!attr) return null;
+  const start = Number(attr.split('-')[0]);
+  return Number.isInteger(start) && start >= 0 ? start : null;
+}
+
 /**
  * MarkdownViewer component
  */
@@ -51,6 +70,12 @@ export class MarkdownViewer {
   private isEditMode = false;
   private onOpenLocalFile:
     | ((filePath: string, fragment: string | null) => void)
+    | null = null;
+  /** Whether task-list checkboxes toggle their marker in the source */
+  private interactiveTaskLists = true;
+  private onTaskToggle: ((markdown: string) => void) | null = null;
+  private onCopySection:
+    | ((heading: HTMLElement, sourceLine: number, format: SectionCopyFormat) => void)
     | null = null;
 
   constructor(container: HTMLElement) {
@@ -98,6 +123,9 @@ export class MarkdownViewer {
 
     // Setup external link handling
     this.setupLinkHandling();
+
+    // Copy buttons on code blocks and clickable task-list checkboxes
+    this.setupInteractions();
 
     this.initialized = true;
   }
@@ -150,6 +178,7 @@ export class MarkdownViewer {
       // Render markdown to HTML
       const html = this.pluginManager.render(markdown);
       this.container.innerHTML = html;
+      this.applyTaskListInteractivity();
 
       // A Select All from the previous document leaves a range spanning this
       // container. Replacing its children does not collapse that range, so the
@@ -422,6 +451,142 @@ export class MarkdownViewer {
   }
 
   /**
+   * Whether clicking a task-list checkbox writes the toggle back to the file.
+   * Applies to the document on screen as well as to later renders.
+   */
+  setInteractiveTaskLists(enabled: boolean): void {
+    this.interactiveTaskLists = enabled;
+    if (!this.isEditMode) {
+      this.applyTaskListInteractivity();
+    }
+  }
+
+  /**
+   * Set the callback invoked with the updated markdown after a task-list
+   * checkbox is toggled. Whoever receives it persists it.
+   */
+  setOnTaskToggle(callback: (markdown: string) => void): void {
+    this.onTaskToggle = callback;
+  }
+
+  /**
+   * Set the callback invoked when the user asks, from a heading's context
+   * menu, to copy that heading's section
+   */
+  setOnCopySection(
+    callback: (heading: HTMLElement, sourceLine: number, format: SectionCopyFormat) => void
+  ): void {
+    this.onCopySection = callback;
+  }
+
+  /**
+   * Checkboxes render disabled; enable the ones that can be written back.
+   * A box stays disabled when toggling is off, or when its item carries no
+   * source line to write to.
+   */
+  private applyTaskListInteractivity(): void {
+    const boxes = this.container.querySelectorAll<HTMLInputElement>('input.task-list-checkbox');
+    for (const box of boxes) {
+      const line = sourceStartLine(box.closest('li'));
+      box.disabled = !(this.interactiveTaskLists && line !== null);
+    }
+  }
+
+  /**
+   * Click handling for the document's own controls: the copy button on a code
+   * block and the checkbox on a task item.
+   */
+  private setupInteractions(): void {
+    this.container.addEventListener('click', (e) => {
+      if (e.button !== 0) return;
+      const target = e.target;
+      if (!(target instanceof Element)) return;
+
+      const copyButton = target.closest('.code-copy-btn');
+      if (copyButton instanceof HTMLElement) {
+        e.preventDefault();
+        e.stopPropagation();
+        const block = copyButton.closest('.code-block');
+        if (block instanceof HTMLElement) {
+          void this.copyCodeBlock(block);
+        }
+        return;
+      }
+
+      if (target instanceof HTMLInputElement && target.classList.contains('task-list-checkbox')) {
+        this.handleTaskCheckboxClick(target);
+      }
+    });
+  }
+
+  /**
+   * Write a checkbox's new state back into the markdown. The box has already
+   * flipped on screen; the source follows it. If the line underneath has
+   * stopped being a task item, the box is put back the way it was.
+   */
+  private handleTaskCheckboxClick(box: HTMLInputElement): void {
+    if (this.isEditMode || box.disabled) return;
+
+    const line = sourceStartLine(box.closest('li'));
+    const updated = line === null ? null : toggleTaskAtLine(this.state.content, line);
+
+    if (updated === null) {
+      box.checked = !box.checked;
+      this.toast.error('Could not find this task in the file');
+      return;
+    }
+
+    this.state.content = updated;
+    this.onTaskToggle?.(updated);
+  }
+
+  /**
+   * Copy a code block's source to the clipboard and show the check mark on
+   * its button for a moment.
+   */
+  async copyCodeBlock(block: HTMLElement): Promise<void> {
+    const code = block.querySelector('pre > code') ?? block.querySelector('code');
+    if (!code) return;
+
+    // The fence's content ends in a newline the author never typed
+    const text = (code.textContent ?? '').replace(/\n$/, '');
+
+    try {
+      await window.electronAPI.clipboard.writeText(text);
+    } catch {
+      this.toast.error('Failed to copy code');
+      return;
+    }
+
+    block.classList.add('is-copied');
+    setTimeout(() => block.classList.remove('is-copied'), COPIED_FEEDBACK_MS);
+  }
+
+  /**
+   * Copy the code block the user is "in": the one holding the selection or
+   * caret, else the one under the mouse. Returns false when there is none.
+   */
+  copyFocusedCodeBlock(): boolean {
+    const block = this.focusedCodeBlock();
+    if (!block) return false;
+    void this.copyCodeBlock(block);
+    return true;
+  }
+
+  private focusedCodeBlock(): HTMLElement | null {
+    const selection = window.getSelection();
+    const anchor = selection?.anchorNode ?? null;
+    if (anchor && this.container.contains(anchor)) {
+      const element = anchor instanceof Element ? anchor : anchor.parentElement;
+      const block = element?.closest('.code-block');
+      if (block instanceof HTMLElement) return block;
+    }
+
+    const hovered = this.container.querySelector('.code-block:hover');
+    return hovered instanceof HTMLElement ? hovered : null;
+  }
+
+  /**
    * Determine whether a link points to the internet (vs. an in-document anchor)
    */
   private isExternalUrl(href: string): boolean {
@@ -447,6 +612,13 @@ export class MarkdownViewer {
         await this.handleLinkContextMenu(e, href);
         return;
       }
+    }
+
+    // Headings: offer to copy their section
+    const heading = target.closest('h1, h2, h3, h4, h5, h6');
+    if (heading instanceof HTMLElement && sourceStartLine(heading) !== null && !this.isEditMode) {
+      await this.handleHeadingContextMenu(e, heading);
+      return;
     }
 
     // Find plugin-rendered element
@@ -493,6 +665,35 @@ export class MarkdownViewer {
     // Execute selected action
     if (selectedId && plugin.getContextMenuData) {
       await this.executeContextMenuItem(plugin, pluginElement, selectedId);
+    }
+  }
+
+  /**
+   * Show a context menu for a heading: copy its section, as rich text or as
+   * the markdown it came from
+   */
+  private async handleHeadingContextMenu(e: MouseEvent, heading: HTMLElement): Promise<void> {
+    if (!this.onCopySection) return;
+    e.preventDefault();
+
+    const sourceLine = sourceStartLine(heading);
+    if (sourceLine === null) return;
+
+    this.highlightElement(heading);
+    const selectedId = await window.electronAPI.contextMenu.show({
+      items: [
+        { id: 'copy-section-rich-text', label: 'Copy Section as Rich Text', enabled: true },
+        { id: 'copy-section-markdown', label: 'Copy Section as Markdown', enabled: true },
+      ],
+      x: e.screenX,
+      y: e.screenY,
+    });
+    this.removeHighlight();
+
+    if (selectedId === 'copy-section-rich-text') {
+      this.onCopySection(heading, sourceLine, 'rich-text');
+    } else if (selectedId === 'copy-section-markdown') {
+      this.onCopySection(heading, sourceLine, 'markdown');
     }
   }
 

@@ -114,6 +114,10 @@ export interface CorePreferences {
     autoSave: boolean;
     autoSaveDelay: number;
   };
+  viewer: {
+    /** Clicking a task-list checkbox toggles it in the file, outside edit mode */
+    interactiveTaskLists: boolean;
+  };
   externalEditor: ExternalEditorPreferences;
   googleDocs: {
     useCustomCredentials: boolean;

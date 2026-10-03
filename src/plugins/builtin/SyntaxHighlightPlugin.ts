@@ -21,6 +21,21 @@ export interface SyntaxHighlightOptions extends PluginOptions {
 }
 
 /**
+ * The copy button rendered into every code block. Two icons; CSS shows the
+ * check mark while the block carries `is-copied`.
+ */
+const COPY_BUTTON_HTML =
+  '<button type="button" class="code-copy-btn" title="Copy code" aria-label="Copy code">' +
+  '<svg class="code-copy-icon" width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">' +
+  '<path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"/>' +
+  '<path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"/>' +
+  '</svg>' +
+  '<svg class="code-copied-icon" width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">' +
+  '<path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"/>' +
+  '</svg>' +
+  '</button>';
+
+/**
  * Syntax highlighting plugin using highlight.js
  */
 export class SyntaxHighlightPlugin implements MarkdownPlugin {
@@ -61,7 +76,7 @@ export class SyntaxHighlightPlugin implements MarkdownPlugin {
           language: lang,
           ignoreIllegals: true,
         });
-        return this.wrapCode(result.value, lang);
+        return this.wrapCode(result.value, lang, lang);
       } catch {
         // Fall through to auto-detect
       }
@@ -70,19 +85,32 @@ export class SyntaxHighlightPlugin implements MarkdownPlugin {
     // Try auto-detection
     try {
       const result = hljs.highlightAuto(code);
-      return this.wrapCode(result.value, result.language || 'plaintext');
+      return this.wrapCode(result.value, result.language || 'plaintext', lang);
     } catch {
       // Fall back to plain text
-      return this.wrapCode(this.escapeHtml(code), 'plaintext');
+      return this.wrapCode(this.escapeHtml(code), 'plaintext', lang);
     }
   }
 
   /**
-   * Wrap highlighted code in proper HTML structure
+   * Wrap highlighted code in proper HTML structure.
+   *
+   * The block is `<div.code-block>` around the `<pre>`, carrying a copy
+   * button. The button holds no text and the language label is drawn from
+   * `data-lang` by CSS, so neither shows up in find-in-page, Select All or
+   * the copied document. `data-lang` is only set for a language the author
+   * wrote on the fence: a guess from auto-detection is not worth announcing.
    */
-  private wrapCode(highlightedCode: string, lang: string): string {
+  private wrapCode(highlightedCode: string, lang: string, declaredLang: string): string {
     const lineNumberAttr = this.options.lineNumbers ? ' data-line-numbers' : '';
-    return `<pre class="hljs"${lineNumberAttr}><code class="language-${lang}">${highlightedCode}</code></pre>`;
+    const label = declaredLang.trim();
+    const langAttr = label ? ` data-lang="${this.escapeHtml(label)}"` : '';
+    return (
+      `<div class="code-block"${langAttr}>` +
+      COPY_BUTTON_HTML +
+      `<pre class="hljs"${lineNumberAttr}><code class="language-${lang}">${highlightedCode}</code></pre>` +
+      '</div>'
+    );
   }
 
   /**
@@ -195,6 +223,10 @@ export class SyntaxHighlightPlugin implements MarkdownPlugin {
   getStyles(): string {
     return `
       /* Syntax Highlighting Base Styles */
+      .code-block {
+        position: relative;
+      }
+
       pre.hljs {
         padding: 16px;
         overflow: auto;
@@ -203,6 +235,71 @@ export class SyntaxHighlightPlugin implements MarkdownPlugin {
         background-color: var(--hljs-bg);
         border-radius: 6px;
         margin: 1em 0;
+      }
+
+      /* Language label, top-right, from the fence's own info string */
+      .code-block[data-lang]::before {
+        content: attr(data-lang);
+        position: absolute;
+        top: 6px;
+        right: 40px;
+        font-family: var(--doc-font-mono);
+        font-size: 11px;
+        line-height: 16px;
+        color: var(--hljs-comment);
+        opacity: 0.8;
+        pointer-events: none;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+
+      /* Copy button: shown on hover or keyboard focus, hidden otherwise */
+      .code-copy-btn {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        background-color: var(--hljs-bg);
+        color: var(--hljs-comment);
+        cursor: pointer;
+        opacity: 0;
+        transition: opacity 0.15s, color 0.15s, background-color 0.15s;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+
+      .code-block:hover .code-copy-btn,
+      .code-copy-btn:focus-visible,
+      .code-block.is-copied .code-copy-btn {
+        opacity: 1;
+      }
+
+      .code-copy-btn:hover {
+        color: var(--hljs-color);
+        background-color: var(--hover-bg);
+      }
+
+      .code-copy-btn .code-copied-icon {
+        display: none;
+      }
+
+      .code-block.is-copied .code-copy-btn {
+        color: var(--success-color);
+      }
+
+      .code-block.is-copied .code-copy-btn .code-copy-icon {
+        display: none;
+      }
+
+      .code-block.is-copied .code-copy-btn .code-copied-icon {
+        display: inline;
       }
 
       pre.hljs code {

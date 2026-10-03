@@ -193,23 +193,26 @@ export class GithubFlavoredPlugin implements MarkdownPlugin {
       ) {
         const content = inlineToken.content || '';
 
-        if (content.startsWith('[ ] ')) {
-          // Unchecked task
+        const isUnchecked = content.startsWith('[ ] ');
+        const isChecked = content.startsWith('[x] ') || content.startsWith('[X] ');
+
+        if (isUnchecked || isChecked) {
+          // The inline content was parsed into children before this renders,
+          // so the marker has to come off the first text child too or it is
+          // printed next to the checkbox.
           inlineToken.content = content.slice(4);
+          const firstText = inlineToken.children?.find((t) => t.type === 'text');
+          if (firstText && /^\[[ xX]\] /.test(firstText.content)) {
+            firstText.content = firstText.content.slice(4);
+          }
           token.attrSet('class', 'task-list-item');
+          // Checkboxes render disabled; the viewer enables them where toggling
+          // is wired up, using the item's data-source-lines to find the marker.
           const result = defaultListItemRender(tokens, idx, options, env, self);
+          const checked = isChecked ? ' checked' : '';
           return (
             result +
-            '<input type="checkbox" class="task-list-checkbox" disabled>'
-          );
-        } else if (content.startsWith('[x] ') || content.startsWith('[X] ')) {
-          // Checked task
-          inlineToken.content = content.slice(4);
-          token.attrSet('class', 'task-list-item');
-          const result = defaultListItemRender(tokens, idx, options, env, self);
-          return (
-            result +
-            '<input type="checkbox" class="task-list-checkbox" checked disabled>'
+            `<input type="checkbox" class="task-list-checkbox"${checked} disabled>`
           );
         }
       }

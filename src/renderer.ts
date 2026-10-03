@@ -5,6 +5,7 @@
 import './index.css';
 
 import { joinBlocks } from '@shared/markdown/blocks';
+import { extractSection } from '@shared/markdown/sections';
 import {
   createMarkdownViewer,
   createDropZone,
@@ -44,6 +45,7 @@ import {
   type SyncReviewOutcome,
 } from './renderer/components';
 import type { EditModeCallbacks } from './renderer/components/EditModeController';
+import type { SectionCopyFormat } from './renderer/components/MarkdownViewer';
 import {
   createDocumentCopyService,
   DiffService,
@@ -99,6 +101,9 @@ const OUTLINE_VISIBLE_KEY = 'outline-panel-visible';
 /** Most document text handed to the document browser for content filtering */
 const DESCRIBE_TEXT_LIMIT = 200_000;
 
+/** How long after the last checkbox click its write goes to disk */
+const TASK_WRITE_DELAY_MS = 150;
+
 /**
  * Main Application class that coordinates all components
  */
@@ -139,6 +144,10 @@ class App {
   };
 
   private autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Coalesces rapid checkbox toggles into one write */
+  private taskWriteTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingTaskMarkdown: string | null = null;
 
   private cleanupFunctions: Array<() => void> = [];
   private contentRenderTimer: ReturnType<typeof setTimeout> | null = null;
@@ -417,6 +426,14 @@ class App {
       });
     });
 
+    this.markdownViewer.setOnTaskToggle((markdown) => {
+      this.scheduleTaskWrite(markdown);
+    });
+
+    this.markdownViewer.setOnCopySection((heading, sourceLine, format) => {
+      void this.handleCopySection(heading, sourceLine, format);
+    });
+
     this.dropZone.setOnFileDrop((filePath) => {
       void this.handleFileDrop(filePath);
     });
@@ -484,6 +501,7 @@ class App {
       this.preferencesPanel.updateValues(preferences);
       this.updateExternalEditorLabel(preferences.core.externalEditor.editor);
       this.applyExperimentalFeatures(preferences.core.experimental);
+      this.markdownViewer?.setInteractiveTaskLists(preferences.core.viewer.interactiveTaskLists);
       await this.applyTheme(this.state.currentTheme);
 
       // Load plugin preference schemas
@@ -508,6 +526,8 @@ class App {
 
           // Apply experimental feature visibility
           this.applyExperimentalFeatures(prefs.core.experimental);
+
+          this.markdownViewer?.setInteractiveTaskLists(prefs.core.viewer.interactiveTaskLists);
 
           // Notify plugins of preference changes
           this.markdownViewer?.notifyAllPluginsPreferencesChange(prefs.plugins);
@@ -664,6 +684,17 @@ class App {
       }
     );
     this.cleanupFunctions.push(cleanupMenuAction);
+
+    // Cmd/Ctrl+Shift+C copies the code block the selection or the mouse is in
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (!(e.metaKey || e.ctrlKey) || !e.shiftKey || e.altKey) return;
+      if (e.key.toLowerCase() !== 'c') return;
+      if (this.markdownViewer?.copyFocusedCodeBlock()) {
+        e.preventDefault();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    this.cleanupFunctions.push(() => document.removeEventListener('keydown', onKeyDown));
 
     // The document browser in any window asks where this window's document
     // view is, so its capture shows the document alone
@@ -903,6 +934,14 @@ class App {
     // In edit mode, ignore external changes to avoid conflicts
     if (this.state.isEditMode) return;
 
+    // A change that only echoes what the view already shows -- our own write
+    // of a toggled checkbox coming back through the watcher -- is not worth a
+    // re-render: that would flash every diagram and move the scroll position.
+    if (event.content === this.markdownViewer?.getState().content) {
+      this.statusBar?.setModifiedTime(new Date());
+      return;
+    }
+
     try {
       // Update modified time
       this.statusBar?.setModifiedTime(new Date());
@@ -1089,6 +1128,93 @@ class App {
   }
 
   /**
+   * Persist a checkbox toggle. Rapid clicks are coalesced into one write of
+   * the latest markdown; a write that fails puts the view back to what the
+   * file actually says.
+   */
+  private scheduleTaskWrite(markdown: string): void {
+    this.pendingTaskMarkdown = markdown;
+    if (this.taskWriteTimer) clearTimeout(this.taskWriteTimer);
+    this.taskWriteTimer = setTimeout(() => {
+      this.taskWriteTimer = null;
+      const pending = this.pendingTaskMarkdown;
+      this.pendingTaskMarkdown = null;
+      if (pending !== null) void this.writeTaskToggle(pending);
+    }, TASK_WRITE_DELAY_MS);
+  }
+
+  private async writeTaskToggle(markdown: string): Promise<void> {
+    const filePath = this.state.currentFilePath;
+    if (!filePath) return;
+
+    let error: string | null = null;
+    try {
+      const result = await window.electronAPI.file.write(filePath, markdown);
+      error = result.success ? null : (result.error ?? 'Failed to save file');
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'Failed to save file';
+    }
+
+    if (error === null) {
+      // Our own edit: it is the new baseline, not a change to flag
+      this.diffService?.setBaseline(markdown);
+      this.statusBar?.setModifiedTime(new Date());
+      return;
+    }
+
+    this.toast?.error(`Could not update the task: ${error}`);
+    const result = await window.electronAPI.file.read(filePath);
+    if (result.success && result.content != null && filePath === this.state.currentFilePath) {
+      await this.markdownViewer?.render(result.content, filePath);
+    }
+  }
+
+  /**
+   * Copy one heading's section, from its context menu
+   */
+  private async handleCopySection(
+    heading: HTMLElement,
+    sourceLine: number,
+    format: SectionCopyFormat
+  ): Promise<void> {
+    if (!this.markdownViewer || !this.documentCopyService) return;
+
+    const markdown = this.markdownViewer.getState().content;
+    const section = extractSection(markdown, sourceLine);
+    if (section === null) {
+      this.toast?.error('Could not find this section in the file');
+      return;
+    }
+
+    try {
+      if (format === 'markdown') {
+        await window.electronAPI.clipboard.writeText(section);
+        this.toast?.success('Section copied as Markdown');
+        return;
+      }
+
+      const viewerContainer = document.getElementById('markdown-content');
+      const viewerElement = document.getElementById('markdown-viewer');
+      if (!viewerContainer || !viewerElement) return;
+
+      await this.documentCopyService.copySectionAsRichText(heading, section, {
+        contentElement: viewerContainer,
+        scrollContainer: viewerElement,
+        pluginManager: this.markdownViewer.getPluginManager(),
+        zoomLevel: this.zoomController?.getZoom() ?? 1.0,
+      });
+      this.toast?.success('Section copied as rich text');
+    } catch (error) {
+      const message = isDomainError(error)
+        ? error.toUserMessage()
+        : error instanceof Error
+          ? error.message
+          : 'Failed to copy section';
+      this.toast?.error(message);
+    }
+  }
+
+  /**
    * Handle copy document action from dropdown
    */
   private async handleCopyDocument(type: CopyDocumentType): Promise<void> {
@@ -1115,7 +1241,19 @@ class App {
         zoomLevel: this.zoomController?.getZoom() ?? 1.0,
       };
 
-      if (type === 'google-docs') {
+      if (type === 'rich-text') {
+        const result = await this.documentCopyService.copyAsRichText({
+          ...options,
+          markdown: this.markdownViewer.getState().content,
+        });
+        if (result.success) {
+          this.toast?.success(
+            result.scope === 'selection'
+              ? 'Selection copied as rich text'
+              : 'Document copied as rich text'
+          );
+        }
+      } else if (type === 'google-docs') {
         const result = await this.documentCopyService.copyForGoogleDocs(options);
         if (result.success) {
           const diagramText = result.diagramCount && result.diagramCount > 0
@@ -1160,6 +1298,8 @@ class App {
 
       // Update external editor label
       this.updateExternalEditorLabel(updatedPrefs.core.externalEditor.editor);
+
+      this.markdownViewer?.setInteractiveTaskLists(updatedPrefs.core.viewer.interactiveTaskLists);
 
       // Notify plugins of preference changes
       if (updates.plugins) {

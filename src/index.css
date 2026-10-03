@@ -538,6 +538,12 @@ body {
   background-color: var(--table-row-alt-bg);
 }
 
+/* A task-list checkbox that writes back to the file invites a click; one
+ * that cannot (toggling off, edit mode) keeps the disabled look. */
+.markdown-body input.task-list-checkbox:not(:disabled) {
+  cursor: pointer;
+}
+
 /* Status Bar */
 .status-bar {
   display: flex;

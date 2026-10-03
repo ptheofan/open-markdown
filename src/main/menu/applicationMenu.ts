@@ -51,6 +51,11 @@ export function setupApplicationMenu(): void {
           accelerator: 'CmdOrCtrl+O',
           click: () => sendMenuAction('open-file'),
         },
+        {
+          label: 'Open Path...',
+          accelerator: 'CmdOrCtrl+P',
+          click: () => sendMenuAction('open-path'),
+        },
         { type: 'separator' },
         {
           label: 'Save',

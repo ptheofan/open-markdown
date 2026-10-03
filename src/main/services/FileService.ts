@@ -3,6 +3,7 @@
  */
 import { dialog, BrowserWindow } from 'electron';
 import { readFile, writeFile, stat } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import path from 'node:path';
 
 import { MARKDOWN_EXTENSIONS, MAX_FILE_SIZE_BYTES } from '@shared/constants';
@@ -12,7 +13,15 @@ import {
   InvalidFileTypeError,
 } from '@shared/errors';
 
-import type { FileOpenResult, FileReadResult, FileWriteResult, FileStats } from '@shared/types';
+import { resolveDocumentPath } from './DocumentPathResolver';
+
+import type {
+  FileOpenResult,
+  FileReadResult,
+  FileWriteResult,
+  FileStats,
+  PathResolveResult,
+} from '@shared/types';
 
 /**
  * Service for handling file operations
@@ -80,6 +89,56 @@ export class FileService {
       filePath,
       content: readResult.content,
     };
+  }
+
+  /**
+   * Resolve a typed or pasted path to a markdown file on disk. A relative
+   * path is taken from the folder of baseFilePath (the document the window
+   * shows), or from the home directory when the window is empty.
+   */
+  async resolvePath(
+    input: string,
+    baseFilePath: string | null,
+    homeDir: string = homedir()
+  ): Promise<PathResolveResult> {
+    const resolved = resolveDocumentPath(input, baseFilePath, homeDir);
+    if (!resolved) {
+      return { success: false, error: 'Enter a path to a markdown file.' };
+    }
+
+    const { filePath, resolvedFrom } = resolved;
+
+    let stats: Awaited<ReturnType<typeof stat>>;
+    try {
+      stats = await stat(filePath);
+    } catch {
+      return {
+        success: false,
+        filePath,
+        resolvedFrom,
+        error: 'No such file.',
+      };
+    }
+
+    if (stats.isDirectory()) {
+      return {
+        success: false,
+        filePath,
+        resolvedFrom,
+        error: 'That is a folder, not a markdown file.',
+      };
+    }
+
+    if (!this.isMarkdownFile(path.extname(filePath))) {
+      return {
+        success: false,
+        filePath,
+        resolvedFrom,
+        error: `Not a markdown file (${MARKDOWN_EXTENSIONS.join(', ')}).`,
+      };
+    }
+
+    return { success: true, filePath, resolvedFrom };
   }
 
   /**

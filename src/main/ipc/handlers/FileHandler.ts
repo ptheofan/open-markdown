@@ -8,7 +8,12 @@ import { getFileWatcherService } from '../../services/FileWatcherService';
 import { getWindowManager } from '@main/window/WindowManager';
 import { IPC_CHANNELS } from '../channels';
 
-import type { FileOpenResult, FileReadResult, FileWriteResult } from '@shared/types';
+import type {
+  FileOpenResult,
+  FileReadResult,
+  FileWriteResult,
+  PathResolveResult,
+} from '@shared/types';
 
 // Track per-window subscription cleanup functions to prevent duplicate callbacks
 const windowSubscriptions = new Map<number, () => void>();
@@ -26,6 +31,20 @@ export function registerFileHandlers(): void {
     async (event): Promise<FileOpenResult> => {
       const window = BrowserWindow.fromWebContents(event.sender) ?? undefined;
       return fileService.openFileDialog(window);
+    }
+  );
+
+  // Resolve a typed or pasted path. A relative path is taken from the
+  // folder of the document this window shows, so "../spec.md" means what
+  // it would mean inside that document.
+  ipcMain.handle(
+    IPC_CHANNELS.FILE.RESOLVE_PATH,
+    async (event, input: string): Promise<PathResolveResult> => {
+      const window = BrowserWindow.fromWebContents(event.sender);
+      const baseFilePath = window
+        ? getWindowManager().getWindowFilePath(window.id)
+        : null;
+      return fileService.resolvePath(input, baseFilePath);
     }
   );
 
@@ -111,6 +130,7 @@ export function registerFileHandlers(): void {
  */
 export function unregisterFileHandlers(): void {
   ipcMain.removeHandler(IPC_CHANNELS.FILE.OPEN_DIALOG);
+  ipcMain.removeHandler(IPC_CHANNELS.FILE.RESOLVE_PATH);
   ipcMain.removeHandler(IPC_CHANNELS.FILE.READ);
   ipcMain.removeHandler(IPC_CHANNELS.FILE.WRITE);
   ipcMain.removeHandler(IPC_CHANNELS.FILE.WATCH);

@@ -10,7 +10,13 @@ import {
 } from '@main/ipc/handlers/FileHandler';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import type { FileOpenResult, FileReadResult, FileChangeEvent, FileDeleteEvent } from '@shared/types';
+import type {
+  FileOpenResult,
+  FileReadResult,
+  FileChangeEvent,
+  FileDeleteEvent,
+  PathResolveResult,
+} from '@shared/types';
 
 // Callback types for file watcher
 type FileChangeCallback = (event: FileChangeEvent) => void;
@@ -44,6 +50,7 @@ vi.mock('electron', () => {
 const mockFileService = {
   openFileDialog: vi.fn(),
   readFile: vi.fn(),
+  resolvePath: vi.fn(),
 };
 
 const mockFileWatcherService = {
@@ -64,6 +71,15 @@ vi.mock('@main/services/FileService', () => ({
 
 vi.mock('@main/services/FileWatcherService', () => ({
   getFileWatcherService: () => mockFileWatcherService,
+}));
+
+const mockWindowManager = {
+  getWindowFilePath: vi.fn<(windowId: number) => string | null>(() => null),
+  setWindowFilePath: vi.fn(),
+};
+
+vi.mock('@main/window/WindowManager', () => ({
+  getWindowManager: () => mockWindowManager,
 }));
 
 type MockIpcMain = typeof ipcMain & {
@@ -92,6 +108,10 @@ describe('FileHandler', () => {
         expect.any(Function)
       );
       expect(ipcMain.handle).toHaveBeenCalledWith(
+        IPC_CHANNELS.FILE.RESOLVE_PATH,
+        expect.any(Function)
+      );
+      expect(ipcMain.handle).toHaveBeenCalledWith(
         IPC_CHANNELS.FILE.READ,
         expect.any(Function)
       );
@@ -112,6 +132,7 @@ describe('FileHandler', () => {
       unregisterFileHandlers();
 
       expect(ipcMain.removeHandler).toHaveBeenCalledWith(IPC_CHANNELS.FILE.OPEN_DIALOG);
+      expect(ipcMain.removeHandler).toHaveBeenCalledWith(IPC_CHANNELS.FILE.RESOLVE_PATH);
       expect(ipcMain.removeHandler).toHaveBeenCalledWith(IPC_CHANNELS.FILE.READ);
       expect(ipcMain.removeHandler).toHaveBeenCalledWith(IPC_CHANNELS.FILE.WATCH);
       expect(ipcMain.removeHandler).toHaveBeenCalledWith(IPC_CHANNELS.FILE.UNWATCH);
@@ -159,6 +180,42 @@ describe('FileHandler', () => {
       await handler?.(event);
 
       expect(mockFileService.openFileDialog).toHaveBeenCalledWith(undefined);
+    });
+  });
+
+  describe('RESOLVE_PATH handler', () => {
+    it('resolves against the file shown in the calling window', async () => {
+      const mockWindow = { id: 7 };
+      vi.mocked(BrowserWindow.fromWebContents).mockReturnValue(mockWindow as unknown as BrowserWindow);
+      mockWindowManager.getWindowFilePath.mockReturnValue('/docs/current.md');
+
+      const expectedResult: PathResolveResult = {
+        success: true,
+        filePath: '/docs/spec.md',
+        resolvedFrom: 'document',
+      };
+      mockFileService.resolvePath.mockResolvedValue(expectedResult);
+
+      registerFileHandlers();
+
+      const handler = mockIpcMain._getHandler(IPC_CHANNELS.FILE.RESOLVE_PATH);
+      const result = await handler?.({ sender: {} }, 'spec.md');
+
+      expect(mockWindowManager.getWindowFilePath).toHaveBeenCalledWith(7);
+      expect(mockFileService.resolvePath).toHaveBeenCalledWith('spec.md', '/docs/current.md');
+      expect(result).toEqual(expectedResult);
+    });
+
+    it('resolves with no base when the sender has no window', async () => {
+      vi.mocked(BrowserWindow.fromWebContents).mockReturnValue(null);
+      mockFileService.resolvePath.mockResolvedValue({ success: false, error: 'No such file.' });
+
+      registerFileHandlers();
+
+      const handler = mockIpcMain._getHandler(IPC_CHANNELS.FILE.RESOLVE_PATH);
+      await handler?.({ sender: {} }, 'spec.md');
+
+      expect(mockFileService.resolvePath).toHaveBeenCalledWith('spec.md', null);
     });
   });
 

@@ -53,6 +53,23 @@ export interface FileDeleteEvent {
 }
 
 /**
+ * What a typed or pasted path was resolved against
+ */
+export type PathResolveBase = 'absolute' | 'document' | 'home';
+
+/**
+ * Result of resolving a typed or pasted path to a document on disk
+ */
+export interface PathResolveResult {
+  success: boolean;
+  /** The absolute path the input resolved to, when it could be resolved at all */
+  filePath?: string;
+  /** What a relative input was resolved against */
+  resolvedFrom?: PathResolveBase;
+  error?: string;
+}
+
+/**
  * Result of writing a file
  */
 export interface FileWriteResult {

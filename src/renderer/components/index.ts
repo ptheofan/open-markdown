@@ -114,6 +114,13 @@ export {
   type FindBarCallbacks,
 } from './FindBar';
 
+// OpenPathBar
+export {
+  OpenPathBar,
+  createOpenPathBar,
+  type OpenPathBarCallbacks,
+} from './OpenPathBar';
+
 // DocumentBrowser
 export {
   DocumentBrowser,

@@ -2908,3 +2908,104 @@ pre.sync-merge-cell {
   font-size: 11px;
   color: var(--text-muted);
 }
+
+/* ===== Open Path bar ===== */
+
+.open-path-bar {
+  position: fixed;
+  top: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2000;
+  display: none;
+  flex-direction: column;
+  gap: 4px;
+  width: min(640px, calc(100vw - 40px));
+  padding: 8px 10px;
+  background-color: var(--toolbar-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  font-size: 13px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.open-path-bar-visible {
+  display: flex;
+}
+
+.open-path-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.open-path-label {
+  flex: none;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.open-path-input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: var(--font-mono, ui-monospace, Menlo, monospace);
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.open-path-input:focus {
+  border-color: var(--link-color);
+}
+
+.open-path-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: none;
+  color: var(--text-color);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.open-path-close:hover {
+  background-color: var(--hover-bg);
+  border-color: var(--border-color);
+}
+
+/* The resolved path, or why it cannot be opened. One line; long paths
+   are clipped at the start so the file name stays visible. */
+.open-path-status {
+  min-height: 1.4em;
+  padding: 0 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: var(--font-mono, ui-monospace, Menlo, monospace);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+
+.open-path-status-ok {
+  color: var(--gutter-added-color);
+}
+
+.open-path-status-error {
+  color: var(--gutter-deleted-color);
+}

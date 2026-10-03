@@ -27,6 +27,11 @@
               <div class="dropdown-empty hidden">No recent files</div>
             </div>
           </div>
+          <button id="outline-toggle-btn" class="toolbar-btn toolbar-btn-icon" title="Toggle Outline (Cmd+Shift+O)" aria-pressed="true" disabled>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M2 3.5A.5.5 0 0 1 2.5 3h11a.5.5 0 0 1 0 1h-11a.5.5 0 0 1-.5-.5zm2 3A.5.5 0 0 1 4.5 6h9a.5.5 0 0 1 0 1h-9a.5.5 0 0 1-.5-.5zm2 3A.5.5 0 0 1 6.5 9h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5zm-4 3a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 0 1h-11a.5.5 0 0 1-.5-.5z"/>
+            </svg>
+          </button>
         </div>
         <div class="toolbar-center">
           <span id="file-name" class="file-name">No file open</span>
@@ -152,6 +157,9 @@
             <p class="drop-zone-hint">Supports .md and .markdown files</p>
           </div>
         </div>
+
+        <!-- Document outline (headings), shown beside the viewer -->
+        <aside id="outline-panel" class="outline-panel outline-panel-collapsed" aria-hidden="true"></aside>
 
         <!-- Markdown Viewer (shown when file is open) -->
         <article id="markdown-viewer" class="markdown-viewer hidden">

@@ -13,6 +13,7 @@ export interface ToolbarCallbacks {
   onSave?: () => void;
   onEnterEditMode?: () => void;
   onCancelEdit?: () => void;
+  onToggleOutline?: () => void;
 }
 
 /**
@@ -24,6 +25,7 @@ export class Toolbar {
   private preferencesBtn: HTMLButtonElement | null = null;
   private themeToggleBtn: HTMLButtonElement | null = null;
   private editModeBtn: HTMLButtonElement | null = null;
+  private outlineToggleBtn: HTMLButtonElement | null = null;
   private editSaveArrow: HTMLButtonElement | null = null;
   private editSaveGroup: HTMLElement | null = null;
   private editSaveMenu: HTMLElement | null = null;
@@ -51,6 +53,7 @@ export class Toolbar {
     this.preferencesBtn = this.element.querySelector('#preferences-btn');
     this.themeToggleBtn = this.element.querySelector('#theme-toggle-btn');
     this.editModeBtn = this.element.querySelector('#edit-mode-btn');
+    this.outlineToggleBtn = this.element.querySelector('#outline-toggle-btn');
     this.editSaveArrow = this.element.querySelector('#edit-save-arrow');
     this.editSaveGroup = this.element.querySelector('#edit-save-group');
     this.editSaveMenu = this.element.querySelector('#edit-save-menu');
@@ -77,6 +80,10 @@ export class Toolbar {
 
     this.themeToggleBtn?.addEventListener('click', () => {
       this.callbacks.onToggleTheme?.();
+    });
+
+    this.outlineToggleBtn?.addEventListener('click', () => {
+      this.callbacks.onToggleOutline?.();
     });
 
     // Main edit/save button - action depends on mode
@@ -145,6 +152,23 @@ export class Toolbar {
     if (this.themeToggleBtn) {
       this.themeToggleBtn.title = `Switch to ${isDark ? 'light' : 'dark'} theme`;
     }
+  }
+
+  /**
+   * Reflect whether the outline panel is shown
+   */
+  setOutlineVisible(visible: boolean): void {
+    if (!this.outlineToggleBtn) return;
+    this.outlineToggleBtn.classList.toggle('toolbar-btn-active', visible);
+    this.outlineToggleBtn.setAttribute('aria-pressed', String(visible));
+    this.outlineToggleBtn.title = `${visible ? 'Hide' : 'Show'} Outline (Cmd+Shift+O)`;
+  }
+
+  /**
+   * Enable the outline toggle (only meaningful while a document is open)
+   */
+  setOutlineEnabled(enabled: boolean): void {
+    if (this.outlineToggleBtn) this.outlineToggleBtn.disabled = !enabled;
   }
 
   /**

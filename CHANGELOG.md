@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Document outline**: a sidebar on the left lists every heading, indented by level, with its own scrolling. The section at the top of the view is highlighted and kept in view in the sidebar; clicking a sidebar entry scrolls the document to that heading, and clicking inside a section of the document moves the sidebar to it. Toggle it from the toolbar or View → Toggle Outline (`Cmd+Shift+O`); the choice is remembered. Hidden automatically for documents without headings.
+
 ## [1.5.0] - 2026-08-22
 
 ### Added

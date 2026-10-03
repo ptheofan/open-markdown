@@ -104,6 +104,12 @@ export function setupApplicationMenu(): void {
           click: () => sendMenuAction('zoom-reset'),
         },
         { type: 'separator' },
+        {
+          label: 'Toggle Outline',
+          accelerator: 'CmdOrCtrl+Shift+O',
+          click: () => sendMenuAction('toggle-outline'),
+        },
+        { type: 'separator' },
         { role: 'togglefullscreen' },
       ],
     },

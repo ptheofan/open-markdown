@@ -15,6 +15,7 @@ import {
   createCopyDropdown,
   createChangeGutter,
   createFindBar,
+  createOutlinePanel,
   createRecentFilesDropdown,
   createOpenExternalDropdown,
   createGoogleDocsButton,
@@ -30,6 +31,7 @@ import {
   type CopyDropdown,
   type ChangeGutter,
   type FindBar,
+  type OutlinePanel,
   type RecentFilesDropdown,
   type OpenExternalDropdown,
   type GoogleDocsButton,
@@ -86,6 +88,9 @@ interface AppState {
   hasUnsavedChanges: boolean;
 }
 
+/** localStorage key remembering whether the outline panel is shown */
+const OUTLINE_VISIBLE_KEY = 'outline-panel-visible';
+
 /**
  * Main Application class that coordinates all components
  */
@@ -102,6 +107,7 @@ class App {
   private diffService: DiffService | null = null;
   private changeGutter: ChangeGutter | null = null;
   private findBar: FindBar | null = null;
+  private outlinePanel: OutlinePanel | null = null;
   private findService: FindService | null = null;
   private recentFilesDropdown: RecentFilesDropdown | null = null;
   private openExternalDropdown: OpenExternalDropdown | null = null;
@@ -218,6 +224,33 @@ class App {
       },
     });
 
+    // Document outline beside the viewer. Hidden state is remembered per app,
+    // not per file: a user who closes it wants it closed next time too.
+    const outlinePanelElement = document.getElementById('outline-panel');
+    if (outlinePanelElement) {
+      this.outlinePanel = createOutlinePanel({
+        panel: outlinePanelElement,
+        scrollContainer: viewerElement,
+        contentContainer: viewerContainer,
+        onVisibilityChange: (visible) => {
+          this.toolbar?.setOutlineVisible(visible);
+          try {
+            localStorage.setItem(OUTLINE_VISIBLE_KEY, visible ? '1' : '0');
+          } catch {
+            // Storage unavailable: the choice just doesn't survive a restart
+          }
+        },
+      });
+      let outlineVisible = true;
+      try {
+        outlineVisible = localStorage.getItem(OUTLINE_VISIBLE_KEY) !== '0';
+      } catch {
+        // Storage unavailable: fall back to shown
+      }
+      this.outlinePanel.setVisible(outlineVisible);
+      this.toolbar.setOutlineVisible(outlineVisible);
+    }
+
     // Create copy dropdown if element exists
     if (copyDropdownElement) {
       this.copyDropdown = createCopyDropdown(copyDropdownElement);
@@ -328,6 +361,9 @@ class App {
       },
       onCancelEdit: () => {
         void this.handleCancelEdit();
+      },
+      onToggleOutline: () => {
+        this.outlinePanel?.toggle();
       },
     });
 
@@ -561,6 +597,9 @@ class App {
           case 'zoom-reset':
             this.zoomController?.resetZoom();
             break;
+          case 'toggle-outline':
+            this.outlinePanel?.toggle();
+            break;
           case 'save':
             if (this.state.isEditMode) {
               void this.handleSaveAndExitEditMode();
@@ -653,6 +692,7 @@ class App {
     const editModeBtn = document.getElementById('edit-mode-btn') as HTMLButtonElement | null;
     if (editModeBtn) editModeBtn.disabled = true;
     this.googleDocsButton?.setEnabled(false);
+    this.toolbar?.setOutlineEnabled(false);
   }
 
   /**
@@ -675,6 +715,7 @@ class App {
     const editModeBtn = document.getElementById('edit-mode-btn') as HTMLButtonElement | null;
     if (editModeBtn) editModeBtn.disabled = false;
     this.googleDocsButton?.setEnabled(true);
+    this.toolbar?.setOutlineEnabled(true);
   }
 
   /**
@@ -1553,6 +1594,7 @@ class App {
     this.copyDropdown?.destroy();
     this.changeGutter?.destroy();
     this.findBar?.destroy();
+    this.outlinePanel?.destroy();
     this.recentFilesDropdown?.destroy();
     this.openExternalDropdown?.destroy();
     this.googleDocsButton?.destroy();

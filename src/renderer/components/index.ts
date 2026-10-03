@@ -92,6 +92,14 @@ export {
 // Toast
 export { Toast, type ToastType } from './Toast';
 
+// OutlinePanel
+export {
+  OutlinePanel,
+  createOutlinePanel,
+  type OutlinePanelOptions,
+  type OutlineEntry,
+} from './OutlinePanel';
+
 // ChangeGutter
 export {
   ChangeGutter,

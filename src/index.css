@@ -200,6 +200,10 @@ body {
   flex-shrink: 0;
 }
 
+.toolbar-btn-icon {
+  padding: 6px 8px;
+}
+
 .file-name {
   font-size: 13px;
   font-weight: 500;
@@ -221,10 +225,73 @@ body {
   flex: 1;
   overflow: hidden;
   position: relative;
+  display: flex;
+  flex-direction: row;
+}
+
+/* Document Outline */
+.outline-panel {
+  flex: 0 0 240px;
+  width: 240px;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 12px 0;
+  background-color: var(--toolbar-bg);
+  border-right: 1px solid var(--border-color);
+  /* Chrome, not document content: keep it out of Select All / copy */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Collapsed by the user or empty (no headings), or no document open at all */
+.outline-panel.outline-panel-collapsed,
+.outline-panel:has(+ .markdown-viewer.hidden) {
+  display: none;
+}
+
+.outline-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.outline-item {
+  display: block;
+  width: 100%;
+  padding: 4px 12px 4px calc(12px + var(--outline-depth, 0) * 12px);
+  margin: 0;
+  background: transparent;
+  border: none;
+  border-left: 2px solid transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.outline-item[data-level='1'] {
+  font-weight: 600;
+}
+
+.outline-item:hover {
+  background-color: var(--hover-bg);
+  color: var(--text-color);
+}
+
+.outline-item-active {
+  border-left-color: var(--link-color);
+  background-color: var(--active-bg);
+  color: var(--text-color);
 }
 
 /* Drop Zone */
 .drop-zone {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -285,6 +352,8 @@ body {
 
 /* Markdown Viewer */
 .markdown-viewer {
+  flex: 1;
+  min-width: 0;
   height: 100%;
   overflow-y: auto;
   padding: 32px;

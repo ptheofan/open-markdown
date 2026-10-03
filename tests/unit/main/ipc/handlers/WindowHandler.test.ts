@@ -143,7 +143,16 @@ describe('WindowHandler', () => {
 
       handler?.();
 
-      expect(mockWindowManager.createWindow).toHaveBeenCalled();
+      expect(mockWindowManager.createWindow).toHaveBeenCalledWith(undefined);
+    });
+
+    it('should pass the file to open to the new window', () => {
+      registerWindowHandlers();
+
+      const handler = mockIpcMain._getHandler(IPC_CHANNELS.WINDOW.OPEN_NEW);
+      handler?.({}, '/docs/a.md');
+
+      expect(mockWindowManager.createWindow).toHaveBeenCalledWith('/docs/a.md');
     });
   });
 });

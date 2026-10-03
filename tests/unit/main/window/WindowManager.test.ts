@@ -19,6 +19,13 @@ vi.mock('electron', () => {
           send: vi.fn(),
           once: vi.fn(),
           openDevTools: vi.fn(),
+          ipc: {
+            once: vi.fn((event: string, cb: (...args: unknown[]) => void) => {
+              const key = `ipc:${event}`;
+              if (!handlers[key]) handlers[key] = [];
+              handlers[key].push(cb);
+            }),
+          },
         },
         loadURL: vi.fn().mockResolvedValue(undefined),
         loadFile: vi.fn().mockResolvedValue(undefined),
@@ -44,6 +51,9 @@ vi.mock('electron', () => {
         _handlers: handlers,
         _simulateEvent: (event: string, ...args: unknown[]) => {
           handlers[event]?.forEach(cb => cb(...args));
+        },
+        _simulateRendererReady: () => {
+          handlers['ipc:app:renderer-ready']?.forEach(cb => cb());
         },
       };
     }),
@@ -304,6 +314,115 @@ describe('WindowManager', () => {
       expect(() => {
         (win as unknown as { _simulateEvent: (event: string) => void })._simulateEvent('close');
       }).not.toThrow();
+    });
+  });
+
+  describe('pending file on createWindow', () => {
+    type ReadyWindow = BrowserWindow & { _simulateRendererReady: () => void };
+
+    it('should hand the file over once the renderer signals ready', () => {
+      const win = manager.createWindow('/docs/a.md') as ReadyWindow;
+      expect(win.webContents.send).not.toHaveBeenCalled();
+
+      win._simulateRendererReady();
+
+      expect(win.webContents.send).toHaveBeenCalledWith(
+        IPC_CHANNELS.FILE_ASSOCIATION.ON_EXTERNAL_OPEN,
+        { filePath: '/docs/a.md' }
+      );
+    });
+
+    it('should send nothing when created without a file', () => {
+      const win = manager.createWindow() as ReadyWindow;
+      win._simulateRendererReady();
+      expect(win.webContents.send).not.toHaveBeenCalled();
+    });
+
+    it('should send the file only once', () => {
+      const win = manager.createWindow('/docs/a.md') as ReadyWindow;
+      win._simulateRendererReady();
+      win._simulateRendererReady();
+      expect(win.webContents.send).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('openFile', () => {
+    type ReadyWindow = BrowserWindow & { _simulateRendererReady: () => void };
+
+    it('should focus the window that already shows the file', () => {
+      const win = manager.createWindow();
+      manager.setWindowFilePath(win.id, '/docs/a.md');
+
+      const result = manager.openFile('/docs/a.md');
+
+      expect(result).toBe(win);
+      expect(win.focus).toHaveBeenCalled();
+      expect(manager.getAllWindows()).toHaveLength(1);
+    });
+
+    it('should restore a minimized window before focusing it', () => {
+      const win = manager.createWindow();
+      manager.setWindowFilePath(win.id, '/docs/a.md');
+      vi.mocked(win.isMinimized).mockReturnValue(true);
+
+      manager.openFile('/docs/a.md');
+
+      expect(win.restore).toHaveBeenCalled();
+      expect(win.focus).toHaveBeenCalled();
+    });
+
+    it('should load the file into an empty window whose renderer is ready', () => {
+      const win = manager.createWindow() as ReadyWindow;
+      win._simulateRendererReady();
+
+      const result = manager.openFile('/docs/a.md');
+
+      expect(result).toBe(win);
+      expect(win.webContents.send).toHaveBeenCalledWith(
+        IPC_CHANNELS.FILE_ASSOCIATION.ON_EXTERNAL_OPEN,
+        { filePath: '/docs/a.md' }
+      );
+      expect(win.focus).toHaveBeenCalled();
+      expect(manager.getAllWindows()).toHaveLength(1);
+    });
+
+    it('should hold the file for an empty window until its renderer is ready', () => {
+      const win = manager.createWindow() as ReadyWindow;
+
+      manager.openFile('/docs/a.md');
+      expect(win.webContents.send).not.toHaveBeenCalled();
+
+      win._simulateRendererReady();
+      expect(win.webContents.send).toHaveBeenCalledWith(
+        IPC_CHANNELS.FILE_ASSOCIATION.ON_EXTERNAL_OPEN,
+        { filePath: '/docs/a.md' }
+      );
+    });
+
+    it('should open a new window when every window shows a file', () => {
+      const first = manager.createWindow();
+      manager.setWindowFilePath(first.id, '/docs/a.md');
+
+      const result = manager.openFile('/docs/b.md') as ReadyWindow;
+
+      expect(result).not.toBe(first);
+      expect(manager.getAllWindows()).toHaveLength(2);
+      result._simulateRendererReady();
+      expect(result.webContents.send).toHaveBeenCalledWith(
+        IPC_CHANNELS.FILE_ASSOCIATION.ON_EXTERNAL_OPEN,
+        { filePath: '/docs/b.md' }
+      );
+    });
+  });
+
+  describe('focusWindow', () => {
+    it('should do nothing for a destroyed window', () => {
+      const win = manager.createWindow();
+      vi.mocked(win.isDestroyed).mockReturnValue(true);
+
+      manager.focusWindow(win);
+
+      expect(win.focus).not.toHaveBeenCalled();
     });
   });
 });

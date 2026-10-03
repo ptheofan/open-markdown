@@ -56,6 +56,13 @@ export type {
   PluginPreferencesSchema,
 } from './preferences';
 
+// Document browser types
+export type {
+  ViewerDescription,
+  OpenDocumentEntry,
+  DocumentBrowserSnapshot,
+} from './documentBrowser';
+
 // API types
 export { IPC_CHANNELS } from './api';
 export type {

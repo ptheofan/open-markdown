@@ -2654,3 +2654,257 @@ pre.sync-merge-cell {
   background: #ffffff;
   pointer-events: none;
 }
+
+/* ============================================================
+   Document Browser (overlay listing open documents and recents)
+   ============================================================ */
+
+.doc-browser {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: none;
+  /* Chrome is not part of the document: keep it out of Select All / copy */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.doc-browser-visible {
+  display: block;
+}
+
+.doc-browser-backdrop {
+  position: absolute;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.doc-browser-panel {
+  position: absolute;
+  top: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(1280px, calc(100% - 48px));
+  max-height: calc(100% - 80px);
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.doc-browser-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border-color);
+  background-color: var(--toolbar-bg);
+}
+
+.doc-browser-input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  font-size: 15px;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.doc-browser-input:focus {
+  border-color: var(--link-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--link-color) 25%, transparent);
+}
+
+.doc-browser-hint {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.doc-browser-body {
+  overflow-y: auto;
+  padding: 16px 20px 24px;
+}
+
+.doc-browser-empty {
+  margin: 48px 0;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.doc-browser-section + .doc-browser-section {
+  margin-top: 28px;
+}
+
+.doc-browser-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.doc-browser-section-count {
+  padding: 0 7px;
+  font-size: 11px;
+  line-height: 18px;
+  border-radius: 9px;
+  background-color: var(--hover-bg);
+  color: var(--text-muted);
+}
+
+.doc-browser-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.doc-browser-grid-open {
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+
+.doc-browser-grid-recent {
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+}
+
+.doc-browser-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+  font: inherit;
+  color: var(--text-color);
+  background-color: var(--toolbar-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 0.1s ease, box-shadow 0.1s ease;
+}
+
+.doc-browser-tile:hover {
+  border-color: var(--text-muted);
+}
+
+.doc-browser-tile:focus {
+  outline: none;
+}
+
+.doc-browser-tile-selected,
+.doc-browser-tile-selected:hover {
+  border-color: var(--link-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--link-color) 35%, transparent);
+}
+
+/* A window's document view, cropped to a page-like frame. Scaled from the
+   top-left so the start of the visible section stays readable. */
+.doc-browser-thumb {
+  aspect-ratio: 4 / 3;
+  background-color: var(--doc-bg-color, var(--bg-color));
+  border-bottom: 1px solid var(--border-color);
+  overflow: hidden;
+}
+
+.doc-browser-thumb-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top left;
+}
+
+.doc-browser-thumb-fallback {
+  height: 100%;
+  padding: 12px 14px;
+  font-size: 9px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, black 70%, transparent);
+  -webkit-mask-image: linear-gradient(to bottom, black 70%, transparent);
+}
+
+.doc-browser-tile-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px 12px;
+  min-width: 0;
+}
+
+.doc-browser-tile-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.doc-browser-tile-name {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.doc-browser-badge {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  border-radius: 8px;
+  color: var(--link-color);
+  background-color: color-mix(in srgb, var(--link-color) 15%, transparent);
+}
+
+.doc-browser-tile-path {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+
+.doc-browser-tile-snippet {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.doc-browser-tile-recent {
+  gap: 2px;
+  padding: 10px 12px;
+}
+
+.doc-browser-tile-time {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-muted);
+}

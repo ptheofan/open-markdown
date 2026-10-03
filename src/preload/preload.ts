@@ -16,6 +16,8 @@ import type {
   FileWriteResult,
   FullscreenChangeEvent,
   RecentFileEntry,
+  DocumentBrowserSnapshot,
+  ViewerDescription,
   ResolvedTheme,
   ThemeChangeEvent,
   ThemeMode,
@@ -329,6 +331,37 @@ const electronAPI: ElectronAPI = {
     },
   },
 
+  documentBrowser: {
+    getSnapshot: (): Promise<DocumentBrowserSnapshot> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.DOCUMENT_BROWSER.GET_SNAPSHOT);
+    },
+
+    focusWindow: (windowId: number): Promise<void> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.DOCUMENT_BROWSER.FOCUS_WINDOW, windowId);
+    },
+
+    openFile: (filePath: string): Promise<void> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.DOCUMENT_BROWSER.OPEN_FILE, filePath);
+    },
+
+    onDescribeRequest: (callback: () => ViewerDescription): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, requestId: number): void => {
+        let description: ViewerDescription = { rect: null, text: '' };
+        try {
+          description = callback();
+        } catch {
+          // Answer anyway, so the main process never waits on this window
+        }
+        ipcRenderer.send(IPC_CHANNELS.DOCUMENT_BROWSER.DESCRIBE_RESPONSE, requestId, description);
+      };
+
+      ipcRenderer.on(IPC_CHANNELS.DOCUMENT_BROWSER.DESCRIBE_REQUEST, handler);
+
+      return () => {
+        ipcRenderer.removeListener(IPC_CHANNELS.DOCUMENT_BROWSER.DESCRIBE_REQUEST, handler);
+      };
+    },
+  },
   shell: {
     revealInFileManager: (filePath: string): Promise<void> => {
       return ipcRenderer.invoke(IPC_CHANNELS.SHELL.REVEAL_IN_FILE_MANAGER, filePath);

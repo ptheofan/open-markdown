@@ -114,6 +114,13 @@ export {
   type FindBarCallbacks,
 } from './FindBar';
 
+// DocumentBrowser
+export {
+  DocumentBrowser,
+  createDocumentBrowser,
+  type DocumentBrowserCallbacks,
+} from './DocumentBrowser';
+
 // RecentFilesDropdown
 export {
   RecentFilesDropdown,

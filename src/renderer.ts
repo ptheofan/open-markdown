@@ -15,6 +15,7 @@ import {
   createCopyDropdown,
   createChangeGutter,
   createFindBar,
+  createDocumentBrowser,
   createOutlinePanel,
   createRecentFilesDropdown,
   createOpenExternalDropdown,
@@ -31,6 +32,7 @@ import {
   type CopyDropdown,
   type ChangeGutter,
   type FindBar,
+  type DocumentBrowser,
   type OutlinePanel,
   type RecentFilesDropdown,
   type OpenExternalDropdown,
@@ -64,6 +66,7 @@ import type {
   RecentFileEntry,
   MermaidDiagramData,
   TableColumnWidths,
+  ViewerDescription,
 } from '@shared/types';
 import type {
   GoogleAuthState,
@@ -91,6 +94,9 @@ interface AppState {
 /** localStorage key remembering whether the outline panel is shown */
 const OUTLINE_VISIBLE_KEY = 'outline-panel-visible';
 
+/** Most document text handed to the document browser for content filtering */
+const DESCRIBE_TEXT_LIMIT = 200_000;
+
 /**
  * Main Application class that coordinates all components
  */
@@ -107,6 +113,7 @@ class App {
   private diffService: DiffService | null = null;
   private changeGutter: ChangeGutter | null = null;
   private findBar: FindBar | null = null;
+  private documentBrowser: DocumentBrowser | null = null;
   private outlinePanel: OutlinePanel | null = null;
   private findService: FindService | null = null;
   private recentFilesDropdown: RecentFilesDropdown | null = null;
@@ -221,6 +228,23 @@ class App {
       },
       onStopFinding: () => {
         this.findService!.clear();
+      },
+    });
+
+    // Overlay for switching between open documents. Picking a recent file
+    // fills this window if it is empty; otherwise the file gets its own
+    // window, the same as opening it from Finder.
+    this.documentBrowser = createDocumentBrowser(document.body, {
+      loadSnapshot: () => window.electronAPI.documentBrowser.getSnapshot(),
+      onSelectOpenDocument: (entry) => {
+        void window.electronAPI.documentBrowser.focusWindow(entry.windowId);
+      },
+      onSelectRecentFile: (entry) => {
+        if (this.state.currentFilePath) {
+          void window.electronAPI.documentBrowser.openFile(entry.filePath);
+        } else {
+          void this.loadFile(entry.filePath);
+        }
       },
     });
 
@@ -582,6 +606,9 @@ class App {
           case 'find':
             this.findBar?.show();
             break;
+          case 'browse-documents':
+            this.documentBrowser?.toggle();
+            break;
           case 'open-file':
             void this.handleOpenFile();
             break;
@@ -616,6 +643,13 @@ class App {
       }
     );
     this.cleanupFunctions.push(cleanupMenuAction);
+
+    // The document browser in any window asks where this window's document
+    // view is, so its capture shows the document alone
+    const cleanupDescribe = window.electronAPI.documentBrowser.onDescribeRequest(() =>
+      this.describeViewer()
+    );
+    this.cleanupFunctions.push(cleanupDescribe);
 
     // Google Docs auth change listener
     const cleanupGDocsAuth = window.electronAPI.googleDocs.onAuthChange(
@@ -1176,6 +1210,24 @@ class App {
   }
 
   /**
+   * Where the document view is on screen and what it says, for the document
+   * browser's thumbnails and content filter. Nothing when no file is open.
+   */
+  private describeViewer(): ViewerDescription {
+    const viewer = document.getElementById('markdown-viewer');
+    const content = document.getElementById('markdown-content');
+    if (!viewer || !content || !this.state.currentFilePath || viewer.classList.contains('hidden')) {
+      return { rect: null, text: '' };
+    }
+
+    const rect = viewer.getBoundingClientRect();
+    return {
+      rect: { x: rect.left, y: rect.top, width: rect.width, height: rect.height },
+      text: content.innerText.slice(0, DESCRIBE_TEXT_LIMIT),
+    };
+  }
+
+  /**
    * Format a time ago string from an ISO date string
    */
   private formatTimeAgo(isoString: string): string {
@@ -1594,6 +1646,7 @@ class App {
     this.copyDropdown?.destroy();
     this.changeGutter?.destroy();
     this.findBar?.destroy();
+    this.documentBrowser?.destroy();
     this.outlinePanel?.destroy();
     this.recentFilesDropdown?.destroy();
     this.openExternalDropdown?.destroy();

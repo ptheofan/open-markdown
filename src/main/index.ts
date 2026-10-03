@@ -1,7 +1,7 @@
 /**
  * Main process entry point
  */
-import { app, BrowserWindow, shell } from 'electron';
+import { app, shell } from 'electron';
 import path from 'node:path';
 
 import { registerAllHandlers } from './ipc/handlers';
@@ -15,15 +15,8 @@ import { getRecentFilesService } from './services/RecentFilesService';
 import { getWindowManager } from './window/WindowManager';
 import { getFileService } from './services/FileService';
 import { getGoogleDocsLinkStore } from '@main/services/GoogleDocsLinkStore';
-import { IPC_CHANNELS } from '@shared/types';
 import { MARKDOWN_EXTENSIONS } from '@shared/constants';
 
-interface PendingWindow {
-  filePath: string | null;
-  rendererReady: boolean;
-}
-
-const pendingWindows = new Map<number, PendingWindow>();
 let preReadyFilePath: string | null = null;
 
 // Custom protocol used to serve local image assets must be registered as a
@@ -47,60 +40,6 @@ function checkCommandLineArgs(): string | null {
   }
 
   return null;
-}
-
-/**
- * Send pending file to a specific window when its renderer is ready
- */
-function sendPendingFile(windowId: number): void {
-  const pending = pendingWindows.get(windowId);
-  if (!pending?.filePath) return;
-
-  const windowManager = getWindowManager();
-  const win = windowManager.getWindow(windowId);
-  if (win && !win.isDestroyed()) {
-    win.webContents.send(IPC_CHANNELS.FILE_ASSOCIATION.ON_EXTERNAL_OPEN, {
-      filePath: pending.filePath,
-    });
-    pending.filePath = null;
-  }
-}
-
-/**
- * Create an application window, optionally with a file to open
- */
-function createWindow(filePath?: string): BrowserWindow {
-  const windowManager = getWindowManager();
-  const win = windowManager.createWindow();
-
-  pendingWindows.set(win.id, {
-    filePath: filePath ?? null,
-    rendererReady: false,
-  });
-
-  win.webContents.ipc.once(IPC_CHANNELS.APP.RENDERER_READY, () => {
-    const pending = pendingWindows.get(win.id);
-    if (pending) {
-      pending.rendererReady = true;
-    }
-    sendPendingFile(win.id);
-  });
-
-  win.on('closed', () => {
-    pendingWindows.delete(win.id);
-  });
-
-  return win;
-}
-
-/**
- * Focus an existing window
- */
-function focusWindow(win: BrowserWindow): void {
-  if (win.isMinimized()) {
-    win.restore();
-  }
-  win.focus();
 }
 
 /**
@@ -128,7 +67,7 @@ async function initialize(): Promise<void> {
   // Set up application menu
   setupApplicationMenu();
 
-  createWindow(pendingFilePath ?? undefined);
+  getWindowManager().createWindow(pendingFilePath ?? undefined);
 }
 
 // Electron app lifecycle events
@@ -143,33 +82,8 @@ app.on('open-file', (event, filePath) => {
     return;
   }
 
-  const windowManager = getWindowManager();
-
-  // If a window already has this file, focus it
-  const existingWin = windowManager.getWindowByFilePath(filePath);
-  if (existingWin && !existingWin.isDestroyed()) {
-    focusWindow(existingWin);
-    return;
-  }
-
-  // If there's an empty window, load the file there
-  const emptyWin = windowManager.getEmptyWindow();
-  if (emptyWin && !emptyWin.isDestroyed()) {
-    const pending = pendingWindows.get(emptyWin.id);
-    if (pending?.rendererReady) {
-      emptyWin.webContents.send(IPC_CHANNELS.FILE_ASSOCIATION.ON_EXTERNAL_OPEN, {
-        filePath,
-      });
-    } else if (pending) {
-      pending.filePath = filePath;
-    }
-    focusWindow(emptyWin);
-    return;
-  }
-
-  // Otherwise create a new window
   if (app.isReady()) {
-    createWindow(filePath);
+    getWindowManager().openFile(filePath);
   } else {
     // Store for initialize() to pick up when app is ready
     preReadyFilePath = filePath;

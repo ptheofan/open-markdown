@@ -22,13 +22,20 @@ export class WindowManager {
   private windows: Map<number, BrowserWindow> = new Map();
   private windowFilePaths: Map<number, string | null> = new Map();
   private saveTimers: Map<number, NodeJS.Timeout> = new Map();
+  /** Files waiting for a window whose renderer has not signalled ready yet */
+  private pendingFilePaths: Map<number, string> = new Map();
+  private readyRenderers: Set<number> = new Set();
   private preferencesService?: PreferencesService;
 
   constructor(preferencesService?: PreferencesService) {
     this.preferencesService = preferencesService;
   }
 
-  createWindow(): BrowserWindow {
+  /**
+   * Create a window, optionally with a file to open once its renderer is
+   * ready to receive it.
+   */
+  createWindow(filePath?: string): BrowserWindow {
     const savedState = this.getSavedWindowState();
 
     const win = new BrowserWindow({
@@ -57,6 +64,14 @@ export class WindowManager {
 
     this.windows.set(win.id, win);
     this.windowFilePaths.set(win.id, null);
+    if (filePath) {
+      this.pendingFilePaths.set(win.id, filePath);
+    }
+
+    win.webContents.ipc.once(IPC_CHANNELS.APP.RENDERER_READY, () => {
+      this.readyRenderers.add(win.id);
+      this.sendPendingFile(win.id);
+    });
 
     win.once('ready-to-show', () => {
       win.show();
@@ -94,6 +109,8 @@ export class WindowManager {
       this.windows.delete(win.id);
       this.windowFilePaths.delete(win.id);
       this.saveTimers.delete(win.id);
+      this.pendingFilePaths.delete(win.id);
+      this.readyRenderers.delete(win.id);
     });
 
     if (IS_DEV) {
@@ -146,6 +163,41 @@ export class WindowManager {
     return undefined;
   }
 
+  /**
+   * Open a file the way the OS would: focus the window that already shows
+   * it, else load it into an empty window, else open a new window for it.
+   */
+  openFile(filePath: string): BrowserWindow {
+    const existingWin = this.getWindowByFilePath(filePath);
+    if (existingWin && !existingWin.isDestroyed()) {
+      this.focusWindow(existingWin);
+      return existingWin;
+    }
+
+    const emptyWin = this.getEmptyWindow();
+    if (emptyWin && !emptyWin.isDestroyed()) {
+      this.pendingFilePaths.set(emptyWin.id, filePath);
+      if (this.readyRenderers.has(emptyWin.id)) {
+        this.sendPendingFile(emptyWin.id);
+      }
+      this.focusWindow(emptyWin);
+      return emptyWin;
+    }
+
+    return this.createWindow(filePath);
+  }
+
+  /**
+   * Bring a window to the front, restoring it first if it is minimized.
+   */
+  focusWindow(win: BrowserWindow): void {
+    if (win.isDestroyed()) return;
+    if (win.isMinimized()) {
+      win.restore();
+    }
+    win.focus();
+  }
+
   destroy(): void {
     for (const timer of this.saveTimers.values()) {
       clearTimeout(timer);
@@ -153,6 +205,24 @@ export class WindowManager {
     this.saveTimers.clear();
     this.windows.clear();
     this.windowFilePaths.clear();
+    this.pendingFilePaths.clear();
+    this.readyRenderers.clear();
+  }
+
+  /**
+   * Hand a window the file waiting for it, once its renderer can take it.
+   */
+  private sendPendingFile(windowId: number): void {
+    const filePath = this.pendingFilePaths.get(windowId);
+    if (!filePath) return;
+
+    const win = this.windows.get(windowId);
+    if (win && !win.isDestroyed()) {
+      win.webContents.send(IPC_CHANNELS.FILE_ASSOCIATION.ON_EXTERNAL_OPEN, {
+        filePath,
+      });
+      this.pendingFilePaths.delete(windowId);
+    }
   }
 
   private loadContent(win: BrowserWindow): void {

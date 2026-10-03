@@ -53,6 +53,7 @@ export class PreferencesPanel {
   private headingControls: Map<string, { color: ColorPairPicker; size: TextInput; weight: NumberInput }> = new Map();
   private externalEditorSelect: Select | null = null;
   private interactiveTaskListsToggle: Toggle | null = null;
+  private projectRootInput: TextInput | null = null;
   private customCommandInput: TextInput | null = null;
   private customCommandField: HTMLElement | null = null;
   private googleDocsSyncToggle: Toggle | null = null;
@@ -200,6 +201,7 @@ export class PreferencesPanel {
 
     this.googleDocsSyncToggle?.setValue(preferences.core.experimental.googleDocsSync);
     this.interactiveTaskListsToggle?.setValue(preferences.core.viewer.interactiveTaskLists);
+    this.projectRootInput?.setValue(preferences.core.viewer.projectRoot);
 
     for (const [level, controls] of this.headingControls) {
       const style = preferences.core.typography[level as keyof typeof preferences.core.typography] as { color: ColorPair; fontSize: string; fontWeight: number };
@@ -631,7 +633,21 @@ export class PreferencesPanel {
       this.emitChange({ core: { viewer: { interactiveTaskLists: value } } });
     });
 
-    section.setContent([this.interactiveTaskListsToggle.getElement()]);
+    this.projectRootInput = new TextInput({
+      label: 'Project Root',
+      description:
+        'Folder that file references such as src/app.ts are resolved against, after the document\'s own folder. Leave empty to use the nearest folder containing .git.',
+      value: this.currentPreferences.core.viewer.projectRoot,
+      placeholder: 'Detected from .git',
+    });
+    this.projectRootInput.setOnChange((value) => {
+      this.emitChange({ core: { viewer: { projectRoot: value } } });
+    });
+
+    section.setContent([
+      this.interactiveTaskListsToggle.getElement(),
+      this.projectRootInput.getElement(),
+    ]);
     this.sectionsContainer.appendChild(section.getElement());
   }
 

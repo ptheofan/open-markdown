@@ -179,6 +179,68 @@ describe('GithubFlavoredPlugin', () => {
     });
   });
 
+  describe('alerts', () => {
+    it('renders > [!NOTE] on its own line as a titled alert', () => {
+      const result = renderer.render('> [!NOTE]\n> Useful information.');
+      expect(result).toContain('<div class="markdown-alert markdown-alert-note" data-source-lines="0-2">');
+      expect(result).toContain('<p class="markdown-alert-title"><svg class="markdown-alert-icon"');
+      expect(result).toContain('Note</p>');
+      expect(result).toMatch(/<p[^>]*>Useful information\.<\/p>/);
+      expect(result).not.toContain('[!NOTE]');
+      expect(result).not.toContain('<blockquote');
+    });
+
+    it('renders every kind, case-insensitively', () => {
+      const cases: Array<[string, string]> = [['TIP', 'Tip'], ['Important', 'Important'], ['warning', 'Warning'], ['CAUTION', 'Caution']];
+      for (const [marker, title] of cases) {
+        const result = renderer.render(`> [!${marker}]\n> text`);
+        expect(result).toContain(`markdown-alert-${title.toLowerCase()}`);
+        expect(result).toContain(`${title}</p>`);
+      }
+    });
+
+    it('keeps text that follows the marker on the same line', () => {
+      const result = renderer.render('> [!WARNING] Urgent info here.');
+      expect(result).toContain('markdown-alert-warning');
+      expect(result).toMatch(/<p[^>]*>Urgent info here\.<\/p>/);
+    });
+
+    it('renders the markdown inside the alert', () => {
+      const result = renderer.render('> [!CAUTION]\n> First **bold**.\n>\n> - a\n> - b');
+      expect(result).toContain('<strong>bold</strong>');
+      expect(result).toMatch(/<li[^>]*>a<\/li>/);
+      expect(result).toContain('</div>');
+    });
+
+    it('leaves ordinary blockquotes and unknown markers alone', () => {
+      expect(renderer.render('> plain quote')).toContain('<blockquote');
+      expect(renderer.render('> [!DANGER]\n> text')).toContain('<blockquote');
+      expect(renderer.render('> [!DANGER]\n> text')).toContain('[!DANGER]');
+    });
+
+    it('declares a colour per kind and styles them', () => {
+      const vars = plugin.getThemeVariables();
+      expect(Object.keys(vars)).toEqual(
+        expect.arrayContaining(['alert-note-color', 'alert-tip-color', 'alert-important-color', 'alert-warning-color', 'alert-caution-color'])
+      );
+      expect(plugin.getStyles()).toContain('.markdown-alert-title');
+    });
+  });
+
+  describe('footnotes', () => {
+    it('renders references and a footnotes section with back links', () => {
+      const result = renderer.render('Text[^1] here.\n\n[^1]: The note.');
+      expect(result).toContain('class="footnote-ref"');
+      expect(result).toContain('<section class="footnotes">');
+      expect(result).toContain('The note.');
+      expect(result).toContain('footnote-backref');
+    });
+
+    it('styles the footnotes section', () => {
+      expect(plugin.getStyles()).toContain('.footnotes');
+    });
+  });
+
   describe('getStyles', () => {
     it('should return CSS styles', () => {
       const styles = plugin.getStyles();

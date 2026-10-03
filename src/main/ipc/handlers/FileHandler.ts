@@ -4,7 +4,9 @@
 import { ipcMain, BrowserWindow } from 'electron';
 
 import { getFileService } from '../../services/FileService';
+import { resolveFileReferences } from '../../services/FileReferenceResolver';
 import { getFileWatcherService } from '../../services/FileWatcherService';
+import { getPreferencesService } from '../../services/PreferencesService';
 import { getWindowManager } from '@main/window/WindowManager';
 import { IPC_CHANNELS } from '../channels';
 
@@ -45,6 +47,22 @@ export function registerFileHandlers(): void {
         ? getWindowManager().getWindowFilePath(window.id)
         : null;
       return fileService.resolvePath(input, baseFilePath);
+    }
+  );
+
+  // Resolve file references written in a document against its folder and
+  // the project root (Preferences → Document → Project root, else the nearest
+  // .git). Only existing files resolve.
+  ipcMain.handle(
+    IPC_CHANNELS.FILE.RESOLVE_REFERENCES,
+    async (_event, documentPath: string, refs: string[]): Promise<Record<string, string | null>> => {
+      if (typeof documentPath !== 'string' || !Array.isArray(refs)) return {};
+      const projectRoot = getPreferencesService().getPreferences().core.viewer.projectRoot;
+      return resolveFileReferences(
+        refs.filter((ref): ref is string => typeof ref === 'string').slice(0, 500),
+        documentPath,
+        { projectRoot }
+      );
     }
   );
 
@@ -131,6 +149,7 @@ export function registerFileHandlers(): void {
 export function unregisterFileHandlers(): void {
   ipcMain.removeHandler(IPC_CHANNELS.FILE.OPEN_DIALOG);
   ipcMain.removeHandler(IPC_CHANNELS.FILE.RESOLVE_PATH);
+  ipcMain.removeHandler(IPC_CHANNELS.FILE.RESOLVE_REFERENCES);
   ipcMain.removeHandler(IPC_CHANNELS.FILE.READ);
   ipcMain.removeHandler(IPC_CHANNELS.FILE.WRITE);
   ipcMain.removeHandler(IPC_CHANNELS.FILE.WATCH);

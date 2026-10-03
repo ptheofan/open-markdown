@@ -538,6 +538,32 @@ body {
   background-color: var(--table-row-alt-bg);
 }
 
+/* <details>/<summary>, written by hand or by an LLM */
+.markdown-body details {
+  margin-bottom: 16px;
+  padding: 0 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+
+.markdown-body details > summary {
+  margin: 0 -16px;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-weight: 600;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.markdown-body details[open] > summary {
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.markdown-body details > :last-child:not(summary) {
+  margin-bottom: 12px;
+}
+
 /* A task-list checkbox that writes back to the file invites a click; one
  * that cannot (toggling off, edit mode) keeps the disabled look. */
 .markdown-body input.task-list-checkbox:not(:disabled) {

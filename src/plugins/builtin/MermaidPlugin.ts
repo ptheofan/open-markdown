@@ -106,7 +106,8 @@ export class MermaidPlugin implements MarkdownPlugin, PreviewablePlugin {
     // Override fence renderer to handle mermaid blocks
     md.renderer.rules['fence'] = (tokens, idx, options, env, self): string => {
       const token = tokens[idx];
-      const info = (token?.info || '').trim().toLowerCase();
+      // The language is the first word; a title or line list may follow it
+      const info = (token?.info || '').trim().split(/\s+/)[0]?.toLowerCase() ?? '';
 
       if (info === 'mermaid' && token) {
         const code = token.content.trim();

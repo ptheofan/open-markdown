@@ -18,6 +18,12 @@ A fast, native macOS/Windows/Linux desktop app for viewing Markdown files with l
 - **Clickable Task Lists** - Tick a checkbox in the rendered document and the `- [ ]` in the file follows
 - **Copy Code** - Hover a code block for a copy button, or press `Cmd+Shift+C`
 - **Copy as Rich Text** - Paste the document, a selection or a section into Slack, mail, Notion or Google Docs with formatting intact
+- **Front Matter** - YAML metadata at the top of a file shows as a collapsible table
+- **Alerts** - `> [!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` and `[!CAUTION]` render as GitHub does
+- **Math** - `$…$`, `$$…$$`, `\(…\)` and `\[…\]` rendered with KaTeX, offline
+- **File References** - `src/app.ts:42` opens the file in your editor at that line; `docs/plan.md` opens in the viewer
+- **Code Block Titles & Line Highlights** - ```` ```ts title="app.ts" {2-3} ```` draws a title bar and calls out lines; `diff` blocks colour whole lines
+- **Footnotes** - `[^1]` references with back links
 - **Native Performance** - Built with Electron for a smooth experience
 
 ## Installation

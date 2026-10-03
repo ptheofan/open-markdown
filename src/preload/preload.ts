@@ -53,6 +53,13 @@ const electronAPI: ElectronAPI = {
       return ipcRenderer.invoke(IPC_CHANNELS.FILE.RESOLVE_PATH, input);
     },
 
+    resolveReferences: (
+      documentPath: string,
+      refs: string[]
+    ): Promise<Record<string, string | null>> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.FILE.RESOLVE_REFERENCES, documentPath, refs);
+    },
+
     read: (filePath: string): Promise<FileReadResult> => {
       return ipcRenderer.invoke(IPC_CHANNELS.FILE.READ, filePath);
     },
@@ -372,8 +379,8 @@ const electronAPI: ElectronAPI = {
       return ipcRenderer.invoke(IPC_CHANNELS.SHELL.REVEAL_IN_FILE_MANAGER, filePath);
     },
 
-    openInEditor: (filePath: string): Promise<OpenInEditorResult> => {
-      return ipcRenderer.invoke(IPC_CHANNELS.SHELL.OPEN_IN_EDITOR, filePath);
+    openInEditor: (filePath: string, line?: number, column?: number): Promise<OpenInEditorResult> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.SHELL.OPEN_IN_EDITOR, filePath, line, column);
     },
 
     openExternal: (url: string): Promise<void> => {

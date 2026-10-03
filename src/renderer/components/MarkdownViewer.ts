@@ -7,6 +7,9 @@ import {
   createGithubFlavoredPlugin,
   createSyntaxHighlightPlugin,
   createMermaidPlugin,
+  createMathPlugin,
+  createFrontMatterPlugin,
+  createFileReferencePlugin,
   MermaidPlugin,
 } from '@plugins/index';
 import { BUILTIN_PLUGINS, MARKDOWN_EXTENSIONS } from '@shared/constants';
@@ -77,6 +80,12 @@ export class MarkdownViewer {
   private onCopySection:
     | ((heading: HTMLElement, sourceLine: number, format: SectionCopyFormat) => void)
     | null = null;
+  private onOpenFileReference:
+    | ((filePath: string, line: number | null, column: number | null) => void)
+    | null = null;
+  private onFrontMatterToggle: ((expanded: boolean) => void) | null = null;
+  /** Bumped per render, so a slow reference lookup cannot decorate a newer document */
+  private renderGeneration = 0;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -107,12 +116,24 @@ export class MarkdownViewer {
       BUILTIN_PLUGINS.MERMAID,
       createMermaidPlugin
     );
+    this.pluginManager.registerPluginFactory(BUILTIN_PLUGINS.MATH, createMathPlugin);
+    this.pluginManager.registerPluginFactory(
+      BUILTIN_PLUGINS.FRONT_MATTER,
+      createFrontMatterPlugin
+    );
+    this.pluginManager.registerPluginFactory(
+      BUILTIN_PLUGINS.FILE_REFERENCES,
+      createFileReferencePlugin
+    );
 
     // Enable all built-in plugins
     await this.pluginManager.enablePlugins([
       BUILTIN_PLUGINS.GITHUB_FLAVORED,
       BUILTIN_PLUGINS.SYNTAX_HIGHLIGHT,
       BUILTIN_PLUGINS.MERMAID,
+      BUILTIN_PLUGINS.MATH,
+      BUILTIN_PLUGINS.FRONT_MATTER,
+      BUILTIN_PLUGINS.FILE_REFERENCES,
     ]);
 
     // Apply plugin styles
@@ -179,6 +200,7 @@ export class MarkdownViewer {
       const html = this.pluginManager.render(markdown);
       this.container.innerHTML = html;
       this.applyTaskListInteractivity();
+      void this.resolveFileReferences(++this.renderGeneration);
 
       // A Select All from the previous document leaves a range spanning this
       // container. Replacing its children does not collapse that range, so the
@@ -396,6 +418,22 @@ export class MarkdownViewer {
       const anchor = target.closest('a[href]');
       if (!(anchor instanceof HTMLAnchorElement)) return;
 
+      // A file reference: open the file it resolved to, if it resolved
+      if (anchor.classList.contains('file-ref')) {
+        e.preventDefault();
+        const target = anchor.getAttribute('data-file-path');
+        if (target && this.onOpenFileReference) {
+          const line = Number(anchor.getAttribute('data-file-line'));
+          const column = Number(anchor.getAttribute('data-file-column'));
+          this.onOpenFileReference(
+            target,
+            Number.isInteger(line) && line > 0 ? line : null,
+            Number.isInteger(column) && column > 0 ? column : null
+          );
+        }
+        return;
+      }
+
       const href = anchor.getAttribute('href');
       if (!href) return;
 
@@ -480,6 +518,65 @@ export class MarkdownViewer {
   }
 
   /**
+   * Set the callback invoked when a file reference (`src/app.ts:42`) that
+   * resolved to an existing file is clicked
+   */
+  setOnOpenFileReference(
+    callback: (filePath: string, line: number | null, column: number | null) => void
+  ): void {
+    this.onOpenFileReference = callback;
+  }
+
+  /**
+   * Set the callback invoked when the reader opens or closes the front
+   * matter block, so the choice can be remembered
+   */
+  setOnFrontMatterToggle(callback: (expanded: boolean) => void): void {
+    this.onFrontMatterToggle = callback;
+  }
+
+  /**
+   * Ask main which file references in the rendered document point at real
+   * files. Resolved ones get the path as their href and tooltip; the rest are
+   * marked so they read as plain text.
+   */
+  private async resolveFileReferences(generation: number): Promise<void> {
+    const anchors = Array.from(
+      this.container.querySelectorAll<HTMLAnchorElement>('a.file-ref[data-file-ref]')
+    );
+    if (anchors.length === 0) return;
+
+    const documentPath = this.state.filePath;
+    const refs = Array.from(new Set(anchors.map((a) => a.getAttribute('data-file-ref') ?? '')));
+
+    let resolved: Record<string, string | null> = {};
+    if (documentPath) {
+      try {
+        resolved = await window.electronAPI.file.resolveReferences(documentPath, refs);
+      } catch {
+        resolved = {};
+      }
+    }
+    if (generation !== this.renderGeneration) return;
+
+    for (const anchor of anchors) {
+      const ref = anchor.getAttribute('data-file-ref') ?? '';
+      const target = resolved[ref] ?? null;
+      if (target) {
+        anchor.setAttribute('data-file-path', target);
+        anchor.setAttribute('href', target);
+        anchor.title = target;
+        anchor.classList.remove('file-ref-unresolved');
+      } else {
+        anchor.classList.add('file-ref-unresolved');
+        anchor.removeAttribute('href');
+        anchor.removeAttribute('data-file-path');
+        anchor.removeAttribute('title');
+      }
+    }
+  }
+
+  /**
    * Checkboxes render disabled; enable the ones that can be written back.
    * A box stays disabled when toggling is off, or when its item carries no
    * source line to write to.
@@ -497,6 +594,22 @@ export class MarkdownViewer {
    * block and the checkbox on a task item.
    */
   private setupInteractions(): void {
+    // `toggle` does not bubble; capture it on the way down
+    this.container.addEventListener(
+      'toggle',
+      (e) => {
+        const details = e.target;
+        if (
+          details instanceof HTMLDetailsElement &&
+          details.classList.contains('front-matter') &&
+          !this.isEditMode
+        ) {
+          this.onFrontMatterToggle?.(details.open);
+        }
+      },
+      true
+    );
+
     this.container.addEventListener('click', (e) => {
       if (e.button !== 0) return;
       const target = e.target;

@@ -3,6 +3,7 @@
  * Initializes and coordinates all UI components
  */
 import './index.css';
+import 'katex/dist/katex.min.css';
 
 import { joinBlocks } from '@shared/markdown/blocks';
 import { extractSection } from '@shared/markdown/sections';
@@ -54,7 +55,7 @@ import {
   type CopyDocumentType,
 } from './renderer/services';
 import { isDomainError } from '@shared/errors';
-import { BUILTIN_PLUGINS } from '@shared/constants';
+import { BUILTIN_PLUGINS, MARKDOWN_EXTENSIONS } from '@shared/constants';
 import { applyTheme as applyThemeCSS, generateCompleteThemeCSS } from './themes';
 
 import type {
@@ -432,6 +433,15 @@ class App {
 
     this.markdownViewer.setOnCopySection((heading, sourceLine, format) => {
       void this.handleCopySection(heading, sourceLine, format);
+    });
+
+    this.markdownViewer.setOnOpenFileReference((filePath, line, column) => {
+      void this.handleOpenFileReference(filePath, line, column);
+    });
+
+    // Opening or closing the front matter is remembered for every document
+    this.markdownViewer.setOnFrontMatterToggle((expanded) => {
+      void this.handlePreferencesChange({ plugins: { 'front-matter': { expanded } } });
     });
 
     this.dropZone.setOnFileDrop((filePath) => {
@@ -1166,6 +1176,35 @@ class App {
     const result = await window.electronAPI.file.read(filePath);
     if (result.success && result.content != null && filePath === this.state.currentFilePath) {
       await this.markdownViewer?.render(result.content, filePath);
+    }
+  }
+
+  /**
+   * Open a file a document refers to: markdown in this window, anything else
+   * in the configured editor at the referenced line.
+   */
+  private async handleOpenFileReference(
+    filePath: string,
+    line: number | null,
+    column: number | null
+  ): Promise<void> {
+    const ext = filePath.slice(filePath.lastIndexOf('.')).toLowerCase();
+    if ((MARKDOWN_EXTENSIONS as readonly string[]).includes(ext)) {
+      await this.loadFile(filePath);
+      return;
+    }
+
+    const result = await window.electronAPI.shell.openInEditor(
+      filePath,
+      line ?? undefined,
+      column ?? undefined
+    );
+    if (!result.success) {
+      this.toast?.error(
+        result.error === 'No external editor configured'
+          ? 'Choose an editor under Preferences → External Editor to open files'
+          : (result.error ?? 'Failed to open editor')
+      );
     }
   }
 

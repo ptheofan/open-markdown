@@ -134,6 +134,7 @@ export const DEFAULT_CORE_PREFERENCES: CorePreferences = {
   },
   viewer: {
     interactiveTaskLists: true,
+    projectRoot: '',
   },
   externalEditor: {
     editor: 'none',
@@ -205,6 +206,7 @@ export const DEFAULT_APP_PREFERENCES: AppPreferences = {
   core: DEFAULT_CORE_PREFERENCES,
   plugins: {
     mermaid: DEFAULT_MERMAID_PREFERENCES,
+    'front-matter': { expanded: true },
   },
   windowState: DEFAULT_WINDOW_STATE,
 };

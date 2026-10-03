@@ -4,6 +4,8 @@
 import { BUILTIN_PLUGINS } from '@shared/constants';
 import hljs from 'highlight.js';
 
+import { parseCodeBlockInfo, wrapCodeLines } from './codeBlockInfo';
+
 import type { MarkdownPlugin, PluginMetadata, PluginOptions } from '@shared/types';
 import type { PluginThemeDeclaration } from '../../themes/types';
 import type MarkdownIt from 'markdown-it';
@@ -36,6 +38,23 @@ const COPY_BUTTON_HTML =
   '</button>';
 
 /**
+ * Fence languages generated markdown uses that highlight.js has no name for.
+ */
+let aliasesRegistered = false;
+function registerExtraAliases(): void {
+  if (aliasesRegistered) return;
+  aliasesRegistered = true;
+  const alias = (names: string[], languageName: string): void => {
+    if (hljs.getLanguage(languageName)) hljs.registerAliases(names, { languageName });
+  };
+  alias(['env', 'dotenv'], 'bash');
+  alias(['mdx'], 'markdown');
+  alias(['vue', 'svelte'], 'xml');
+  alias(['hcl', 'terraform', 'tf'], 'ini');
+  alias(['jsonl', 'ndjson'], 'json');
+}
+
+/**
  * Syntax highlighting plugin using highlight.js
  */
 export class SyntaxHighlightPlugin implements MarkdownPlugin {
@@ -54,21 +73,45 @@ export class SyntaxHighlightPlugin implements MarkdownPlugin {
       theme: 'github',
       ...options,
     };
+    registerExtraAliases();
   }
 
   apply(md: MarkdownIt): void {
     // Configure markdown-it to use highlight.js for code blocks
     md.set({
-      highlight: (str: string, lang: string): string => {
-        return this.highlight(str, lang);
+      highlight: (str: string, lang: string, attrs: string): string => {
+        return this.highlight(str, lang, attrs);
       },
     });
+
+    // markdown-it only trusts a highlighter's output as the whole block when
+    // it starts with <pre>; anything else is wrapped in a second <pre><code>.
+    // The block here is a <div> around the <pre>, so the fence is rendered
+    // outright instead.
+    md.renderer.rules['fence'] = (tokens, idx): string => {
+      const token = tokens[idx]!;
+      const info = token.info ? md.utils.unescapeAll(token.info).trim() : '';
+      const [langName = '', ...rest] = info.split(/\s+/);
+      const sourceLines = token.map ? ` data-source-lines="${token.map[0]}-${token.map[1]}"` : '';
+      return this.highlight(token.content, langName, rest.join(' '), sourceLines) + '\n';
+    };
   }
 
   /**
    * Highlight code with highlight.js
    */
-  private highlight(code: string, lang: string): string {
+  private highlight(code: string, langName: string, attrs = '', preAttrs = ''): string {
+    const info = parseCodeBlockInfo(langName, attrs);
+    const lang = info.lang;
+    const decorate = (html: string, resolvedLang: string): string => {
+      const isDiff = resolvedLang === 'diff' || resolvedLang === 'patch';
+      const lines =
+        info.highlightLines.size > 0 || isDiff
+          ? wrapCodeLines(html, { highlightLines: info.highlightLines, diff: isDiff })
+          : html;
+      return this.wrapCode(lines, resolvedLang, lang, info.title, preAttrs);
+    };
+
     // Try to highlight with specified language
     if (lang && hljs.getLanguage(lang)) {
       try {
@@ -76,7 +119,7 @@ export class SyntaxHighlightPlugin implements MarkdownPlugin {
           language: lang,
           ignoreIllegals: true,
         });
-        return this.wrapCode(result.value, lang, lang);
+        return decorate(result.value, lang);
       } catch {
         // Fall through to auto-detect
       }
@@ -85,10 +128,10 @@ export class SyntaxHighlightPlugin implements MarkdownPlugin {
     // Try auto-detection
     try {
       const result = hljs.highlightAuto(code);
-      return this.wrapCode(result.value, result.language || 'plaintext', lang);
+      return decorate(result.value, result.language || 'plaintext');
     } catch {
       // Fall back to plain text
-      return this.wrapCode(this.escapeHtml(code), 'plaintext', lang);
+      return decorate(this.escapeHtml(code), 'plaintext');
     }
   }
 
@@ -101,14 +144,21 @@ export class SyntaxHighlightPlugin implements MarkdownPlugin {
    * the copied document. `data-lang` is only set for a language the author
    * wrote on the fence: a guess from auto-detection is not worth announcing.
    */
-  private wrapCode(highlightedCode: string, lang: string, declaredLang: string): string {
+  private wrapCode(
+    highlightedCode: string,
+    lang: string,
+    declaredLang: string,
+    title: string | null = null,
+    preAttrs = ''
+  ): string {
     const lineNumberAttr = this.options.lineNumbers ? ' data-line-numbers' : '';
     const label = declaredLang.trim();
     const langAttr = label ? ` data-lang="${this.escapeHtml(label)}"` : '';
+    const titleAttr = title ? ` data-title="${this.escapeHtml(title)}"` : '';
     return (
-      `<div class="code-block"${langAttr}>` +
+      `<div class="code-block"${langAttr}${titleAttr}>` +
       COPY_BUTTON_HTML +
-      `<pre class="hljs"${lineNumberAttr}><code class="language-${lang}">${highlightedCode}</code></pre>` +
+      `<pre class="hljs"${preAttrs}${lineNumberAttr}><code class="language-${lang}">${highlightedCode}</code></pre>` +
       '</div>'
     );
   }
@@ -206,6 +256,17 @@ export class SyntaxHighlightPlugin implements MarkdownPlugin {
         dark: '#033a16',
         description: 'Diff addition background',
       },
+      // Called-out lines ({3-5} on the fence)
+      'hljs-line-highlight-bg': {
+        light: 'rgba(255, 212, 0, 0.18)',
+        dark: 'rgba(255, 212, 0, 0.12)',
+        description: 'Background of a highlighted code line',
+      },
+      'hljs-line-highlight-border': {
+        light: '#d4a72c',
+        dark: '#9e6a03',
+        description: 'Edge marker of a highlighted code line',
+      },
       // Deletion diff
       'hljs-deletion-color': {
         light: '#82071e',
@@ -237,8 +298,61 @@ export class SyntaxHighlightPlugin implements MarkdownPlugin {
         margin: 1em 0;
       }
 
+      /* Title bar from title="…" on the fence */
+      .code-block[data-title] {
+        margin: 1em 0;
+      }
+
+      .code-block[data-title]::before {
+        content: attr(data-title);
+        display: block;
+        padding: 6px 16px;
+        font-family: var(--doc-font-mono);
+        font-size: 12px;
+        line-height: 16px;
+        color: var(--text-muted);
+        background-color: var(--hljs-bg);
+        border-bottom: 1px solid var(--border-color);
+        border-radius: 6px 6px 0 0;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+
+      .code-block[data-title] pre.hljs {
+        margin-top: 0;
+        border-top-left-radius: 0;
+        border-top-right-radius: 0;
+      }
+
+      /* Called-out lines and diff lines */
+      .code-line {
+        display: inline-block;
+        min-width: 100%;
+        margin: 0 -16px;
+        padding: 0 16px;
+        box-sizing: content-box;
+      }
+
+      .code-line-highlighted {
+        background-color: var(--hljs-line-highlight-bg);
+        box-shadow: inset 3px 0 0 var(--hljs-line-highlight-border);
+      }
+
+      .code-line-addition {
+        background-color: var(--hljs-addition-bg);
+      }
+
+      .code-line-deletion {
+        background-color: var(--hljs-deletion-bg);
+      }
+
+      .code-line-addition .hljs-addition,
+      .code-line-deletion .hljs-deletion {
+        background-color: transparent;
+      }
+
       /* Language label, top-right, from the fence's own info string */
-      .code-block[data-lang]::before {
+      .code-block[data-lang]::after {
         content: attr(data-lang);
         position: absolute;
         top: 6px;

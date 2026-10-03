@@ -12,10 +12,9 @@ export function registerWindowHandlers(): void {
     return win?.isFullScreen() ?? false;
   });
 
-  // TODO: Pass filePath to createWindow once file path routing is wired up (Task 8)
-  ipcMain.handle(IPC_CHANNELS.WINDOW.OPEN_NEW, (_event, _filePath?: string) => {
+  ipcMain.handle(IPC_CHANNELS.WINDOW.OPEN_NEW, (_event, filePath?: string) => {
     const windowManager = getWindowManager();
-    windowManager.createWindow();
+    windowManager.createWindow(filePath);
   });
 }
 

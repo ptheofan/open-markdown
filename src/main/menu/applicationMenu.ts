@@ -109,6 +109,11 @@ export function setupApplicationMenu(): void {
           accelerator: 'CmdOrCtrl+Shift+O',
           click: () => sendMenuAction('toggle-outline'),
         },
+        {
+          label: 'Browse Open Documents...',
+          accelerator: 'CmdOrCtrl+Shift+D',
+          click: () => sendMenuAction('browse-documents'),
+        },
         { type: 'separator' },
         { role: 'togglefullscreen' },
       ],

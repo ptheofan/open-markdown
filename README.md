@@ -13,6 +13,7 @@ A fast, native macOS/Windows/Linux desktop app for viewing Markdown files with l
 - **Drag & Drop** - Drop markdown files directly into the app
 - **Find in Page** - Search within rendered content (`Cmd+F`)
 - **Document Outline** - Sidebar of headings that follows your scroll position and jumps to any section (`Cmd+Shift+O`)
+- **Open Documents Browser** - Grid of thumbnails of every open document plus recent files, filtered by name or content (`Cmd+Shift+D`)
 - **Native Performance** - Built with Electron for a smooth experience
 
 ## Installation

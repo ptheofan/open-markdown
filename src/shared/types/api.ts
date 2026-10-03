@@ -13,6 +13,7 @@ import type {
   ExternalFileOpenEvent,
 } from './fileAssociation';
 import type { RecentFileEntry } from './recentFiles';
+import type { DocumentBrowserSnapshot, ViewerDescription } from './documentBrowser';
 import type { GoogleDocLink, GoogleDocsResolveResult, GoogleAuthState, MermaidDiagramData, TableColumnWidths, SyncProgressUpdate, SyncResolveMode, SyncDirection } from './google-docs';
 
 /**
@@ -76,6 +77,13 @@ export const IPC_CHANNELS = {
   MENU: {
     ACTION: 'menu:action',
   },
+  DOCUMENT_BROWSER: {
+    GET_SNAPSHOT: 'document-browser:get-snapshot',
+    FOCUS_WINDOW: 'document-browser:focus-window',
+    OPEN_FILE: 'document-browser:open-file',
+    DESCRIBE_REQUEST: 'document-browser:describe-request',
+    DESCRIBE_RESPONSE: 'document-browser:describe-response',
+  },
   SHELL: {
     REVEAL_IN_FILE_MANAGER: 'shell:reveal-in-file-manager',
     OPEN_IN_EDITOR: 'shell:open-in-editor',
@@ -109,6 +117,7 @@ export type IpcChannel =
   | (typeof IPC_CHANNELS.FILE_ASSOCIATION)[keyof typeof IPC_CHANNELS.FILE_ASSOCIATION]
   | (typeof IPC_CHANNELS.RECENT_FILES)[keyof typeof IPC_CHANNELS.RECENT_FILES]
   | (typeof IPC_CHANNELS.MENU)[keyof typeof IPC_CHANNELS.MENU]
+  | (typeof IPC_CHANNELS.DOCUMENT_BROWSER)[keyof typeof IPC_CHANNELS.DOCUMENT_BROWSER]
   | (typeof IPC_CHANNELS.SHELL)[keyof typeof IPC_CHANNELS.SHELL]
   | (typeof IPC_CHANNELS.GOOGLE_DOCS)[keyof typeof IPC_CHANNELS.GOOGLE_DOCS];
 
@@ -256,6 +265,23 @@ export interface MenuAPI {
 }
 
 /**
+ * Document browser API exposed to renderer
+ */
+export interface DocumentBrowserAPI {
+  /** Capture every open document and list recent files not open anywhere. */
+  getSnapshot: () => Promise<DocumentBrowserSnapshot>;
+  /** Bring the window showing an open document to the front. */
+  focusWindow: (windowId: number) => Promise<void>;
+  /** Open a file the way Finder would: focus its window, reuse an empty one, or open a new one. */
+  openFile: (filePath: string) => Promise<void>;
+  /**
+   * Answer the main process when it asks where this window's document view
+   * is. Returns a cleanup function.
+   */
+  onDescribeRequest: (callback: () => ViewerDescription) => () => void;
+}
+
+/**
  * Result of opening a file in an external editor
  */
 export interface OpenInEditorResult {
@@ -324,6 +350,7 @@ export interface ElectronAPI {
   fileAssociation: FileAssociationAPI;
   recentFiles: RecentFilesAPI;
   menu: MenuAPI;
+  documentBrowser: DocumentBrowserAPI;
   shell: ShellAPI;
   assets: AssetsAPI;
   googleDocs: GoogleDocsAPI;

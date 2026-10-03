@@ -147,6 +147,13 @@ export const DEFAULT_CORE_PREFERENCES: CorePreferences = {
   experimental: {
     googleDocsSync: false,
   },
+  export: {
+    theme: 'light',
+    pageSize: 'A4',
+    landscape: false,
+    printBackground: true,
+    lastDirectory: '',
+  },
 };
 
 /**

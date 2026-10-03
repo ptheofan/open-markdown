@@ -61,6 +61,7 @@ function createMockPreferences(
       externalEditor: { editor, customCommand },
       googleDocs: { useCustomCredentials: false, customClientId: '' },
       experimental: { googleDocsSync: false },
+      export: { theme: 'light', pageSize: 'A4', landscape: false, printBackground: true, lastDirectory: '' },
     },
     plugins: {},
     windowState: { width: 900, height: 700, isMaximized: false },

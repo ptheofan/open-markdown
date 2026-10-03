@@ -177,3 +177,6 @@ export {
   createSyncProgressBar,
   type SyncProgressBar,
 } from './SyncProgressBar';
+
+export { createExportDialog } from './ExportDialog';
+export type { ExportDialog, ExportKind, ExportChoices } from './ExportDialog';

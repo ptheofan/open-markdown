@@ -39,6 +39,7 @@ import {
   registerDocumentBrowserHandlers,
   unregisterDocumentBrowserHandlers,
 } from './DocumentBrowserHandler';
+import { registerExportHandlers, unregisterExportHandlers } from './ExportHandler';
 
 /**
  * Register all IPC handlers
@@ -55,6 +56,7 @@ export function registerAllHandlers(): void {
   registerShellHandlers();
   registerGoogleDocsHandlers();
   registerDocumentBrowserHandlers();
+  registerExportHandlers();
 }
 
 /**
@@ -72,6 +74,7 @@ export function unregisterAllHandlers(): void {
   unregisterShellHandlers();
   unregisterGoogleDocsHandlers();
   unregisterDocumentBrowserHandlers();
+  unregisterExportHandlers();
 }
 
 // Re-export individual handlers
@@ -113,3 +116,4 @@ export {
   registerDocumentBrowserHandlers,
   unregisterDocumentBrowserHandlers,
 } from './DocumentBrowserHandler';
+export { registerExportHandlers, unregisterExportHandlers } from './ExportHandler';

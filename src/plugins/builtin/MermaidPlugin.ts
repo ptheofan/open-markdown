@@ -492,6 +492,31 @@ export class MermaidPlugin implements MarkdownPlugin, PreviewablePlugin {
   }
 
   /**
+   * Render a diagram's SVG in the given palette, for an export drawn in a
+   * theme other than the one on screen. The app's theme is put back after.
+   */
+  async renderSvgForExport(code: string, theme: 'light' | 'dark'): Promise<string> {
+    if (!this.mermaid) throw new Error('Mermaid not initialised');
+
+    const appTheme = this.options.theme;
+    const wanted = theme === 'dark' ? 'dark' : 'default';
+    try {
+      if (wanted !== appTheme) {
+        this.options.theme = wanted;
+        this.initializeMermaid();
+      }
+      this.exportCounter += 1;
+      const { svg } = await this.mermaid.render(`mermaid-export-${this.exportCounter}`, code);
+      return svg;
+    } finally {
+      if (this.options.theme !== appTheme) {
+        this.options.theme = appTheme;
+        this.initializeMermaid();
+      }
+    }
+  }
+
+  /**
    * Render the diagram SVG to a PNG base64 string using html-to-image
    * @param container - The .mermaid-container element containing the rendered SVG
    * @returns Base64 PNG string (without data: prefix)

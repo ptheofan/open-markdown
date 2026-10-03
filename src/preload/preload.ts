@@ -7,6 +7,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import { IPC_CHANNELS } from '@shared/types/api';
 import { resolveAssetUrl, resolveLocalPath } from './assetResolver';
 
+import type { ExportResult, PageOptions } from '@shared/types/export';
 import type {
   ElectronAPI,
   FileChangeEvent,
@@ -395,6 +396,24 @@ const electronAPI: ElectronAPI = {
 
     resolvePath: (baseFilePath: string, ref: string): string | null => {
       return resolveLocalPath(baseFilePath, ref);
+    },
+  },
+
+  export: {
+    savePdf: (html: string, defaultName: string, options: PageOptions): Promise<ExportResult> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.EXPORT.SAVE_PDF, html, defaultName, options);
+    },
+
+    saveHtml: (html: string, defaultName: string): Promise<ExportResult> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.EXPORT.SAVE_HTML, html, defaultName);
+    },
+
+    print: (html: string, options: PageOptions): Promise<ExportResult> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.EXPORT.PRINT, html, options);
+    },
+
+    inlineAssets: (urls: string[]): Promise<Record<string, string | null>> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.EXPORT.INLINE_ASSETS, urls);
     },
   },
 

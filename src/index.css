@@ -1695,13 +1695,14 @@ button:focus:not(:focus-visible) {
   background-color: var(--gutter-deleted-color);
 }
 
+/* Overlay pinned to the bottom-right of .main-content (position: relative),
+   not sticky inside the scroller: zoom scales .markdown-body with a CSS
+   transform, which grows the scrollable area without moving the button's
+   layout position, so a sticky button scrolled out of view on long files. */
 .change-gutter-reset-btn {
-  position: sticky;
+  position: absolute;
   bottom: 20px;
-  display: block;
-  margin-left: auto;
-  margin-right: 8px;
-  width: fit-content;
+  right: 24px;
   padding: 6px 14px;
   background-color: var(--toolbar-bg);
   color: var(--text-color);

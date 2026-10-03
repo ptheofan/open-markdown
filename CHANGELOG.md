@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Print and export**: File → Print… (`Cmd+Shift+P`) and File → Export → PDF… / HTML…. All three start from the rendered document: the app's stylesheet and theme variables are inlined, diagrams stay the vector SVG they already are, local images and the KaTeX fonts (only when there is math) become data URIs, and the copy buttons, change markers and file-reference links are stripped. The exported page runs no script and fetches nothing: its own Content-Security-Policy forbids both. A dialog asks for the theme (light by default; diagrams are redrawn in the light palette when the app is dark), and for PDF and print the paper size, orientation and whether to print backgrounds; the choices and the last folder are remembered. The PDF keeps text selectable and internal links clickable, avoids page breaks inside code blocks, tables, diagrams and alerts, and keeps headings with what follows them.
+
 - **Front matter**: a document that opens with a `---` YAML block shows it as a collapsible key/value table (nested maps as nested tables, lists as lists) instead of a horizontal rule and a paragraph of `name: foo`. TOML between `+++` is shown as written. Only a block that parses as a YAML mapping counts, so a document that merely starts with a rule is unaffected. Collapsing or expanding the block is remembered (Preferences → Front Matter).
 
 - **GitHub alerts**: `> [!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]` and `[!CAUTION]` render with GitHub's icon, title and colour bar, in both themes. The marker may stand on its own line or run into the text, as generated markdown often has it.

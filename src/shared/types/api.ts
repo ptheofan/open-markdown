@@ -1,3 +1,4 @@
+import type { ExportAPI } from './export';
 import type {
   FileOpenResult,
   FileReadResult,
@@ -77,6 +78,12 @@ export const IPC_CHANNELS = {
     CLEAR: 'recent-files:clear',
     ON_CHANGE: 'recent-files:on-change',
   },
+  EXPORT: {
+    SAVE_PDF: 'export:save-pdf',
+    SAVE_HTML: 'export:save-html',
+    PRINT: 'export:print',
+    INLINE_ASSETS: 'export:inline-assets',
+  },
   MENU: {
     ACTION: 'menu:action',
   },
@@ -116,6 +123,7 @@ export type IpcChannel =
   | (typeof IPC_CHANNELS.WINDOW)[keyof typeof IPC_CHANNELS.WINDOW]
   | (typeof IPC_CHANNELS.CONTEXT_MENU)[keyof typeof IPC_CHANNELS.CONTEXT_MENU]
   | (typeof IPC_CHANNELS.CLIPBOARD)[keyof typeof IPC_CHANNELS.CLIPBOARD]
+  | (typeof IPC_CHANNELS.EXPORT)[keyof typeof IPC_CHANNELS.EXPORT]
   | (typeof IPC_CHANNELS.PREFERENCES)[keyof typeof IPC_CHANNELS.PREFERENCES]
   | (typeof IPC_CHANNELS.FILE_ASSOCIATION)[keyof typeof IPC_CHANNELS.FILE_ASSOCIATION]
   | (typeof IPC_CHANNELS.RECENT_FILES)[keyof typeof IPC_CHANNELS.RECENT_FILES]
@@ -370,6 +378,7 @@ export interface ElectronAPI {
   shell: ShellAPI;
   assets: AssetsAPI;
   googleDocs: GoogleDocsAPI;
+  export: ExportAPI;
 }
 
 /**

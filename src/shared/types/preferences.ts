@@ -5,6 +5,7 @@
  * core preferences, plugin preferences, and OKLCH color support.
  */
 
+import type { ExportPreferences } from './export';
 import type { ThemeMode } from './theme';
 
 /**
@@ -131,6 +132,8 @@ export interface CorePreferences {
   experimental: {
     googleDocsSync: boolean;
   };
+  /** Remembered choices of the Print and Export dialogs */
+  export: ExportPreferences;
 }
 
 /**

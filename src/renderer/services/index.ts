@@ -19,3 +19,6 @@ export {
   type MarkdownSlice,
   type SliceType,
 } from './MarkdownSlicer';
+
+export { DocumentExportService, createDocumentExportService } from './DocumentExportService';
+export type { StandaloneHtmlOptions, StandaloneHtmlResult } from './DocumentExportService';

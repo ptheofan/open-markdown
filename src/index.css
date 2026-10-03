@@ -2674,6 +2674,76 @@ pre.sync-merge-cell {
   padding-top: 12px;
 }
 
+/* ===========================================
+   Export dialog
+   =========================================== */
+
+.export-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10002;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+.export-dialog {
+  width: min(420px, 100%);
+  padding: 18px 20px;
+  border-radius: 10px;
+  background-color: var(--toolbar-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-color);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  font-size: 13px;
+}
+
+.export-dialog-title {
+  margin: 0 0 14px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.export-dialog-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.export-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 16px;
+}
+
+.export-dialog-btn {
+  padding: 6px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-color);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.export-dialog-btn:hover {
+  background-color: var(--hover-bg);
+}
+
+.export-dialog-btn-primary {
+  background-color: var(--link-color);
+  border-color: var(--link-color);
+  color: #ffffff;
+}
+
+.export-dialog-btn-primary:hover {
+  filter: brightness(1.1);
+  background-color: var(--link-color);
+}
+
 /* Off-screen surface used to re-render diagrams in the light palette before
    they are uploaded to a Google Doc, whose page is white whatever theme the
    app is in. Kept in the layout tree -- display:none would leave the SVG

@@ -25,6 +25,7 @@ import {
   createGoogleDocsButton,
   createSyncProgressBar,
   createSyncReviewDialog,
+  createExportDialog,
   Toast,
   type MarkdownViewer,
   type DropZone,
@@ -44,11 +45,15 @@ import {
   type SyncProgressBar,
   type SyncReviewDialog,
   type SyncReviewOutcome,
+  type ExportDialog,
+  type ExportKind,
 } from './renderer/components';
 import type { EditModeCallbacks } from './renderer/components/EditModeController';
 import type { SectionCopyFormat } from './renderer/components/MarkdownViewer';
 import {
   createDocumentCopyService,
+  createDocumentExportService,
+  DocumentExportService,
   DiffService,
   FindService,
   type DocumentCopyService,
@@ -130,6 +135,8 @@ class App {
   private googleDocsButton: GoogleDocsButton | null = null;
   private syncProgressBar: SyncProgressBar | null = null;
   private syncReviewDialog: SyncReviewDialog | null = null;
+  private exportDialog: ExportDialog | null = null;
+  private documentExportService: DocumentExportService | null = null;
 
   /** Bumped on every sync-status change, to spot a stale refresh. */
   private syncStatusSeq = 0;
@@ -376,6 +383,10 @@ class App {
 
     // Asks how to reconcile when the file and the Doc have both changed.
     this.syncReviewDialog = createSyncReviewDialog();
+
+    // Print and export
+    this.exportDialog = createExportDialog();
+    this.documentExportService = createDocumentExportService(window.electronAPI.export);
 
     // Create zoom controller for the markdown content
     // Target: markdown-content (the element to scale)
@@ -677,6 +688,15 @@ class App {
             break;
           case 'toggle-outline':
             this.outlinePanel?.toggle();
+            break;
+          case 'print':
+            void this.handleExport('print');
+            break;
+          case 'export-pdf':
+            void this.handleExport('pdf');
+            break;
+          case 'export-html':
+            void this.handleExport('html');
             break;
           case 'save':
             if (this.state.isEditMode) {
@@ -1177,6 +1197,92 @@ class App {
     if (result.success && result.content != null && filePath === this.state.currentFilePath) {
       await this.markdownViewer?.render(result.content, filePath);
     }
+  }
+
+  /**
+   * Print the document or save it as PDF or HTML. The dialog's choices are
+   * remembered; the page itself is built once from the rendered document.
+   */
+  private async handleExport(kind: ExportKind): Promise<void> {
+    if (!this.markdownViewer || !this.exportDialog || !this.documentExportService) return;
+    if (!this.state.currentFilePath) {
+      this.toast?.error('Open a document first');
+      return;
+    }
+    if (this.state.isEditMode) {
+      this.toast?.error('Leave edit mode to export');
+      return;
+    }
+
+    const stored = this.state.currentPreferences?.export;
+    const choices = await this.exportDialog.show(kind, {
+      theme: stored?.theme ?? 'light',
+      pageSize: stored?.pageSize ?? 'A4',
+      landscape: stored?.landscape ?? false,
+      printBackground: stored?.printBackground ?? true,
+    });
+    if (!choices) return;
+    void this.handlePreferencesChange({ core: { export: choices } });
+
+    const viewerContainer = document.getElementById('markdown-content');
+    if (!viewerContainer) return;
+
+    try {
+      const currentTheme = await this.resolveCurrentTheme();
+      const { html, skippedImages } = await this.documentExportService.buildStandaloneHtml({
+        contentElement: viewerContainer,
+        title: this.state.currentFilePath.split(/[\\/]/).pop() ?? 'Document',
+        theme: choices.theme === 'light' ? 'light' : currentTheme,
+        currentTheme,
+        pluginManager: this.markdownViewer.getPluginManager(),
+        pluginDeclarations: this.markdownViewer.getPluginThemeDeclarations(),
+        preferences: this.state.currentPreferences,
+      });
+
+      const page = {
+        pageSize: choices.pageSize,
+        landscape: choices.landscape,
+        printBackground: choices.printBackground,
+      };
+      const result =
+        kind === 'pdf'
+          ? await window.electronAPI.export.savePdf(
+              html,
+              DocumentExportService.exportFileName(this.state.currentFilePath, 'pdf'),
+              page
+            )
+          : kind === 'html'
+            ? await window.electronAPI.export.saveHtml(
+                html,
+                DocumentExportService.exportFileName(this.state.currentFilePath, 'html')
+              )
+            : await window.electronAPI.export.print(html, page);
+
+      if (result.cancelled) return;
+      if (!result.success) {
+        this.toast?.error(result.error ?? 'Export failed');
+        return;
+      }
+
+      const skipped = skippedImages > 0 ? ` (${skippedImages} image${skippedImages > 1 ? 's' : ''} left as links)` : '';
+      if (result.filePath) {
+        this.toast?.success(`Saved to ${result.filePath}${skipped}`);
+      }
+    } catch (error) {
+      this.toast?.error(error instanceof Error ? error.message : 'Export failed');
+    }
+  }
+
+  /** The palette on screen right now */
+  private async resolveCurrentTheme(): Promise<ResolvedTheme> {
+    if (this.state.currentTheme === 'system') {
+      try {
+        return await window.electronAPI.theme.getSystem();
+      } catch {
+        return 'light';
+      }
+    }
+    return this.state.currentTheme;
   }
 
   /**

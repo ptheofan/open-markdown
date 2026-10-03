@@ -64,6 +64,25 @@ export function setupApplicationMenu(): void {
         },
         { type: 'separator' },
         {
+          label: 'Export',
+          submenu: [
+            {
+              label: 'PDF…',
+              click: () => sendMenuAction('export-pdf'),
+            },
+            {
+              label: 'HTML…',
+              click: () => sendMenuAction('export-html'),
+            },
+          ],
+        },
+        {
+          label: 'Print…',
+          accelerator: 'CmdOrCtrl+Shift+P',
+          click: () => sendMenuAction('print'),
+        },
+        { type: 'separator' },
+        {
           label: 'Toggle Edit Mode',
           accelerator: 'CmdOrCtrl+E',
           click: () => sendMenuAction('toggle-edit-mode'),

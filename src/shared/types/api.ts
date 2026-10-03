@@ -222,7 +222,8 @@ export interface ContextMenuAPI {
  */
 export interface ClipboardAPI {
   writeText: (text: string) => Promise<void>;
-  writeHtml: (html: string) => Promise<void>;
+  /** Write HTML with an optional plain-text alternative (default: the HTML stripped of tags) */
+  writeHtml: (html: string, text?: string) => Promise<void>;
   writeImage: (base64: string) => Promise<void>;
   saveFile: (base64: string, filename: string) => Promise<SaveFileResult>;
 }

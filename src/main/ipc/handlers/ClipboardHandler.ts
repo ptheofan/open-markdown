@@ -25,8 +25,8 @@ export function registerClipboardHandlers(): void {
   // Handle write HTML to clipboard
   ipcMain.handle(
     IPC_CHANNELS.CLIPBOARD.WRITE_HTML,
-    (_event, html: string): void => {
-      clipboardService.writeHtml(html);
+    (_event, html: string, text?: string): void => {
+      clipboardService.writeHtml(html, text);
     }
   );
 

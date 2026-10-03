@@ -64,6 +64,47 @@ describe('SyntaxHighlightPlugin', () => {
     });
   });
 
+  describe('code block chrome', () => {
+    it('wraps the block and adds a copy button', () => {
+      const result = renderer.render('```js\nlet a = 1;\n```');
+      expect(result).toContain('<div class="code-block" data-lang="js">');
+      expect(result).toContain('class="code-copy-btn"');
+      expect(result).toContain('aria-label="Copy code"');
+      expect(result).toMatch(/<pre class="hljs"><code class="language-js">/);
+      expect(result).toContain('</pre></div>');
+    });
+
+    it('labels only a language the author declared', () => {
+      expect(renderer.render('```\nhello world\n```')).not.toContain('data-lang');
+      expect(renderer.render('```python\nprint(1)\n```')).toContain('data-lang="python"');
+    });
+
+    it('labels an unknown language as written while highlighting falls back', () => {
+      const result = renderer.render('```nosuchlang\nhello\n```');
+      expect(result).toContain('data-lang="nosuchlang"');
+      expect(result).toContain('<pre class="hljs">');
+    });
+
+    it('escapes the label', () => {
+      const result = renderer.render('```a"b\nx\n```');
+      expect(result).toContain('data-lang="a&quot;b"');
+      expect(result).not.toContain('data-lang="a"b"');
+    });
+
+    it('puts no text in the button, so copies and find-in-page skip it', () => {
+      const result = renderer.render('```js\nx\n```');
+      const button = /<button[^>]*class="code-copy-btn"[^>]*>([\s\S]*?)<\/button>/.exec(result)?.[1] ?? '';
+      expect(button.replace(/<[^>]+>/g, '').trim()).toBe('');
+    });
+
+    it('styles the button and label', () => {
+      const styles = plugin.getStyles();
+      expect(styles).toContain('.code-copy-btn');
+      expect(styles).toContain('.code-block[data-lang]::before');
+      expect(styles).toContain('.code-block.is-copied');
+    });
+  });
+
   describe('code highlighting', () => {
     it('should highlight JavaScript code', () => {
       const markdown = '```javascript\nconst x = 42;\n```';

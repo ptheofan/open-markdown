@@ -165,8 +165,8 @@ export class EditModeController {
 
     // Click to edit
     content.addEventListener('click', (e) => {
-      // Don't enter edit if clicking a link
-      if ((e.target as HTMLElement).closest('a')) return;
+      // Don't enter edit if clicking a link or a code block's copy button
+      if ((e.target as HTMLElement).closest('a, .code-copy-btn')) return;
       e.stopPropagation();
       this.startEdit(slice.index);
     });

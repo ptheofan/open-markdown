@@ -116,6 +116,31 @@ describe('GithubFlavoredPlugin', () => {
       expect(result).not.toContain('type="checkbox"');
       expect(result).toContain('Regular item');
     });
+
+    it('keeps the source lines on each task item, for writing a toggle back', () => {
+      const result = renderer.render('# Plan\n\n- [ ] first\n- [x] second\n  - [ ] nested');
+      expect(result).toContain('<li data-source-lines="2-3" class="task-list-item">');
+      expect(result).toContain('<li data-source-lines="3-5" class="task-list-item">');
+      expect(result).toContain('<li data-source-lines="4-5" class="task-list-item">');
+    });
+
+    it('does not print the marker next to the checkbox', () => {
+      const result = renderer.render('- [ ] first\n- [x] second\n- [X] third');
+      expect(result).not.toContain('[ ]');
+      expect(result).not.toContain('[x]');
+      expect(result).not.toContain('[X]');
+      expect(result).toContain('>first</li>');
+      expect(result).toContain('>second</li>');
+    });
+  });
+
+  describe('heading source lines', () => {
+    it('keeps the source lines on each heading, for copying its section', () => {
+      const result = renderer.render('# One\n\ntext\n\n## Two\n\nmore\n\n### Three');
+      expect(result).toContain('<h1 data-source-lines="0-1" id="one">');
+      expect(result).toContain('<h2 data-source-lines="4-5" id="two">');
+      expect(result).toContain('<h3 data-source-lines="8-9" id="three">');
+    });
   });
 
   describe('tables', () => {

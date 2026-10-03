@@ -194,8 +194,8 @@ const electronAPI: ElectronAPI = {
       return ipcRenderer.invoke(IPC_CHANNELS.CLIPBOARD.WRITE_TEXT, text);
     },
 
-    writeHtml: (html: string): Promise<void> => {
-      return ipcRenderer.invoke(IPC_CHANNELS.CLIPBOARD.WRITE_HTML, html);
+    writeHtml: (html: string, text?: string): Promise<void> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.CLIPBOARD.WRITE_HTML, html, text);
     },
 
     writeImage: (base64: string): Promise<void> => {

@@ -15,6 +15,9 @@ A fast, native macOS/Windows/Linux desktop app for viewing Markdown files with l
 - **Document Outline** - Sidebar of headings that follows your scroll position and jumps to any section (`Cmd+Shift+O`)
 - **Open Documents Browser** - Grid of thumbnails of every open document plus recent files, filtered by name or content (`Cmd+Shift+D`)
 - **Open by Path** - Paste a full path, or a path relative to the current document, and press Enter (`Cmd+P`)
+- **Clickable Task Lists** - Tick a checkbox in the rendered document and the `- [ ]` in the file follows
+- **Copy Code** - Hover a code block for a copy button, or press `Cmd+Shift+C`
+- **Copy as Rich Text** - Paste the document, a selection or a section into Slack, mail, Notion or Google Docs with formatting intact
 - **Native Performance** - Built with Electron for a smooth experience
 
 ## Installation

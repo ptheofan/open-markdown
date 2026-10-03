@@ -132,6 +132,9 @@ export const DEFAULT_CORE_PREFERENCES: CorePreferences = {
     autoSave: true,
     autoSaveDelay: 1000,
   },
+  viewer: {
+    interactiveTaskLists: true,
+  },
   externalEditor: {
     editor: 'none',
     customCommand: '',

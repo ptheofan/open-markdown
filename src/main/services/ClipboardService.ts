@@ -18,13 +18,14 @@ export class ClipboardService {
   }
 
   /**
-   * Write HTML to clipboard
-   * Also writes plain text fallback
+   * Write HTML to clipboard, with a plain-text alternative for targets that
+   * take no HTML. Callers that have a better plain text than the tags
+   * stripped out (the markdown itself, say) pass it in.
    */
-  writeHtml(html: string): void {
+  writeHtml(html: string, text?: string): void {
     clipboard.write({
       html,
-      text: html.replace(/<[^>]*>/g, ''), // Strip HTML for plain text fallback
+      text: text ?? html.replace(/<[^>]*>/g, ''),
     });
   }
 

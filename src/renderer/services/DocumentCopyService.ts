@@ -17,7 +17,10 @@ import type { ClipboardAPI } from '@shared/types';
 /**
  * Types of document copy operations
  */
-export type CopyDocumentType = 'google-docs' | 'image';
+export type CopyDocumentType = 'rich-text' | 'google-docs' | 'image';
+
+/** Which part of the document a rich-text copy takes */
+export type RichTextScope = 'document' | 'selection' | 'section';
 
 /**
  * Options for copy operations
@@ -34,6 +37,14 @@ export interface DocumentCopyOptions {
 }
 
 /**
+ * Options for a rich-text copy
+ */
+export interface RichTextCopyOptions extends DocumentCopyOptions {
+  /** The markdown source of the whole document, used as the plain-text alternative */
+  markdown: string;
+}
+
+/**
  * Result of document copy operation
  */
 export interface DocumentCopyResult {
@@ -43,6 +54,8 @@ export interface DocumentCopyResult {
   diagramCount?: number;
   /** For image: dimensions of captured image */
   dimensions?: { width: number; height: number };
+  /** For rich-text: what was copied */
+  scope?: RichTextScope;
 }
 
 /**
@@ -91,15 +104,148 @@ export class DocumentCopyService {
       throw new NoDocumentError();
     }
 
-    // Clone the content for manipulation
     const clone = contentElement.cloneNode(true) as HTMLElement;
+    const { html, diagramCount } = await this.buildRichHtml(clone, contentElement, pluginManager);
 
+    // Write to clipboard
+    try {
+      await this.clipboardApi.writeHtml(html);
+    } catch (error) {
+      throw new ClipboardWriteError('html', error);
+    }
+
+    return {
+      success: true,
+      diagramCount,
+    };
+  }
+
+  /**
+   * Copy the document, or the part of it the user has selected, as rich text
+   * for pasting into Slack, mail, Notion, Apple Notes and the like.
+   *
+   * The clipboard gets both `text/html` and `text/plain`. The plain text is
+   * the markdown itself for a whole-document copy and the selected text for a
+   * selection: a target that takes no HTML still gets something readable,
+   * and markdown is what most chat tools render anyway.
+   */
+  async copyAsRichText(options: RichTextCopyOptions): Promise<DocumentCopyResult> {
+    const { contentElement, pluginManager, markdown } = options;
+
+    if (!contentElement.innerHTML.trim()) {
+      throw new NoDocumentError();
+    }
+
+    const selection = this.selectionWithin(contentElement);
+    let root: HTMLElement;
+    let plainText: string;
+    let scope: RichTextScope;
+
+    if (selection) {
+      root = document.createElement('div');
+      root.appendChild(selection.getRangeAt(0).cloneContents());
+      plainText = selection.toString();
+      scope = 'selection';
+    } else {
+      root = contentElement.cloneNode(true) as HTMLElement;
+      plainText = markdown;
+      scope = 'document';
+    }
+
+    const { html, diagramCount } = await this.buildRichHtml(root, contentElement, pluginManager);
+
+    try {
+      await this.clipboardApi.writeHtml(html, plainText);
+    } catch (error) {
+      throw new ClipboardWriteError('html', error);
+    }
+
+    return { success: true, diagramCount, scope };
+  }
+
+  /**
+   * Copy one section -- a heading and everything up to the next heading of
+   * the same or a higher level -- as rich text, with the section's markdown
+   * as the plain-text alternative.
+   */
+  async copySectionAsRichText(
+    heading: HTMLElement,
+    sectionMarkdown: string,
+    options: DocumentCopyOptions
+  ): Promise<DocumentCopyResult> {
+    const { contentElement, pluginManager } = options;
+
+    const root = document.createElement('div');
+    for (const node of this.sectionNodes(heading)) {
+      root.appendChild(node.cloneNode(true));
+    }
+
+    const { html, diagramCount } = await this.buildRichHtml(root, contentElement, pluginManager);
+
+    try {
+      await this.clipboardApi.writeHtml(html, sectionMarkdown);
+    } catch (error) {
+      throw new ClipboardWriteError('html', error);
+    }
+
+    return { success: true, diagramCount, scope: 'section' };
+  }
+
+  /**
+   * The rendered nodes of a heading's section: the heading itself and its
+   * following siblings up to, not including, the next heading of the same or
+   * a higher level.
+   */
+  sectionNodes(heading: HTMLElement): Node[] {
+    const level = this.headingLevel(heading);
+    const nodes: Node[] = [heading];
+    let node: ChildNode | null = heading.nextSibling;
+    while (node) {
+      if (node instanceof HTMLElement) {
+        const nextLevel = this.headingLevel(node);
+        if (nextLevel !== null && level !== null && nextLevel <= level) break;
+      }
+      nodes.push(node);
+      node = node.nextSibling;
+    }
+    return nodes;
+  }
+
+  /** 1-6 for an h1-h6 element, null for anything else */
+  private headingLevel(element: HTMLElement): number | null {
+    const match = /^h([1-6])$/i.exec(element.tagName);
+    return match ? Number(match[1]) : null;
+  }
+
+  /**
+   * The user's selection when it is non-empty and lies inside the document,
+   * null otherwise (no selection, a caret, or a selection in app chrome).
+   */
+  private selectionWithin(contentElement: HTMLElement): Selection | null {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return null;
+    const range = selection.getRangeAt(0);
+    if (!contentElement.contains(range.commonAncestorContainer)) return null;
+    if (!range.toString().trim()) return null;
+    return selection;
+  }
+
+  /**
+   * Turn a copy of rendered content into self-contained rich HTML: mermaid
+   * diagrams become PNG images with a link back to mermaid.live, every
+   * element carries inline styles, and app chrome is stripped out.
+   */
+  private async buildRichHtml(
+    root: HTMLElement,
+    contentElement: HTMLElement,
+    pluginManager: PluginManager
+  ): Promise<{ html: string; diagramCount: number }> {
     // Get the MermaidPlugin for diagram processing
     const mermaidPlugin = pluginManager.getPlugin<MermaidPlugin>(BUILTIN_PLUGINS.MERMAID);
 
     // Process mermaid diagrams
     let diagramCount = 0;
-    const mermaidContainers = clone.querySelectorAll('.mermaid-container[data-mermaid-source]');
+    const mermaidContainers = root.querySelectorAll('.mermaid-container[data-mermaid-source]');
 
     for (const container of mermaidContainers) {
       const originalContainer = this.findMatchingOriginalContainer(
@@ -130,20 +276,20 @@ export class DocumentCopyService {
       }
     }
 
-    // Apply Google Docs compatible inline styles
-    this.applyGoogleDocsStyles(clone);
+    this.stripChrome(root);
+    this.applyGoogleDocsStyles(root);
 
-    // Write to clipboard
-    try {
-      await this.clipboardApi.writeHtml(clone.innerHTML);
-    } catch (error) {
-      throw new ClipboardWriteError('html', error);
+    return { html: root.innerHTML, diagramCount };
+  }
+
+  /**
+   * Remove what belongs to the app rather than the document: code-block copy
+   * buttons and change markers.
+   */
+  private stripChrome(root: HTMLElement): void {
+    for (const el of root.querySelectorAll('.code-copy-btn, .change-gutter-deleted, .change-gutter-reset-btn')) {
+      el.remove();
     }
-
-    return {
-      success: true,
-      diagramCount,
-    };
   }
 
   /**
@@ -374,6 +520,8 @@ export class DocumentCopyService {
       el.removeAttribute('data-mermaid-id');
       el.removeAttribute('data-mermaid-source');
       el.removeAttribute('data-mermaid-code');
+      el.removeAttribute('data-source-lines');
+      el.removeAttribute('data-lang');
     }
   }
 }

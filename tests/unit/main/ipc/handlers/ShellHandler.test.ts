@@ -56,6 +56,7 @@ function createMockPreferences(
       typography: {} as AppPreferences['core']['typography'],
       lists: {} as AppPreferences['core']['lists'],
       editor: { autoSave: true, autoSaveDelay: 1000 },
+      viewer: { interactiveTaskLists: true },
       externalEditor: { editor, customCommand },
       googleDocs: { useCustomCredentials: false, customClientId: '' },
       experimental: { googleDocsSync: false },

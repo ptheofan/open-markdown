@@ -30,8 +30,14 @@ const ACTIVE_CLASS = 'outline-item-active';
 const EMPTY_CLASS = 'outline-panel-empty';
 const COLLAPSED_CLASS = 'outline-panel-collapsed';
 
-/** A heading this close to (or above) the top of the viewport "owns" the view */
+/**
+ * A heading within this band below the top edge of the viewport "owns" the
+ * view, as does any heading above it. The band is the larger of this value
+ * and a quarter of the viewport, so a heading that has just scrolled into
+ * its reading position counts before it reaches the very edge.
+ */
 const TOP_TOLERANCE_PX = 8;
+const TOP_BAND_FRACTION = 0.25;
 
 /** Fallback when the browser never fires `scrollend` for a programmatic scroll */
 const PROGRAMMATIC_SCROLL_TIMEOUT_MS = 1000;
@@ -194,9 +200,14 @@ export class OutlinePanel {
     this.pinnedIndex = index;
     this.setActive(index);
 
+    // Land the heading where the document's own top padding would put it,
+    // not flush against the edge.
+    const padding =
+      parseFloat(getComputedStyle(this.scrollContainer).paddingTop) || 0;
     const containerTop = this.scrollContainer.getBoundingClientRect().top;
     const headingTop = entry.element.getBoundingClientRect().top;
-    const target = this.scrollContainer.scrollTop + (headingTop - containerTop);
+    const target =
+      this.scrollContainer.scrollTop + (headingTop - containerTop) - padding;
 
     this.beginProgrammaticScroll();
     this.scrollContainer.scrollTo({
@@ -279,10 +290,14 @@ export class OutlinePanel {
     }
 
     const containerTop = this.scrollContainer.getBoundingClientRect().top;
+    const band = Math.max(
+      TOP_TOLERANCE_PX,
+      this.scrollContainer.clientHeight * TOP_BAND_FRACTION
+    );
     let active = 0;
     for (const [i, entry] of this.entries.entries()) {
       const top = entry.element.getBoundingClientRect().top - containerTop;
-      if (top <= TOP_TOLERANCE_PX) {
+      if (top <= band) {
         active = i;
       } else {
         break;

@@ -180,3 +180,8 @@ export {
 
 export { createExportDialog } from './ExportDialog';
 export type { ExportDialog, ExportKind, ExportChoices } from './ExportDialog';
+
+export { createQuickSwitcher, rankItems } from './QuickSwitcher';
+export type { QuickSwitcher, QuickSwitcherCallbacks } from './QuickSwitcher';
+export { createLightbox, Lightbox } from './Lightbox';
+export { createDiagramControls, DiagramControls } from './DiagramControls';

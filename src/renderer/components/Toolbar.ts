@@ -14,6 +14,8 @@ export interface ToolbarCallbacks {
   onEnterEditMode?: () => void;
   onCancelEdit?: () => void;
   onToggleOutline?: () => void;
+  onNavigateBack?: () => void;
+  onNavigateForward?: () => void;
 }
 
 /**
@@ -26,6 +28,8 @@ export class Toolbar {
   private themeToggleBtn: HTMLButtonElement | null = null;
   private editModeBtn: HTMLButtonElement | null = null;
   private outlineToggleBtn: HTMLButtonElement | null = null;
+  private navBackBtn: HTMLButtonElement | null = null;
+  private navForwardBtn: HTMLButtonElement | null = null;
   private editSaveArrow: HTMLButtonElement | null = null;
   private editSaveGroup: HTMLElement | null = null;
   private editSaveMenu: HTMLElement | null = null;
@@ -54,6 +58,8 @@ export class Toolbar {
     this.themeToggleBtn = this.element.querySelector('#theme-toggle-btn');
     this.editModeBtn = this.element.querySelector('#edit-mode-btn');
     this.outlineToggleBtn = this.element.querySelector('#outline-toggle-btn');
+    this.navBackBtn = this.element.querySelector('#nav-back-btn');
+    this.navForwardBtn = this.element.querySelector('#nav-forward-btn');
     this.editSaveArrow = this.element.querySelector('#edit-save-arrow');
     this.editSaveGroup = this.element.querySelector('#edit-save-group');
     this.editSaveMenu = this.element.querySelector('#edit-save-menu');
@@ -76,6 +82,14 @@ export class Toolbar {
 
     this.preferencesBtn?.addEventListener('click', () => {
       this.callbacks.onOpenPreferences?.();
+    });
+
+    this.navBackBtn?.addEventListener('click', () => {
+      this.callbacks.onNavigateBack?.();
+    });
+
+    this.navForwardBtn?.addEventListener('click', () => {
+      this.callbacks.onNavigateForward?.();
     });
 
     this.themeToggleBtn?.addEventListener('click', () => {
@@ -169,6 +183,12 @@ export class Toolbar {
    */
   setOutlineEnabled(enabled: boolean): void {
     if (this.outlineToggleBtn) this.outlineToggleBtn.disabled = !enabled;
+  }
+
+  /** Enable the Back and Forward buttons according to the history */
+  setNavigationState(canGoBack: boolean, canGoForward: boolean): void {
+    if (this.navBackBtn) this.navBackBtn.disabled = !canGoBack;
+    if (this.navForwardBtn) this.navForwardBtn.disabled = !canGoForward;
   }
 
   /**

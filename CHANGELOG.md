@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Navigation between documents**: a link to another markdown file opens it in the same window, scrolled to its anchor; `Cmd`/`Ctrl`-click opens it in a new window. Links to other local files open in the app the system associates with them (never a program). A link to a file that is not there shows a red dotted underline and the path that was looked for in its tooltip; a link that resolves shows the path.
+
+- **Back and Forward**: every document a window shows is remembered. `Cmd+[` and `Cmd+]`, View → Back / Forward, toolbar arrows, the mouse's back and forward buttons and a two-finger swipe on macOS move through them, each landing where the reader left it. Opening a new document from the middle drops what was ahead, as a browser does.
+
+- **Quick Switch** (`Cmd+T`, View → Quick Switch…): type part of a name to jump to an open document or a recent file, with fuzzy matching on name and path. Arrow keys move, Enter opens, Esc closes.
+
+- **Lightbox**: clicking an image opens it on a dark backdrop at its natural size; scroll or pinch zooms, dragging pans, `+`/`-` zoom, `0` resets, Esc or a click on the backdrop closes. The caption shows the alt text or the path.
+
+- **Diagram zoom and pan**: hovering a Mermaid diagram shows zoom in, zoom out, fit and open-large buttons; pinch or `Cmd`/`Ctrl`+wheel zooms the diagram in place without zooming the page, and dragging pans once zoomed. Open-large shows the SVG in the lightbox, so its text stays crisp.
+
 - **Print and export**: File → Print… (`Cmd+Shift+P`) and File → Export → PDF… / HTML…. All three start from the rendered document: the app's stylesheet and theme variables are inlined, diagrams stay the vector SVG they already are, local images and the KaTeX fonts (only when there is math) become data URIs, and the copy buttons, change markers and file-reference links are stripped. The exported page runs no script and fetches nothing: its own Content-Security-Policy forbids both. A dialog asks for the theme (light by default; diagrams are redrawn in the light palette when the app is dark), and for PDF and print the paper size, orientation and whether to print backgrounds; the choices and the last folder are remembered. The PDF keeps text selectable and internal links clickable, avoids page breaks inside code blocks, tables, diagrams and alerts, and keeps headings with what follows them.
 
 - **Front matter**: a document that opens with a `---` YAML block shows it as a collapsible key/value table (nested maps as nested tables, lists as lists) instead of a horizontal rule and a paragraph of `name: foo`. TOML between `+++` is shown as written. Only a block that parses as a YAML mapping counts, so a document that merely starts with a rule is unaffected. Collapsing or expanding the block is remembered (Preferences → Front Matter).

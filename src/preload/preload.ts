@@ -8,6 +8,7 @@ import { IPC_CHANNELS } from '@shared/types/api';
 import { resolveAssetUrl, resolveLocalPath } from './assetResolver';
 
 import type { ExportResult, PageOptions } from '@shared/types/export';
+import type { LinkTarget } from '@shared/types/api';
 import type {
   ElectronAPI,
   FileChangeEvent,
@@ -59,6 +60,10 @@ const electronAPI: ElectronAPI = {
       refs: string[]
     ): Promise<Record<string, string | null>> => {
       return ipcRenderer.invoke(IPC_CHANNELS.FILE.RESOLVE_REFERENCES, documentPath, refs);
+    },
+
+    checkLinks: (documentPath: string, hrefs: string[]): Promise<Record<string, LinkTarget | null>> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.FILE.CHECK_LINKS, documentPath, hrefs);
     },
 
     read: (filePath: string): Promise<FileReadResult> => {
@@ -386,6 +391,10 @@ const electronAPI: ElectronAPI = {
 
     openExternal: (url: string): Promise<void> => {
       return ipcRenderer.invoke(IPC_CHANNELS.SHELL.OPEN_EXTERNAL, url);
+    },
+
+    openLocalFile: (filePath: string): Promise<OpenInEditorResult> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.SHELL.OPEN_LOCAL_FILE, filePath);
     },
   },
 

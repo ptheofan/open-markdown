@@ -91,6 +91,22 @@ export class WindowManager {
       });
     });
 
+    // Mouse back/forward buttons (Windows, Linux) and a two-finger swipe (macOS)
+    win.on('app-command', (_event, command) => {
+      if (command === 'browser-backward') {
+        win.webContents.send(IPC_CHANNELS.MENU.ACTION, 'navigate-back');
+      } else if (command === 'browser-forward') {
+        win.webContents.send(IPC_CHANNELS.MENU.ACTION, 'navigate-forward');
+      }
+    });
+    win.on('swipe', (_event, direction) => {
+      if (direction === 'left') {
+        win.webContents.send(IPC_CHANNELS.MENU.ACTION, 'navigate-back');
+      } else if (direction === 'right') {
+        win.webContents.send(IPC_CHANNELS.MENU.ACTION, 'navigate-forward');
+      }
+    });
+
     win.on('resize', () => this.scheduleWindowStateSave(win));
     win.on('move', () => this.scheduleWindowStateSave(win));
     win.on('maximize', () => this.persistWindowState(win));

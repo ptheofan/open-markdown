@@ -18,6 +18,8 @@ import { Toast } from './Toast';
 
 import { EditModeController, createEditModeController } from './EditModeController';
 import type { EditModeCallbacks } from './EditModeController';
+import { DiagramControls } from './DiagramControls';
+import type { LightboxContent } from './Lightbox';
 
 import { rewriteAssetPaths } from '../utils/assetPaths';
 
@@ -39,6 +41,12 @@ export interface MarkdownViewerState {
 
 /** Formats a section can be copied in from a heading's context menu */
 export type SectionCopyFormat = 'rich-text' | 'markdown';
+
+/** How a link to another markdown file was asked to open */
+export interface OpenLocalFileOptions {
+  /** Cmd/Ctrl-click: a new window rather than this one */
+  newWindow: boolean;
+}
 
 /** How long the copy button shows its check mark after a copy */
 const COPIED_FEEDBACK_MS = 1500;
@@ -72,8 +80,12 @@ export class MarkdownViewer {
   private editModeController: EditModeController | null = null;
   private isEditMode = false;
   private onOpenLocalFile:
-    | ((filePath: string, fragment: string | null) => void)
+    | ((filePath: string, fragment: string | null, options: OpenLocalFileOptions) => void)
     | null = null;
+  private onOpenLightbox: ((content: LightboxContent) => void) | null = null;
+  private readonly diagramControls = new DiagramControls({
+    onOpenLightbox: (svg, caption) => this.onOpenLightbox?.({ svg, caption }),
+  });
   /** Whether task-list checkboxes toggle their marker in the source */
   private interactiveTaskLists = true;
   private onTaskToggle: ((markdown: string) => void) | null = null;
@@ -200,7 +212,9 @@ export class MarkdownViewer {
       const html = this.pluginManager.render(markdown);
       this.container.innerHTML = html;
       this.applyTaskListInteractivity();
-      void this.resolveFileReferences(++this.renderGeneration);
+      const generation = ++this.renderGeneration;
+      void this.resolveFileReferences(generation);
+      void this.checkLocalLinks(generation);
 
       // A Select All from the previous document leaves a range spanning this
       // container. Replacing its children does not collapse that range, so the
@@ -214,6 +228,11 @@ export class MarkdownViewer {
 
       // Run post-render hooks (for Mermaid diagrams, etc.)
       await this.pluginManager.postRender(this.container);
+
+      // Zoom, pan and enlarge for the diagrams just drawn
+      if (generation === this.renderGeneration && !this.isEditMode) {
+        this.diagramControls.attach(this.container);
+      }
     } catch (error) {
       console.error('Render error:', error);
       this.container.innerHTML = `
@@ -454,7 +473,7 @@ export class MarkdownViewer {
       // the whole app page (blanking it back to the welcome screen), so it is
       // always prevented; markdown files are opened in the viewer instead.
       e.preventDefault();
-      this.openLocalLink(href);
+      this.openLocalLink(href, { newWindow: e.metaKey || e.ctrlKey });
     });
   }
 
@@ -462,30 +481,84 @@ export class MarkdownViewer {
    * Open a link to a local markdown file in the viewer, resolving relative
    * references against the current document's location
    */
-  private openLocalLink(href: string): void {
+  private openLocalLink(href: string, options: OpenLocalFileOptions): void {
     const basePath = this.state.filePath;
-    if (!basePath || !this.onOpenLocalFile) return;
+    if (!basePath) return;
 
     const resolved = window.electronAPI.assets.resolvePath(basePath, href);
     if (!resolved) return;
 
     const ext = resolved.slice(resolved.lastIndexOf('.')).toLowerCase();
-    if (!(MARKDOWN_EXTENSIONS as readonly string[]).includes(ext)) return;
+    if (!(MARKDOWN_EXTENSIONS as readonly string[]).includes(ext)) {
+      // Not a document of ours: the system's app for it, never a program
+      void window.electronAPI.shell.openLocalFile(resolved).then((result) => {
+        if (!result.success) {
+          this.toast.error(result.error ?? 'Could not open file');
+        }
+      });
+      return;
+    }
 
+    if (!this.onOpenLocalFile) return;
     const hashIndex = href.indexOf('#');
     const fragment =
       hashIndex >= 0 ? decodeURIComponent(href.slice(hashIndex + 1)) : null;
 
-    this.onOpenLocalFile(resolved, fragment);
+    this.onOpenLocalFile(resolved, fragment, options);
   }
 
   /**
    * Set the callback invoked when a link to a local markdown file is clicked
    */
   setOnOpenLocalFile(
-    callback: (filePath: string, fragment: string | null) => void
+    callback: (filePath: string, fragment: string | null, options: OpenLocalFileOptions) => void
   ): void {
     this.onOpenLocalFile = callback;
+  }
+
+  /**
+   * Set the callback invoked when an image or a diagram is to be shown large
+   */
+  setOnOpenLightbox(callback: (content: LightboxContent) => void): void {
+    this.onOpenLightbox = callback;
+  }
+
+  /**
+   * Ask main which of the document's relative links point at files that
+   * exist. The others are marked, with the path that was looked for in the
+   * tooltip, so a broken link is visible before it is clicked.
+   */
+  private async checkLocalLinks(generation: number): Promise<void> {
+    const anchors = Array.from(this.container.querySelectorAll<HTMLAnchorElement>('a[href]')).filter(
+      (a) => {
+        if (a.classList.contains('file-ref')) return false;
+        const href = a.getAttribute('href') ?? '';
+        return href !== '' && !href.startsWith('#') && !this.isExternalUrl(href) && !/^[a-z][a-z0-9+.-]*:/i.test(href);
+      }
+    );
+    const documentPath = this.state.filePath;
+    if (anchors.length === 0 || !documentPath) return;
+
+    const hrefs = Array.from(new Set(anchors.map((a) => a.getAttribute('href') ?? '')));
+    let targets: Record<string, { path: string; exists: boolean } | null> = {};
+    try {
+      targets = await window.electronAPI.file.checkLinks(documentPath, hrefs);
+    } catch {
+      return;
+    }
+    if (generation !== this.renderGeneration) return;
+
+    for (const anchor of anchors) {
+      const target = targets[anchor.getAttribute('href') ?? ''];
+      if (!target) continue;
+      if (target.exists) {
+        anchor.classList.remove('local-link-broken');
+        anchor.title = target.path;
+      } else {
+        anchor.classList.add('local-link-broken');
+        anchor.title = `Not found: ${target.path}`;
+      }
+    }
   }
 
   /**
@@ -628,8 +701,28 @@ export class MarkdownViewer {
 
       if (target instanceof HTMLInputElement && target.classList.contains('task-list-checkbox')) {
         this.handleTaskCheckboxClick(target);
+        return;
+      }
+
+      // A picture that is not itself a link opens large
+      if (target instanceof HTMLImageElement && !target.closest('a') && !this.isEditMode && this.onOpenLightbox) {
+        e.preventDefault();
+        this.onOpenLightbox({ src: target.currentSrc || target.src, caption: this.imageCaption(target) });
       }
     });
+  }
+
+  /** The alt text, else the path the image was written with */
+  private imageCaption(img: HTMLImageElement): string {
+    const alt = img.getAttribute('alt')?.trim();
+    if (alt) return alt;
+    const src = img.getAttribute('src') ?? '';
+    try {
+      const url = new URL(src);
+      return decodeURIComponent(url.pathname);
+    } catch {
+      return src;
+    }
   }
 
   /**

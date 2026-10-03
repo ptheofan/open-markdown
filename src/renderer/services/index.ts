@@ -22,3 +22,7 @@ export {
 
 export { DocumentExportService, createDocumentExportService } from './DocumentExportService';
 export type { StandaloneHtmlOptions, StandaloneHtmlResult } from './DocumentExportService';
+
+export { NavigationHistory } from './NavigationHistory';
+export type { HistoryEntry } from './NavigationHistory';
+export { fuzzyMatch, rankByFuzzy } from './fuzzy';

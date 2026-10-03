@@ -1,4 +1,10 @@
 import type { ExportAPI } from './export';
+
+/** Where a document's relative link points, and whether anything is there */
+export interface LinkTarget {
+  path: string;
+  exists: boolean;
+}
 import type {
   FileOpenResult,
   FileReadResult,
@@ -26,6 +32,7 @@ export const IPC_CHANNELS = {
     OPEN_DIALOG: 'file:open-dialog',
     RESOLVE_PATH: 'file:resolve-path',
     RESOLVE_REFERENCES: 'file:resolve-references',
+    CHECK_LINKS: 'file:check-links',
     READ: 'file:read',
     WATCH: 'file:watch',
     UNWATCH: 'file:unwatch',
@@ -98,6 +105,7 @@ export const IPC_CHANNELS = {
     REVEAL_IN_FILE_MANAGER: 'shell:reveal-in-file-manager',
     OPEN_IN_EDITOR: 'shell:open-in-editor',
     OPEN_EXTERNAL: 'shell:open-external',
+    OPEN_LOCAL_FILE: 'shell:open-local-file',
   },
   GOOGLE_DOCS: {
     AUTH_STATUS: 'google-docs:auth-status',
@@ -155,6 +163,11 @@ export interface FileAPI {
     documentPath: string,
     refs: string[]
   ) => Promise<Record<string, string | null>>;
+  /**
+   * Resolve relative links written in a document against the document's own
+   * folder, keyed by the href as written; null for targets that do not exist.
+   */
+  checkLinks: (documentPath: string, hrefs: string[]) => Promise<Record<string, LinkTarget | null>>;
   read: (filePath: string) => Promise<FileReadResult>;
   write: (filePath: string, content: string) => Promise<FileWriteResult>;
   watch: (filePath: string) => Promise<void>;
@@ -320,6 +333,8 @@ export interface ShellAPI {
   /** Open a file in the configured editor, at a line and column when given */
   openInEditor: (filePath: string, line?: number, column?: number) => Promise<OpenInEditorResult>;
   openExternal: (url: string) => Promise<void>;
+  /** Open a local, non-markdown file with the app the system associates with it */
+  openLocalFile: (filePath: string) => Promise<OpenInEditorResult>;
 }
 
 /**

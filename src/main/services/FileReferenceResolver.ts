@@ -124,3 +124,52 @@ export async function resolveFileReferences(
   }
   return results;
 }
+
+/**
+ * The local file a link's href names, relative to the document's folder, or
+ * null when it is not a local reference (a URL, an anchor) or does not exist.
+ * A `#fragment` and `?query` are ignored; percent-encoding is undone.
+ */
+export interface LinkTarget {
+  /** Absolute path the href names */
+  path: string;
+  /** Whether a file is there */
+  exists: boolean;
+}
+
+export async function resolveRelativeLink(
+  href: string,
+  documentPath: string,
+  probe: ReferenceProbe = fsProbe
+): Promise<LinkTarget | null> {
+  const trimmed = href.trim();
+  if (!trimmed || trimmed.startsWith('#') || /^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return null;
+
+  let target = trimmed.replace(/[?#].*$/, '');
+  if (!target) return null;
+  try {
+    target = decodeURIComponent(target);
+  } catch {
+    // Keep as written
+  }
+
+  const candidate = path.isAbsolute(target)
+    ? path.normalize(target)
+    : path.resolve(path.dirname(documentPath), target);
+  return { path: candidate, exists: await probe.isFile(candidate) };
+}
+
+/**
+ * Resolve many links against one document, keyed by the href as written.
+ */
+export async function resolveRelativeLinks(
+  hrefs: string[],
+  documentPath: string,
+  probe: ReferenceProbe = fsProbe
+): Promise<Record<string, LinkTarget | null>> {
+  const results: Record<string, LinkTarget | null> = {};
+  for (const href of new Set(hrefs)) {
+    results[href] = await resolveRelativeLink(href, documentPath, probe);
+  }
+  return results;
+}

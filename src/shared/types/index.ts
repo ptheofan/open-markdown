@@ -4,6 +4,8 @@ export type {
   FileReadResult,
   FileWriteResult,
   FileStats,
+  PathResolveBase,
+  PathResolveResult,
   WatchedFile,
   FileChangeEvent,
   FileDeleteEvent,

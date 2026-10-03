@@ -14,6 +14,7 @@ import type {
   FileOpenResult,
   FileReadResult,
   FileWriteResult,
+  PathResolveResult,
   FullscreenChangeEvent,
   RecentFileEntry,
   DocumentBrowserSnapshot,
@@ -46,6 +47,10 @@ const electronAPI: ElectronAPI = {
   file: {
     openDialog: (): Promise<FileOpenResult> => {
       return ipcRenderer.invoke(IPC_CHANNELS.FILE.OPEN_DIALOG);
+    },
+
+    resolvePath: (input: string): Promise<PathResolveResult> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.FILE.RESOLVE_PATH, input);
     },
 
     read: (filePath: string): Promise<FileReadResult> => {

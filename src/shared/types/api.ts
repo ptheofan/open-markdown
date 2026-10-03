@@ -4,6 +4,7 @@ import type {
   FileWriteResult,
   FileChangeEvent,
   FileDeleteEvent,
+  PathResolveResult,
 } from './file';
 import type { ThemeMode, ResolvedTheme, ThemeChangeEvent } from './theme';
 import type { AppPreferences, DeepPartial } from './preferences';
@@ -22,6 +23,7 @@ import type { GoogleDocLink, GoogleDocsResolveResult, GoogleAuthState, MermaidDi
 export const IPC_CHANNELS = {
   FILE: {
     OPEN_DIALOG: 'file:open-dialog',
+    RESOLVE_PATH: 'file:resolve-path',
     READ: 'file:read',
     WATCH: 'file:watch',
     UNWATCH: 'file:unwatch',
@@ -133,6 +135,8 @@ export interface FullscreenChangeEvent {
  */
 export interface FileAPI {
   openDialog: () => Promise<FileOpenResult>;
+  /** Resolve a typed or pasted path against this window's document */
+  resolvePath: (input: string) => Promise<PathResolveResult>;
   read: (filePath: string) => Promise<FileReadResult>;
   write: (filePath: string, content: string) => Promise<FileWriteResult>;
   watch: (filePath: string) => Promise<void>;

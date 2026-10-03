@@ -16,6 +16,7 @@ import {
   createChangeGutter,
   createFindBar,
   createDocumentBrowser,
+  createOpenPathBar,
   createOutlinePanel,
   createRecentFilesDropdown,
   createOpenExternalDropdown,
@@ -33,6 +34,7 @@ import {
   type ChangeGutter,
   type FindBar,
   type DocumentBrowser,
+  type OpenPathBar,
   type OutlinePanel,
   type RecentFilesDropdown,
   type OpenExternalDropdown,
@@ -113,6 +115,7 @@ class App {
   private diffService: DiffService | null = null;
   private changeGutter: ChangeGutter | null = null;
   private findBar: FindBar | null = null;
+  private openPathBar: OpenPathBar | null = null;
   private documentBrowser: DocumentBrowser | null = null;
   private outlinePanel: OutlinePanel | null = null;
   private findService: FindService | null = null;
@@ -228,6 +231,21 @@ class App {
       },
       onStopFinding: () => {
         this.findService!.clear();
+      },
+    });
+
+    // Open a document by its path, typed or pasted. Relative paths are
+    // resolved in main against this window's document.
+    this.openPathBar = createOpenPathBar(document.body, {
+      resolve: (input) => window.electronAPI.file.resolvePath(input),
+      onOpen: (filePath) => {
+        void this.loadFile(filePath);
+      },
+      getBaseDir: () => {
+        const current = this.state.currentFilePath;
+        if (!current) return null;
+        const slash = current.lastIndexOf('/');
+        return slash > 0 ? current.slice(0, slash) : '/';
       },
     });
 
@@ -611,6 +629,9 @@ class App {
             break;
           case 'open-file':
             void this.handleOpenFile();
+            break;
+          case 'open-path':
+            this.openPathBar?.show();
             break;
           case 'open-preferences':
             this.handleOpenPreferences();
@@ -1646,6 +1667,7 @@ class App {
     this.copyDropdown?.destroy();
     this.changeGutter?.destroy();
     this.findBar?.destroy();
+    this.openPathBar?.destroy();
     this.documentBrowser?.destroy();
     this.outlinePanel?.destroy();
     this.recentFilesDropdown?.destroy();

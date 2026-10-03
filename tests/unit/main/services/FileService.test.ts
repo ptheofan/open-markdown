@@ -113,6 +113,97 @@ describe('FileService', () => {
     });
   });
 
+  describe('resolvePath', () => {
+    const HOME = '/Users/me';
+    const DOC = '/Users/me/notes/todo.md';
+
+    const fileStats = (isDirectory = false): never =>
+      ({ size: 10, mtime: new Date(), birthtime: new Date(), isDirectory: () => isDirectory }) as never;
+
+    it('rejects empty input', async () => {
+      const result = await fileService.resolvePath('  ', DOC, HOME);
+
+      expect(result.success).toBe(false);
+      expect(result.filePath).toBeUndefined();
+      expect(result.error).toContain('Enter a path');
+    });
+
+    it('resolves an absolute markdown file that exists', async () => {
+      vi.mocked(fs.stat).mockResolvedValue(fileStats());
+
+      const result = await fileService.resolvePath('/docs/spec.md', DOC, HOME);
+
+      expect(fs.stat).toHaveBeenCalledWith('/docs/spec.md');
+      expect(result).toEqual({
+        success: true,
+        filePath: '/docs/spec.md',
+        resolvedFrom: 'absolute',
+      });
+    });
+
+    it('resolves a relative path from the folder of the current document', async () => {
+      vi.mocked(fs.stat).mockResolvedValue(fileStats());
+
+      const result = await fileService.resolvePath('../spec.md', DOC, HOME);
+
+      expect(result).toEqual({
+        success: true,
+        filePath: '/Users/me/spec.md',
+        resolvedFrom: 'document',
+      });
+    });
+
+    it('resolves a relative path from home without a document', async () => {
+      vi.mocked(fs.stat).mockResolvedValue(fileStats());
+
+      const result = await fileService.resolvePath('spec.md', null, HOME);
+
+      expect(result).toEqual({
+        success: true,
+        filePath: '/Users/me/spec.md',
+        resolvedFrom: 'home',
+      });
+    });
+
+    it('reports a path that does not exist, keeping where it looked', async () => {
+      vi.mocked(fs.stat).mockRejectedValue(new Error('ENOENT'));
+
+      const result = await fileService.resolvePath('missing.md', DOC, HOME);
+
+      expect(result.success).toBe(false);
+      expect(result.filePath).toBe('/Users/me/notes/missing.md');
+      expect(result.resolvedFrom).toBe('document');
+      expect(result.error).toContain('No such file');
+    });
+
+    it('rejects a folder', async () => {
+      vi.mocked(fs.stat).mockResolvedValue(fileStats(true));
+
+      const result = await fileService.resolvePath('/docs', DOC, HOME);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('folder');
+    });
+
+    it('rejects a file that is not markdown', async () => {
+      vi.mocked(fs.stat).mockResolvedValue(fileStats());
+
+      const result = await fileService.resolvePath('/docs/notes.txt', DOC, HOME);
+
+      expect(result.success).toBe(false);
+      expect(result.filePath).toBe('/docs/notes.txt');
+      expect(result.error).toContain('Not a markdown file');
+    });
+
+    it('accepts any markdown extension regardless of case', async () => {
+      vi.mocked(fs.stat).mockResolvedValue(fileStats());
+
+      const result = await fileService.resolvePath('/docs/README.MD', DOC, HOME);
+
+      expect(result.success).toBe(true);
+    });
+  });
+
   describe('readFile', () => {
     const filePath = '/path/to/test.md';
 

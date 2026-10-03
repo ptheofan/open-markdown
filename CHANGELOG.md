@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Open by path**: `Cmd+P` (File → Open Path…) opens a bar to type or paste the path of a document and open it in the current window. A full path, `~/…`, a `file://` URL, a quoted path and a path with shell-escaped spaces are all accepted; anything else is taken as relative to the folder of the document the window shows, or to the home folder when the window is empty. The resolved path is shown as you type, with the reason when it cannot be opened (missing, a folder, not markdown); Enter opens, Esc closes.
+
 - **Open Documents browser**: `Cmd+Shift+D` (View → Browse Open Documents) opens a grid of every open document, each shown as a capture of its document view at its current scroll position, change markers included, without the window chrome. Type to filter by file name or by document content; arrow keys move, Enter brings that window to the front, Esc closes. Recently opened files that are not open anywhere are listed below, filtered by name; picking one fills the current window if it is empty, otherwise opens it in a new one.
 
 - **Document outline**: a sidebar on the left lists every heading, indented by level, with its own scrolling. The section at the top of the view is highlighted and kept in view in the sidebar; clicking a sidebar entry scrolls the document to that heading, and clicking inside a section of the document moves the sidebar to it. Toggle it from the toolbar or View → Toggle Outline (`Cmd+Shift+O`); the choice is remembered. Hidden automatically for documents without headings.

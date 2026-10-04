@@ -28,6 +28,8 @@ import {
   createExportDialog,
   createQuickSwitcher,
   createLightbox,
+  createUpdateBanner,
+  createReleaseNotesDialog,
   Toast,
   type MarkdownViewer,
   type DropZone,
@@ -51,6 +53,8 @@ import {
   type ExportKind,
   type QuickSwitcher,
   type Lightbox,
+  type UpdateBanner,
+  type ReleaseNotesDialog,
 } from './renderer/components';
 import type { EditModeCallbacks } from './renderer/components/EditModeController';
 import type { SectionCopyFormat } from './renderer/components/MarkdownViewer';
@@ -144,6 +148,8 @@ class App {
   private documentExportService: DocumentExportService | null = null;
   private quickSwitcher: QuickSwitcher | null = null;
   private lightbox: Lightbox | null = null;
+  private updateBanner: UpdateBanner | null = null;
+  private releaseNotesDialog: ReleaseNotesDialog | null = null;
   /** Documents this window has shown, for Back and Forward */
   private readonly history = new NavigationHistory();
 
@@ -411,6 +417,20 @@ class App {
     // Images and diagrams, large
     this.lightbox = createLightbox(document.body);
 
+    // A new version, when there is one
+    this.updateBanner = createUpdateBanner(document.body, {
+      onInstall: () => {
+        void window.electronAPI.updates.install();
+      },
+      onDownload: (url) => {
+        void window.electronAPI.shell.openExternal(url);
+      },
+      onShowNotes: () => {
+        void this.showReleaseNotes();
+      },
+    });
+    this.releaseNotesDialog = createReleaseNotesDialog();
+
     // Create zoom controller for the markdown content
     // Target: markdown-content (the element to scale)
     // Scroll container: markdown-viewer (the scrollable wrapper)
@@ -549,6 +569,9 @@ class App {
       this.preferencesPanel.setCallbacks({
         onPreferencesChange: (updates: DeepPartial<AppPreferences>) => {
           void this.handlePreferencesChange(updates);
+        },
+        onCheckForUpdates: () => {
+          void this.handleCheckForUpdates();
         },
       });
 
@@ -738,6 +761,9 @@ class App {
           case 'quick-switch':
             this.quickSwitcher?.toggle();
             break;
+          case 'check-updates':
+            void this.handleCheckForUpdates();
+            break;
           case 'export-pdf':
             void this.handleExport('pdf');
             break;
@@ -771,6 +797,17 @@ class App {
     };
     document.addEventListener('keydown', onKeyDown);
     this.cleanupFunctions.push(() => document.removeEventListener('keydown', onKeyDown));
+
+    // Update status from main: the banner follows it, the preferences show it
+    const cleanupUpdates = window.electronAPI.updates.onStatus((status) => {
+      this.updateBanner?.update(status);
+      this.preferencesPanel?.setUpdateStatus(status);
+    });
+    this.cleanupFunctions.push(cleanupUpdates);
+    void window.electronAPI.updates.getStatus().then((status) => {
+      this.updateBanner?.update(status);
+      this.preferencesPanel?.setUpdateStatus(status);
+    });
 
     // The document browser in any window asks where this window's document
     // view is, so its capture shows the document alone
@@ -918,8 +955,10 @@ class App {
         await this.exitEditMode();
       }
 
-      // Where the reader was, for Back
-      this.history.rememberScroll(document.getElementById('markdown-viewer')?.scrollTop ?? 0);
+      // Where the reader was, for Back (a Back/Forward move has recorded it already)
+      if (!options.fromHistory) {
+        this.history.rememberScroll(document.getElementById('markdown-viewer')?.scrollTop ?? 0);
+      }
 
       // Stop watching previous file
       if (this.state.currentFilePath && this.state.isWatching) {
@@ -1099,13 +1138,33 @@ class App {
   private restoreScroll(scrollTop: number): void {
     const viewer = document.getElementById('markdown-viewer');
     if (!viewer) return;
-    viewer.scrollTop = scrollTop;
+    viewer.scrollTo({ top: scrollTop, behavior: 'instant' });
     if (scrollTop === 0) return;
-    for (const delay of [50, 200, 600]) {
-      setTimeout(() => {
-        if (viewer.scrollTop < scrollTop) viewer.scrollTop = scrollTop;
-      }, delay);
+
+    // Two things move the view in the moments after: a smooth scroll still
+    // under way from the document just left (a link's #anchor), and images
+    // or fonts arriving above the position. Hold the position until they
+    // are done, unless the reader scrolls in the meantime.
+    let userScrolled = false;
+    const markUser = (): void => {
+      userScrolled = true;
+    };
+    for (const type of ['wheel', 'touchmove', 'keydown', 'mousedown']) {
+      window.addEventListener(type, markUser, { once: true, capture: true });
     }
+    const timers = [50, 150, 300, 500, 800].map((delay) =>
+      setTimeout(() => {
+        if (!userScrolled && viewer.scrollTop !== scrollTop) {
+          viewer.scrollTo({ top: scrollTop, behavior: 'instant' });
+        }
+      }, delay)
+    );
+    setTimeout(() => {
+      for (const type of ['wheel', 'touchmove', 'keydown', 'mousedown']) {
+        window.removeEventListener(type, markUser, { capture: true });
+      }
+      for (const timer of timers) clearTimeout(timer);
+    }, 900);
   }
 
   private updateNavigationButtons(): void {
@@ -1291,6 +1350,49 @@ class App {
     if (result.success && result.content != null && filePath === this.state.currentFilePath) {
       await this.markdownViewer?.render(result.content, filePath);
     }
+  }
+
+  /**
+   * Check for updates now, from the menu or Preferences, and say what came of it
+   */
+  private async handleCheckForUpdates(): Promise<void> {
+    try {
+      const status = await window.electronAPI.updates.check();
+      switch (status.state) {
+        case 'unsupported':
+          this.toast?.error('This build does not update itself');
+          break;
+        case 'up-to-date':
+          this.toast?.success(`Open Markdown ${status.currentVersion} is up to date`);
+          break;
+        case 'error':
+          this.toast?.error(`Update check failed: ${status.error ?? 'unknown error'}`);
+          break;
+        case 'available':
+        case 'downloaded':
+          // The banner says so
+          break;
+        default:
+          this.toast?.success('Checking for updates…');
+      }
+    } catch (error) {
+      this.toast?.error(error instanceof Error ? error.message : 'Update check failed');
+    }
+  }
+
+  /**
+   * "What's new" for the latest known release, rendered by the app itself
+   */
+  private async showReleaseNotes(): Promise<void> {
+    const notes = await window.electronAPI.updates.getReleaseNotes();
+    const status = await window.electronAPI.updates.getStatus();
+    const render = (markdown: string): string =>
+      this.markdownViewer?.getPluginManager().render(markdown) ?? '';
+    this.releaseNotesDialog?.show(
+      status.latestVersion ? `What's new in ${status.latestVersion}` : "What's new",
+      notes ?? '',
+      render
+    );
   }
 
   /**

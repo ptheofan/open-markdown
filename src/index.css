@@ -2933,6 +2933,86 @@ pre.sync-merge-cell {
 }
 
 /* ===========================================
+   Update banner and release notes
+   =========================================== */
+
+.update-banner {
+  position: fixed;
+  left: 50%;
+  bottom: 44px;
+  z-index: 2500;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100% - 48px);
+  padding: 10px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background-color: var(--toolbar-bg);
+  color: var(--text-color);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25);
+  font-size: 13px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.update-banner[hidden] {
+  display: none;
+}
+
+.update-banner-actions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.update-banner-btn {
+  padding: 5px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-color);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.update-banner-btn:hover {
+  background-color: var(--hover-bg);
+}
+
+.update-banner-btn-primary {
+  background-color: var(--link-color);
+  border-color: var(--link-color);
+  color: #ffffff;
+}
+
+.release-notes-dialog {
+  width: min(680px, 100%);
+  max-height: calc(100vh - 80px);
+  display: flex;
+  flex-direction: column;
+}
+
+.release-notes-body {
+  flex: 1;
+  overflow-y: auto;
+  max-width: none;
+  padding: 4px 2px;
+  font-size: 13px;
+}
+
+.preferences-updates-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.preferences-updates-status {
+  margin: 0;
+}
+
+/* ===========================================
    Export dialog
    =========================================== */
 

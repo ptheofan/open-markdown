@@ -9,6 +9,7 @@ import { resolveAssetUrl, resolveLocalPath } from './assetResolver';
 
 import type { ExportResult, PageOptions } from '@shared/types/export';
 import type { LinkTarget } from '@shared/types/api';
+import type { UpdateStatus } from '@shared/types/updates';
 import type {
   ElectronAPI,
   FileChangeEvent,
@@ -423,6 +424,34 @@ const electronAPI: ElectronAPI = {
 
     inlineAssets: (urls: string[]): Promise<Record<string, string | null>> => {
       return ipcRenderer.invoke(IPC_CHANNELS.EXPORT.INLINE_ASSETS, urls);
+    },
+  },
+
+  updates: {
+    getStatus: (): Promise<UpdateStatus> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.UPDATES.GET_STATUS);
+    },
+
+    check: (): Promise<UpdateStatus> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.UPDATES.CHECK);
+    },
+
+    install: (): Promise<void> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.UPDATES.INSTALL);
+    },
+
+    getReleaseNotes: (): Promise<string | null> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.UPDATES.GET_RELEASE_NOTES);
+    },
+
+    onStatus: (callback: (status: UpdateStatus) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, status: UpdateStatus): void => {
+        callback(status);
+      };
+      ipcRenderer.on(IPC_CHANNELS.UPDATES.ON_STATUS, handler);
+      return () => {
+        ipcRenderer.removeListener(IPC_CHANNELS.UPDATES.ON_STATUS, handler);
+      };
     },
   },
 

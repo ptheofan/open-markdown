@@ -6,6 +6,7 @@
  */
 
 import type { ExportPreferences } from './export';
+import type { UpdatePreferences } from './updates';
 import type { ThemeMode } from './theme';
 
 /**
@@ -134,6 +135,8 @@ export interface CorePreferences {
   };
   /** Remembered choices of the Print and Export dialogs */
   export: ExportPreferences;
+  /** Checking for new versions */
+  updates: UpdatePreferences;
 }
 
 /**

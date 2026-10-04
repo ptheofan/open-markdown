@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Automatic updates** for builds from the Releases page. The app checks on launch (after a short delay) and every four hours, never more than hourly. On macOS and Windows the update downloads in the background through Electron's own updater and update.electronjs.org, and a bar offers Restart, What's new and Later: nothing is ever installed until you choose, so an edit in progress is never interrupted. On Linux the newest release is announced with a link to download it. Preferences → Updates turns automatic checks off, follows pre-releases on the Beta channel (announced, never auto-installed), shows the current version and last result, and has Check for Updates…; the same entry sits in the app menu on macOS and under Help. The Mac App Store build and development builds never check. A `Release` workflow builds the DMG/ZIP, Windows Squirrel installer and Linux deb/rpm for a tag and uploads them to a draft release.
+
 - **Navigation between documents**: a link to another markdown file opens it in the same window, scrolled to its anchor; `Cmd`/`Ctrl`-click opens it in a new window. Links to other local files open in the app the system associates with them (never a program). A link to a file that is not there shows a red dotted underline and the path that was looked for in its tooltip; a link that resolves shows the path.
 
 - **Back and Forward**: every document a window shows is remembered. `Cmd+[` and `Cmd+]`, View → Back / Forward, toolbar arrows, the mouse's back and forward buttons and a two-finger swipe on macOS move through them, each landing where the reader left it. Opening a new document from the middle drops what was ahead, as a browser does.

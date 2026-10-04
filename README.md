@@ -41,6 +41,8 @@ Or download the latest release from the [Releases](https://github.com/ptheofan/o
 - **Windows**: `.exe` installer
 - **Linux**: `.deb` or `.rpm`
 
+Builds from the Releases page check for new versions on launch and every few hours (Preferences → Updates to turn that off or follow pre-releases). macOS and Windows download the update in the background and offer a restart; Linux shows where to download it. The Mac App Store build is updated by the App Store.
+
 ## Usage
 
 1. **Open a file**: Click the "Open" button or use `Cmd+O` (macOS) / `Ctrl+O` (Windows/Linux)
@@ -98,6 +100,20 @@ pnpm make
 ```
 
 Build artifacts are output to the `out/` directory.
+
+## Releasing
+
+Tag a version and push the tag; the `Release` workflow builds the installers on macOS, Windows and Linux and uploads them to a **draft** GitHub Release. Publish the draft and the in-app updater (via [update.electronjs.org](https://update.electronjs.org)) starts serving it.
+
+```bash
+# bump "version" in package.json, update CHANGELOG.md, commit, then
+git tag v1.6.0 && git push origin v1.6.0
+```
+
+- Squirrel.Mac only installs updates that are signed with a Developer ID and notarized. The workflow signs and notarizes when the `MACOS_DEVELOPER_ID_CERTIFICATE`, `MACOS_DEVELOPER_ID_CERTIFICATE_PWD`, `MACOS_KEYCHAIN_PWD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` and `APPLE_TEAM_ID` secrets are set; without them the macOS build is ad-hoc signed and can only be installed by hand.
+- Windows installs come from Squirrel.Windows (`RELEASES` + `.nupkg` are uploaded alongside the installer). Sign the installer for SmartScreen when a certificate is available.
+- A pre-release (tick "pre-release" on the draft) is announced to users on the Beta channel but never installed automatically.
+- The Mac App Store build (`release-mas.yml`) contains no updater path: `process.mas` turns it off.
 
 ## Tech Stack
 

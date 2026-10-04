@@ -1,4 +1,5 @@
 import type { ExportAPI } from './export';
+import type { UpdatesAPI } from './updates';
 
 /** Where a document's relative link points, and whether anything is there */
 export interface LinkTarget {
@@ -91,6 +92,13 @@ export const IPC_CHANNELS = {
     PRINT: 'export:print',
     INLINE_ASSETS: 'export:inline-assets',
   },
+  UPDATES: {
+    GET_STATUS: 'updates:get-status',
+    CHECK: 'updates:check',
+    INSTALL: 'updates:install',
+    GET_RELEASE_NOTES: 'updates:get-release-notes',
+    ON_STATUS: 'updates:on-status',
+  },
   MENU: {
     ACTION: 'menu:action',
   },
@@ -132,6 +140,7 @@ export type IpcChannel =
   | (typeof IPC_CHANNELS.CONTEXT_MENU)[keyof typeof IPC_CHANNELS.CONTEXT_MENU]
   | (typeof IPC_CHANNELS.CLIPBOARD)[keyof typeof IPC_CHANNELS.CLIPBOARD]
   | (typeof IPC_CHANNELS.EXPORT)[keyof typeof IPC_CHANNELS.EXPORT]
+  | (typeof IPC_CHANNELS.UPDATES)[keyof typeof IPC_CHANNELS.UPDATES]
   | (typeof IPC_CHANNELS.PREFERENCES)[keyof typeof IPC_CHANNELS.PREFERENCES]
   | (typeof IPC_CHANNELS.FILE_ASSOCIATION)[keyof typeof IPC_CHANNELS.FILE_ASSOCIATION]
   | (typeof IPC_CHANNELS.RECENT_FILES)[keyof typeof IPC_CHANNELS.RECENT_FILES]
@@ -394,6 +403,7 @@ export interface ElectronAPI {
   assets: AssetsAPI;
   googleDocs: GoogleDocsAPI;
   export: ExportAPI;
+  updates: UpdatesAPI;
 }
 
 /**

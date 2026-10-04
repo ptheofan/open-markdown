@@ -1,0 +1,93 @@
+name: Release
+
+# Builds the non-App-Store installers for a tag and publishes them to a draft
+# GitHub Release, which is what the in-app updater reads once the draft is
+# published. The Mac App Store build has its own workflow (release-mas.yml).
+#
+# Assets per platform:
+#   macOS   .dmg and .zip  (the .zip is what update.electronjs.org serves to
+#           Squirrel.Mac; it must be signed and notarized to be accepted)
+#   Windows Setup.exe, RELEASES and .nupkg (Squirrel.Windows)
+#   Linux   .deb and .rpm  (no in-place update; the app announces new versions)
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Publish (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Linux packaging tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y rpm fakeroot dpkg
+
+      # Developer ID signing + notarization. Without these secrets the macOS
+      # build is ad-hoc signed and Squirrel.Mac will refuse to install it, so
+      # the updater only works for releases built with them.
+      - name: Setup macOS signing
+        if: runner.os == 'macOS' && env.MACOS_DEVELOPER_ID_CERTIFICATE != ''
+        env:
+          MACOS_DEVELOPER_ID_CERTIFICATE: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE }}
+          MACOS_DEVELOPER_ID_CERTIFICATE_PWD: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_PWD }}
+          MACOS_KEYCHAIN_PWD: ${{ secrets.MACOS_KEYCHAIN_PWD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          KEYCHAIN_NAME="build.keychain"
+          echo "${MACOS_DEVELOPER_ID_CERTIFICATE}" | base64 --decode > devid.p12
+          security create-keychain -p "${MACOS_KEYCHAIN_PWD}" "${KEYCHAIN_NAME}"
+          security default-keychain -s "${KEYCHAIN_NAME}"
+          security set-keychain-settings -lut 21600 "${KEYCHAIN_NAME}"
+          security unlock-keychain -p "${MACOS_KEYCHAIN_PWD}" "${KEYCHAIN_NAME}"
+          security list-keychains -d user -s "${KEYCHAIN_NAME}" $(security list-keychains -d user | tr -d '"')
+          security import devid.p12 -k "${KEYCHAIN_NAME}" -P "${MACOS_DEVELOPER_ID_CERTIFICATE_PWD}" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${MACOS_KEYCHAIN_PWD}" "${KEYCHAIN_NAME}"
+          rm -f devid.p12
+          xcrun notarytool store-credentials "open-markdown-notarize" \
+            --apple-id "${APPLE_ID}" --password "${APPLE_APP_SPECIFIC_PASSWORD}" --team-id "${APPLE_TEAM_ID}"
+          echo "NOTARIZE_KEYCHAIN_PROFILE=open-markdown-notarize" >> "$GITHUB_ENV"
+          echo "APPLE_TEAM_ID=${APPLE_TEAM_ID}" >> "$GITHUB_ENV"
+
+      - name: Build and publish to a draft release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+        run: pnpm publish
+
+      - name: Cleanup keychain
+        if: always() && runner.os == 'macOS'
+        run: security delete-keychain build.keychain 2>/dev/null || true

@@ -154,6 +154,10 @@ export const DEFAULT_CORE_PREFERENCES: CorePreferences = {
     printBackground: true,
     lastDirectory: '',
   },
+  updates: {
+    automatic: true,
+    channel: 'stable',
+  },
 };
 
 /**

@@ -12,6 +12,7 @@ import type {
   ExternalEditorId,
   GoogleAuthState,
 } from '@shared/types';
+import type { UpdateChannel, UpdateStatus } from '@shared/types/updates';
 import { CollapsibleSection } from './CollapsibleSection';
 import { Select, Toggle, NumberInput, TextInput, FontSelect } from './FormControls';
 import { ColorPicker } from './ColorPicker';
@@ -24,6 +25,8 @@ import { DEFAULT_CORE_PREFERENCES } from '../../preferences/defaults';
 export interface PreferencesPanelCallbacks {
   onPreferencesChange?: (updates: DeepPartial<AppPreferences>) => void;
   onClose?: () => void;
+  /** The user asked to check for updates now */
+  onCheckForUpdates?: () => void;
 }
 
 /**
@@ -54,6 +57,10 @@ export class PreferencesPanel {
   private externalEditorSelect: Select | null = null;
   private interactiveTaskListsToggle: Toggle | null = null;
   private projectRootInput: TextInput | null = null;
+  private updatesAutomaticToggle: Toggle | null = null;
+  private updatesChannelSelect: Select | null = null;
+  private updatesStatusLine: HTMLElement | null = null;
+  private updateStatus: UpdateStatus | null = null;
   private customCommandInput: TextInput | null = null;
   private customCommandField: HTMLElement | null = null;
   private googleDocsSyncToggle: Toggle | null = null;
@@ -202,6 +209,8 @@ export class PreferencesPanel {
     this.googleDocsSyncToggle?.setValue(preferences.core.experimental.googleDocsSync);
     this.interactiveTaskListsToggle?.setValue(preferences.core.viewer.interactiveTaskLists);
     this.projectRootInput?.setValue(preferences.core.viewer.projectRoot);
+    this.updatesAutomaticToggle?.setValue(preferences.core.updates.automatic);
+    this.updatesChannelSelect?.setValue(preferences.core.updates.channel);
 
     for (const [level, controls] of this.headingControls) {
       const style = preferences.core.typography[level as keyof typeof preferences.core.typography] as { color: ColorPair; fontSize: string; fontWeight: number };
@@ -244,9 +253,110 @@ export class PreferencesPanel {
     this.renderAppearanceSection();
     this.renderTypographySection();
     this.renderPluginSections();
+    this.renderUpdatesSection();
     this.renderExperimentalSection();
     void this.renderGoogleDocsSection(this.renderGeneration);
     this.sectionsBuilt = true;
+  }
+
+  /**
+   * Render the Updates section
+   */
+  private renderUpdatesSection(): void {
+    if (!this.currentPreferences) return;
+
+    const section = new CollapsibleSection({
+      title: 'Updates',
+      initiallyOpen: false,
+    });
+
+    const fields: HTMLElement[] = [];
+
+    this.updatesAutomaticToggle = new Toggle({
+      label: 'Check for updates automatically',
+      description: 'On launch and every few hours. Updates download in the background and install when you choose to restart.',
+      value: this.currentPreferences.core.updates.automatic,
+    });
+    this.updatesAutomaticToggle.setOnChange((value) => {
+      this.emitChange({ core: { updates: { automatic: value } } });
+    });
+    fields.push(this.updatesAutomaticToggle.getElement());
+
+    this.updatesChannelSelect = new Select({
+      label: 'Channel',
+      description: 'Beta also announces pre-releases; those are never installed automatically.',
+      options: [
+        { value: 'stable', label: 'Stable' },
+        { value: 'beta', label: 'Beta (pre-releases)' },
+      ],
+      value: this.currentPreferences.core.updates.channel,
+    });
+    this.updatesChannelSelect.setOnChange((value) => {
+      this.emitChange({ core: { updates: { channel: value as UpdateChannel } } });
+    });
+    fields.push(this.updatesChannelSelect.getElement());
+
+    const row = document.createElement('div');
+    row.className = 'form-field preferences-updates-row';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'form-action-button';
+    button.textContent = 'Check for Updates…';
+    button.addEventListener('click', () => {
+      this.callbacks?.onCheckForUpdates?.();
+    });
+    this.updatesStatusLine = document.createElement('p');
+    this.updatesStatusLine.className = 'form-description preferences-updates-status';
+    row.append(button, this.updatesStatusLine);
+    fields.push(row);
+    this.renderUpdateStatus();
+
+    section.setContent(fields);
+    this.sectionsContainer.appendChild(section.getElement());
+  }
+
+  /** Show the latest update status in the Updates section */
+  setUpdateStatus(status: UpdateStatus): void {
+    this.updateStatus = status;
+    this.renderUpdateStatus();
+  }
+
+  private renderUpdateStatus(): void {
+    if (!this.updatesStatusLine) return;
+    const status = this.updateStatus;
+    const version = status?.currentVersion ?? '';
+    let text = version ? `Version ${version}.` : '';
+    if (status) {
+      switch (status.state) {
+        case 'unsupported':
+          text += ' This build gets its updates from the store or is a development build.';
+          break;
+        case 'checking':
+          text += ' Checking…';
+          break;
+        case 'up-to-date':
+          text += ' Up to date.';
+          break;
+        case 'available':
+          text += ` ${status.prerelease ? 'Pre-release' : 'Version'} ${status.latestVersion ?? ''} is available.`;
+          break;
+        case 'downloading':
+          text += ` Downloading ${status.latestVersion ?? 'an update'}…`;
+          break;
+        case 'downloaded':
+          text += ` Version ${status.latestVersion ?? ''} is ready; restart to install.`;
+          break;
+        case 'error':
+          text += ` Last check failed: ${status.error ?? 'unknown error'}.`;
+          break;
+        default:
+          break;
+      }
+      if (status.checkedAt && status.state !== 'checking') {
+        text += ` Last checked ${new Date(status.checkedAt).toLocaleString()}.`;
+      }
+    }
+    this.updatesStatusLine.textContent = text.trim();
   }
 
   /**

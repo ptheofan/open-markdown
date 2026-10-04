@@ -22,6 +22,10 @@ export function setupApplicationMenu(): void {
       role: 'appMenu',
       submenu: [
         { role: 'about' },
+        {
+          label: 'Check for Updates...',
+          click: () => sendMenuAction('check-updates'),
+        },
         { type: 'separator' },
         {
           label: 'Preferences...',
@@ -175,6 +179,11 @@ export function setupApplicationMenu(): void {
           click: () => {
             void shell.openExternal(ISSUES_URL);
           },
+        },
+        { type: 'separator' },
+        {
+          label: 'Check for Updates...',
+          click: () => sendMenuAction('check-updates'),
         },
       ],
     },

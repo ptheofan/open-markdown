@@ -17,3 +17,14 @@ describe('MarkdownSlicer front matter', () => {
     expect(slices[0]?.type).toBe('hr');
   });
 });
+
+describe('MarkdownSlicer reassembly', () => {
+  it('keeps the blank lines between blocks when a slice is updated', () => {
+    const slicer = new MarkdownSlicer();
+    const doc = 'Intro.\n\nSecond.\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n- one\n- two';
+    const slices = slicer.slice(doc);
+    expect(slicer.reassemble(slices)).toBe(doc);
+    const { markdown } = slicer.updateSlice(slices, 1, 'Changed.');
+    expect(markdown).toBe('Intro.\n\nChanged.\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n- one\n- two');
+  });
+});

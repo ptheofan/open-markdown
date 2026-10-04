@@ -56,6 +56,7 @@ export class PreferencesPanel {
   private headingControls: Map<string, { color: ColorPairPicker; size: TextInput; weight: NumberInput }> = new Map();
   private externalEditorSelect: Select | null = null;
   private interactiveTaskListsToggle: Toggle | null = null;
+  private padTablesToggle: Toggle | null = null;
   private projectRootInput: TextInput | null = null;
   private updatesAutomaticToggle: Toggle | null = null;
   private updatesChannelSelect: Select | null = null;
@@ -208,6 +209,7 @@ export class PreferencesPanel {
 
     this.googleDocsSyncToggle?.setValue(preferences.core.experimental.googleDocsSync);
     this.interactiveTaskListsToggle?.setValue(preferences.core.viewer.interactiveTaskLists);
+    this.padTablesToggle?.setValue(preferences.core.editor.padTables);
     this.projectRootInput?.setValue(preferences.core.viewer.projectRoot);
     this.updatesAutomaticToggle?.setValue(preferences.core.updates.automatic);
     this.updatesChannelSelect?.setValue(preferences.core.updates.channel);
@@ -743,6 +745,16 @@ export class PreferencesPanel {
       this.emitChange({ core: { viewer: { interactiveTaskLists: value } } });
     });
 
+    this.padTablesToggle = new Toggle({
+      label: 'Align table columns in the file',
+      description:
+        'When a table is edited, pad its columns to equal width so the markdown reads as a grid. Off writes the shortest form.',
+      value: this.currentPreferences.core.editor.padTables,
+    });
+    this.padTablesToggle.setOnChange((value) => {
+      this.emitChange({ core: { editor: { padTables: value } } });
+    });
+
     this.projectRootInput = new TextInput({
       label: 'Project Root',
       description:
@@ -756,6 +768,7 @@ export class PreferencesPanel {
 
     section.setContent([
       this.interactiveTaskListsToggle.getElement(),
+      this.padTablesToggle.getElement(),
       this.projectRootInput.getElement(),
     ]);
     this.sectionsContainer.appendChild(section.getElement());

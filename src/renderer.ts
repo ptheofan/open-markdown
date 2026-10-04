@@ -651,6 +651,7 @@ class App {
       this.updateExternalEditorLabel(preferences.core.externalEditor.editor);
       this.applyExperimentalFeatures(preferences.core.experimental);
       this.markdownViewer?.setInteractiveTaskLists(preferences.core.viewer.interactiveTaskLists);
+      this.markdownViewer?.setTablePadding(preferences.core.editor.padTables);
       await this.applyTheme(this.state.currentTheme);
 
       // Load plugin preference schemas
@@ -677,6 +678,8 @@ class App {
           this.applyExperimentalFeatures(prefs.core.experimental);
 
           this.markdownViewer?.setInteractiveTaskLists(prefs.core.viewer.interactiveTaskLists);
+
+          this.markdownViewer?.setTablePadding(prefs.core.editor.padTables);
 
           // Notify plugins of preference changes
           this.markdownViewer?.notifyAllPluginsPreferencesChange(prefs.plugins);
@@ -1828,6 +1831,8 @@ class App {
       this.updateExternalEditorLabel(updatedPrefs.core.externalEditor.editor);
 
       this.markdownViewer?.setInteractiveTaskLists(updatedPrefs.core.viewer.interactiveTaskLists);
+
+      this.markdownViewer?.setTablePadding(updatedPrefs.core.editor.padTables);
 
       // Notify plugins of preference changes
       if (updates.plugins) {

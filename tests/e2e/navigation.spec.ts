@@ -19,10 +19,15 @@ const PNG = Buffer.from(
 
 const LONG_TAIL = Array.from({ length: 80 }, (_, i) => `Paragraph ${i + 1} of the first document.`).join('\n\n');
 
+// The picture and the diagram sit below the long tail: anything that changes
+// height above a restored scroll position moves it (scroll anchoring), and
+// this spec checks the position comes back exactly.
 const FIRST = [
   '# First',
   '',
   'Go to [the second document](./second.md#details) or [a missing one](./nowhere.md).',
+  '',
+  LONG_TAIL,
   '',
   '![a picture](./pic.png)',
   '',
@@ -30,8 +35,6 @@ const FIRST = [
   'flowchart LR',
   '  A --> B --> C',
   '```',
-  '',
-  LONG_TAIL,
   '',
   '## Bottom',
   '',
@@ -100,10 +103,9 @@ test.describe('Navigation', () => {
 
     await mainWindow.locator('#nav-back-btn').click();
     await expect(content.locator('h1')).toHaveText('First');
-    // Back where we were, give or take the browser's scroll anchoring as the
-    // image above finishes loading
-    await expect.poll(() => scrollTop(mainWindow)).toBeGreaterThan(before - 80);
-    expect(Math.abs((await scrollTop(mainWindow)) - before)).toBeLessThan(80);
+    await expect.poll(() => scrollTop(mainWindow)).toBe(before);
+    await mainWindow.waitForTimeout(1000);
+    expect(await scrollTop(mainWindow)).toBe(before);
     await expect(mainWindow.locator('#nav-forward-btn')).toBeEnabled();
 
     await mainWindow.locator('#nav-forward-btn').click();

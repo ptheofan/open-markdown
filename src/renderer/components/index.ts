@@ -185,3 +185,8 @@ export { createQuickSwitcher, rankItems } from './QuickSwitcher';
 export type { QuickSwitcher, QuickSwitcherCallbacks } from './QuickSwitcher';
 export { createLightbox, Lightbox } from './Lightbox';
 export { createDiagramControls, DiagramControls } from './DiagramControls';
+
+export { createUpdateBanner, UpdateBanner } from './UpdateBanner';
+export type { UpdateBannerCallbacks } from './UpdateBanner';
+export { createReleaseNotesDialog } from './ReleaseNotesDialog';
+export type { ReleaseNotesDialog } from './ReleaseNotesDialog';

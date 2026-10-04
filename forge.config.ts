@@ -1,6 +1,10 @@
 import type { ForgeConfig } from '@electron-forge/shared-types';
 import { MakerZIP } from '@electron-forge/maker-zip';
 import { MakerDMG } from '@electron-forge/maker-dmg';
+import { MakerSquirrel } from '@electron-forge/maker-squirrel';
+import { MakerDeb } from '@electron-forge/maker-deb';
+import { MakerRpm } from '@electron-forge/maker-rpm';
+import { PublisherGithub } from '@electron-forge/publisher-github';
 import { VitePlugin } from '@electron-forge/plugin-vite';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
@@ -107,8 +111,45 @@ const config: ForgeConfig = {
     new MakerDMG({
       format: 'ULFO',
     }),
-    // macOS ZIP for direct distribution
+    // macOS ZIP for direct distribution, and what the in-app updater
+    // (Squirrel.Mac via update.electronjs.org) downloads
     new MakerZIP({}, ['darwin']),
+    // Windows installer plus the RELEASES/.nupkg feed Squirrel.Windows updates from
+    new MakerSquirrel({
+      name: 'OpenMarkdown',
+      setupExe: 'Open-Markdown-Setup.exe',
+      setupIcon: './resources/icons/icon.ico',
+    }),
+    // Linux packages; no in-place update, the app announces new versions
+    new MakerDeb({
+      options: {
+        name: 'open-markdown',
+        productName: 'Open Markdown',
+        genericName: 'Markdown Viewer',
+        categories: ['Development', 'Utility'],
+        mimeType: ['text/markdown'],
+      },
+    }),
+    new MakerRpm({
+      options: {
+        name: 'open-markdown',
+        productName: 'Open Markdown',
+        genericName: 'Markdown Viewer',
+        categories: ['Development', 'Utility'],
+        mimeType: ['text/markdown'],
+      },
+    }),
+  ],
+  publishers: [
+    // Uploads every maker's artefacts to a draft release for the tag, which
+    // the updater reads once the draft is published. GITHUB_TOKEN is the
+    // workflow's own token.
+    new PublisherGithub({
+      repository: { owner: 'ptheofan', name: 'open-markdown' },
+      draft: true,
+      prerelease: false,
+      generateReleaseNotes: true,
+    }),
   ],
   plugins: [
     new VitePlugin({

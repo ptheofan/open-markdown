@@ -84,6 +84,7 @@ function createMockPreferencesService(initialMode: ThemeMode = 'system'): MockPr
         googleDocs: { useCustomCredentials: false, customClientId: '' },
         experimental: { googleDocsSync: false },
         export: { theme: 'light', pageSize: 'A4', landscape: false, printBackground: true, lastDirectory: '' },
+        updates: { automatic: true, channel: 'stable' },
       },
       plugins: {},
       windowState: { width: 900, height: 700, isMaximized: false },

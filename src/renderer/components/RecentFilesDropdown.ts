@@ -4,11 +4,14 @@
  * Manages the chevron arrow button and dropdown menu within
  * the open-file split-button container.
  */
-import type { RecentFileEntry } from '@shared/types';
+import type { RecentFileEntry, RecentFolderEntry } from '@shared/types';
 
 export interface RecentFilesDropdownCallbacks {
   onSelectRecentFile: (filePath: string) => void;
   onClearRecentFiles: () => void;
+  /** "Open Folder…" was chosen */
+  onOpenFolder?: () => void;
+  onSelectRecentFolder?: (folderPath: string) => void;
 }
 
 export class RecentFilesDropdown {
@@ -58,6 +61,22 @@ export class RecentFilesDropdown {
         return;
       }
 
+      const folderItem = target.closest('[data-folder-path]');
+      if (folderItem instanceof HTMLElement) {
+        const folderPath = folderItem.getAttribute('data-folder-path');
+        if (folderPath) {
+          this.closeMenu();
+          this.callbacks?.onSelectRecentFolder?.(folderPath);
+        }
+        return;
+      }
+
+      if (target.closest('[data-open-folder]')) {
+        this.closeMenu();
+        this.callbacks?.onOpenFolder?.();
+        return;
+      }
+
       const clearBtn = target.closest('.dropdown-footer-btn');
       if (clearBtn) {
         this.closeMenu();
@@ -70,11 +89,58 @@ export class RecentFilesDropdown {
     this.callbacks = callbacks;
   }
 
+  /**
+   * Folders opened in the sidebar, shown above the files with an
+   * "Open Folder…" action
+   */
+  updateRecentFolders(folders: RecentFolderEntry[]): void {
+    if (!this.menu) return;
+
+    let section = this.menu.querySelector<HTMLElement>('.dropdown-folders');
+    if (!section) {
+      section = document.createElement('div');
+      section.className = 'dropdown-folders';
+      this.menu.insertBefore(section, this.menu.firstChild);
+    }
+    section.textContent = '';
+
+    const openFolder = document.createElement('button');
+    openFolder.className = 'dropdown-item';
+    openFolder.type = 'button';
+    openFolder.dataset.openFolder = '';
+    openFolder.textContent = 'Open Folder…';
+    section.appendChild(openFolder);
+
+    for (const folder of folders) {
+      const button = document.createElement('button');
+      button.className = 'dropdown-item-recent dropdown-item-folder';
+      button.type = 'button';
+      button.setAttribute('data-folder-path', folder.folderPath);
+      button.title = folder.folderPath;
+
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'recent-file-name';
+      nameSpan.textContent = folder.folderName;
+
+      const pathSpan = document.createElement('span');
+      pathSpan.className = 'recent-file-path';
+      pathSpan.textContent = folder.folderPath;
+
+      button.appendChild(nameSpan);
+      button.appendChild(pathSpan);
+      section.appendChild(button);
+    }
+
+    const divider = document.createElement('div');
+    divider.className = 'dropdown-divider';
+    section.appendChild(divider);
+  }
+
   updateRecentFiles(files: RecentFileEntry[]): void {
     if (!this.menu || !this.emptyState) return;
 
     // Remove existing items and footer
-    const existingItems = this.menu.querySelectorAll('.dropdown-item-recent, .dropdown-footer');
+    const existingItems = this.menu.querySelectorAll('.dropdown-item-recent:not(.dropdown-item-folder), .dropdown-footer');
     existingItems.forEach((el) => el.remove());
 
     if (files.length === 0) {

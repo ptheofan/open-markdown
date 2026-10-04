@@ -25,8 +25,10 @@ export interface FileAssociationStatus {
 }
 
 /**
- * Event sent to renderer when file opened externally
+ * Event sent to renderer when a file or a folder is opened externally
+ * (Finder, the command line, a drop on the dock)
  */
 export interface ExternalFileOpenEvent {
-  filePath: string;
+  filePath?: string;
+  folderPath?: string;
 }

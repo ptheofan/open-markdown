@@ -12,6 +12,7 @@ A fast, native macOS/Windows/Linux desktop app for viewing Markdown files with l
 - **Dark/Light Theme** - Follows system preference or manual toggle
 - **Drag & Drop** - Drop markdown files directly into the app
 - **Find in Page** - Search within rendered content (`Cmd+F`)
+- **Folder Sidebar** - Open a folder (`Cmd+Alt+O`, or drop it on the window) and browse its markdown files as a tree that follows the open document, filters by name and updates as files change (`Cmd+Shift+E` to focus)
 - **Document Outline** - Sidebar of headings that follows your scroll position and jumps to any section (`Cmd+Shift+O`)
 - **Open Documents Browser** - Grid of thumbnails of every open document plus recent files, filtered by name or content (`Cmd+Shift+D`)
 - **Open by Path** - Paste a full path, or a path relative to the current document, and press Enter (`Cmd+P`)
@@ -46,9 +47,10 @@ Builds from the Releases page check for new versions on launch and every few hou
 ## Usage
 
 1. **Open a file**: Click the "Open" button or use `Cmd+O` (macOS) / `Ctrl+O` (Windows/Linux)
-2. **Drag & Drop**: Drag a `.md` file directly into the app window
-3. **New window**: `Cmd+N` to open additional windows for side-by-side viewing
-4. **Toggle theme**: Click the theme button in the toolbar to switch between light and dark mode
+2. **Drag & Drop**: Drag a `.md` file, or a whole folder, directly into the app window
+3. **Open a folder**: File → Open Folder… (`Cmd+Alt+O`), or `open-markdown ./docs` from a terminal; the sidebar lists its markdown files, opens its README and remembers the folder for next time
+4. **New window**: `Cmd+N` to open additional windows for side-by-side viewing
+5. **Toggle theme**: Click the theme button in the toolbar to switch between light and dark mode
 
 The app will automatically reload when the file is modified externally.
 

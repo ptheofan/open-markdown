@@ -21,7 +21,8 @@ import type {
   FileAssociationResult,
   ExternalFileOpenEvent,
 } from './fileAssociation';
-import type { RecentFileEntry } from './recentFiles';
+import type { RecentFileEntry, RecentFolderEntry } from './recentFiles';
+import type { FolderAPI } from './folder';
 import type { DocumentBrowserSnapshot, ViewerDescription } from './documentBrowser';
 import type { GoogleDocLink, GoogleDocsResolveResult, GoogleAuthState, MermaidDiagramData, TableColumnWidths, SyncProgressUpdate, SyncResolveMode, SyncDirection } from './google-docs';
 
@@ -85,6 +86,19 @@ export const IPC_CHANNELS = {
     REMOVE: 'recent-files:remove',
     CLEAR: 'recent-files:clear',
     ON_CHANGE: 'recent-files:on-change',
+    GET_FOLDERS: 'recent-files:get-folders',
+    ADD_FOLDER: 'recent-files:add-folder',
+    ON_FOLDERS_CHANGE: 'recent-files:on-folders-change',
+  },
+  FOLDER: {
+    OPEN_DIALOG: 'folder:open-dialog',
+    IS_DIRECTORY: 'folder:is-directory',
+    LIST: 'folder:list',
+    LIST_ALL: 'folder:list-all',
+    DEFAULT_DOCUMENT: 'folder:default-document',
+    WATCH: 'folder:watch',
+    UNWATCH: 'folder:unwatch',
+    ON_CHANGE: 'folder:on-change',
   },
   EXPORT: {
     SAVE_PDF: 'export:save-pdf',
@@ -144,6 +158,7 @@ export type IpcChannel =
   | (typeof IPC_CHANNELS.PREFERENCES)[keyof typeof IPC_CHANNELS.PREFERENCES]
   | (typeof IPC_CHANNELS.FILE_ASSOCIATION)[keyof typeof IPC_CHANNELS.FILE_ASSOCIATION]
   | (typeof IPC_CHANNELS.RECENT_FILES)[keyof typeof IPC_CHANNELS.RECENT_FILES]
+  | (typeof IPC_CHANNELS.FOLDER)[keyof typeof IPC_CHANNELS.FOLDER]
   | (typeof IPC_CHANNELS.MENU)[keyof typeof IPC_CHANNELS.MENU]
   | (typeof IPC_CHANNELS.DOCUMENT_BROWSER)[keyof typeof IPC_CHANNELS.DOCUMENT_BROWSER]
   | (typeof IPC_CHANNELS.SHELL)[keyof typeof IPC_CHANNELS.SHELL]
@@ -300,6 +315,9 @@ export interface RecentFilesAPI {
   remove: (filePath: string) => Promise<void>;
   clear: () => Promise<void>;
   onChange: (callback: (files: RecentFileEntry[]) => void) => () => void;
+  getFolders: () => Promise<RecentFolderEntry[]>;
+  addFolder: (folderPath: string) => Promise<void>;
+  onFoldersChange: (callback: (folders: RecentFolderEntry[]) => void) => () => void;
 }
 
 /**
@@ -404,6 +422,7 @@ export interface ElectronAPI {
   googleDocs: GoogleDocsAPI;
   export: ExportAPI;
   updates: UpdatesAPI;
+  folder: FolderAPI;
 }
 
 /**

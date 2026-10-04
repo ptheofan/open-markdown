@@ -60,6 +60,15 @@ export function setupApplicationMenu(): void {
           accelerator: 'CmdOrCtrl+P',
           click: () => sendMenuAction('open-path'),
         },
+        {
+          label: 'Open Folder...',
+          accelerator: 'CmdOrCtrl+Alt+O',
+          click: () => sendMenuAction('open-folder'),
+        },
+        {
+          label: 'Close Folder',
+          click: () => sendMenuAction('close-folder'),
+        },
         { type: 'separator' },
         {
           label: 'Save',
@@ -136,6 +145,11 @@ export function setupApplicationMenu(): void {
           label: 'Toggle Outline',
           accelerator: 'CmdOrCtrl+Shift+O',
           click: () => sendMenuAction('toggle-outline'),
+        },
+        {
+          label: 'Focus Files',
+          accelerator: 'CmdOrCtrl+Shift+E',
+          click: () => sendMenuAction('focus-files'),
         },
         { type: 'separator' },
         {

@@ -13,6 +13,11 @@ const VALID_EXTENSIONS = ['.md', '.markdown', '.mdown', '.mkdn', '.mkd'];
 export type FileDropCallback = (filePath: string) => void;
 
 /**
+ * Callback type for folder drop
+ */
+export type FolderDropCallback = (folderPath: string) => void;
+
+/**
  * Callback type for open link click
  */
 export type OpenLinkCallback = () => void;
@@ -23,6 +28,7 @@ export type OpenLinkCallback = () => void;
 export class DropZone {
   private element: HTMLElement;
   private onFileDrop: FileDropCallback | null = null;
+  private onFolderDrop: FolderDropCallback | null = null;
   private onOpenLinkClick: OpenLinkCallback | null = null;
   private boundHandleDragEnter: (e: DragEvent) => void;
   private boundHandleDragOver: (e: DragEvent) => void;
@@ -87,6 +93,13 @@ export class DropZone {
    */
   setOnFileDrop(callback: FileDropCallback): void {
     this.onFileDrop = callback;
+  }
+
+  /**
+   * Set the callback for folder drop events
+   */
+  setOnFolderDrop(callback: FolderDropCallback): void {
+    this.onFolderDrop = callback;
   }
 
   /**
@@ -161,21 +174,42 @@ export class DropZone {
       return;
     }
 
-    // Validate file extension
-    if (!this.isValidMarkdownFile(file.name)) {
-      this.showError('Please drop a Markdown file (.md, .markdown)');
-      return;
-    }
-
     const filePath = window.electronAPI.file.getDroppedFilePath(file);
     if (!filePath) {
       this.showError('Could not get file path');
       return;
     }
 
-    // Call the callback
+    void this.routeDrop(file.name, filePath);
+  }
+
+  /**
+   * A dropped folder opens in the sidebar; a dropped file has to be markdown
+   */
+  private async routeDrop(name: string, droppedPath: string): Promise<void> {
+    let isDirectory = false;
+    try {
+      isDirectory = await window.electronAPI.folder.isDirectory(droppedPath);
+    } catch {
+      isDirectory = false;
+    }
+
+    if (isDirectory) {
+      if (this.onFolderDrop) {
+        this.onFolderDrop(droppedPath);
+      } else {
+        this.showError('Please drop a Markdown file (.md, .markdown)');
+      }
+      return;
+    }
+
+    if (!this.isValidMarkdownFile(name)) {
+      this.showError('Please drop a Markdown file (.md, .markdown)');
+      return;
+    }
+
     if (this.onFileDrop) {
-      this.onFileDrop(filePath);
+      this.onFileDrop(droppedPath);
     }
   }
 

@@ -247,4 +247,49 @@ describe('RecentFilesService', () => {
       expect(files1).not.toBe(files2);
     });
   });
+
+  describe('recent folders', () => {
+    it('remembers folders most recent first, capped at five, and persists them', async () => {
+      await service.initialize();
+      for (const name of ['a', 'b', 'c', 'd', 'e', 'f']) {
+        await service.addRecentFolder(path.join('/work', name));
+      }
+      await service.addRecentFolder(path.join('/work', 'c'));
+
+      const folders = service.getRecentFolders();
+      expect(folders.map((f) => f.folderName)).toEqual(['c', 'f', 'e', 'd', 'b']);
+      expect(folders[0]?.folderPath).toBe(path.join('/work', 'c'));
+
+      const reloaded = createRecentFilesService(tempDir);
+      await reloaded.initialize();
+      expect(reloaded.getRecentFolders().map((f) => f.folderName)).toEqual(['c', 'f', 'e', 'd', 'b']);
+      expect(reloaded.getRecentFiles()).toEqual([]);
+    });
+
+    it('tells listeners, removes folders, and clears them with the files', async () => {
+      await service.initialize();
+      const listener = vi.fn();
+      service.onRecentFoldersChange(listener);
+
+      await service.addRecentFolder('/work/a');
+      expect(listener).toHaveBeenCalledWith([expect.objectContaining({ folderPath: '/work/a' })]);
+
+      await service.removeRecentFolder('/work/a');
+      expect(service.getRecentFolders()).toEqual([]);
+
+      await service.addRecentFolder('/work/b');
+      await service.clearRecentFiles();
+      expect(service.getRecentFolders()).toEqual([]);
+    });
+
+    it('reads a file written before folders existed', async () => {
+      await fs.writeFile(
+        path.join(tempDir, 'recent-files.json'),
+        JSON.stringify({ version: 1, files: [{ filePath: '/x/a.md', fileName: 'a.md', openedAt: '2026-01-01T00:00:00Z' }] })
+      );
+      await service.initialize();
+      expect(service.getRecentFiles()).toHaveLength(1);
+      expect(service.getRecentFolders()).toEqual([]);
+    });
+  });
 });

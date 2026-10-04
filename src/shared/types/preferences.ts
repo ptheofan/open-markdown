@@ -115,6 +115,8 @@ export interface CorePreferences {
   editor: {
     autoSave: boolean;
     autoSaveDelay: number;
+    /** Pad pipe-table columns to equal width when the table editor writes a table */
+    padTables: boolean;
   };
   viewer: {
     /** Clicking a task-list checkbox toggles it in the file, outside edit mode */

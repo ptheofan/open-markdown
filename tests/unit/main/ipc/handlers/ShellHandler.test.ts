@@ -57,7 +57,7 @@ function createMockPreferences(
       theme: { mode: 'system', background: { light: '#fff', dark: '#000' } },
       typography: {} as AppPreferences['core']['typography'],
       lists: {} as AppPreferences['core']['lists'],
-      editor: { autoSave: true, autoSaveDelay: 1000 },
+      editor: { autoSave: true, autoSaveDelay: 1000, padTables: true },
       viewer: { interactiveTaskLists: true, projectRoot: '' },
       externalEditor: { editor, customCommand },
       googleDocs: { useCustomCredentials: false, customClientId: '' },

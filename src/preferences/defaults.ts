@@ -131,6 +131,7 @@ export const DEFAULT_CORE_PREFERENCES: CorePreferences = {
   editor: {
     autoSave: true,
     autoSaveDelay: 1000,
+    padTables: true,
   },
   viewer: {
     interactiveTaskLists: true,

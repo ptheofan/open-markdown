@@ -25,6 +25,7 @@ A fast, native macOS/Windows/Linux desktop app for viewing Markdown files with l
 - **File References** - `src/app.ts:42` opens the file in your editor at that line; `docs/plan.md` opens in the viewer
 - **Code Block Titles & Line Highlights** - ```` ```ts title="app.ts" {2-3} ```` draws a title bar and calls out lines; `diff` blocks colour whole lines
 - **Footnotes** - `[^1]` references with back links
+- **Table Editor** - In edit mode a table is edited cell by cell in place: Tab and Enter move between cells, handles insert, move, align and delete rows and columns, and the file gets an aligned pipe table back
 - **Print & Export** - Print (`Cmd+Shift+P`), or export a self-contained HTML file or a PDF with vector diagrams (File → Export)
 - **Navigation** - Links between markdown files open in place (`Cmd`-click for a new window), with Back/Forward (`Cmd+[`, `Cmd+]`) and a quick switcher (`Cmd+T`)
 - **Lightbox & Diagram Zoom** - Click an image to see it large; zoom and pan diagrams in place

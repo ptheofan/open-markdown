@@ -78,6 +78,7 @@ export class MarkdownViewer {
   private highlightedElement: HTMLElement | null = null;
   private toast: Toast;
   private editModeController: EditModeController | null = null;
+  private padTables = true;
   private isEditMode = false;
   private onOpenLocalFile:
     | ((filePath: string, fragment: string | null, options: OpenLocalFileOptions) => void)
@@ -345,6 +346,7 @@ export class MarkdownViewer {
       this.container,
       this.pluginManager
     );
+    this.editModeController.setTablePadding(this.padTables);
     if (callbacks) {
       this.editModeController.setCallbacks(callbacks);
     }
@@ -565,6 +567,12 @@ export class MarkdownViewer {
    * Whether clicking a task-list checkbox writes the toggle back to the file.
    * Applies to the document on screen as well as to later renders.
    */
+  /** Whether the table editor pads columns when it writes a table */
+  setTablePadding(pad: boolean): void {
+    this.padTables = pad;
+    this.editModeController?.setTablePadding(pad);
+  }
+
   setInteractiveTaskLists(enabled: boolean): void {
     this.interactiveTaskLists = enabled;
     if (!this.isEditMode) {

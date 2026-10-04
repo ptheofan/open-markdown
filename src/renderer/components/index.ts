@@ -195,3 +195,6 @@ export { createFolderTree, FolderTree } from './FolderTree';
 export type { FolderTreeDeps } from './FolderTree';
 export { createSidebar, Sidebar } from './Sidebar';
 export type { SidebarTab, SidebarOptions } from './Sidebar';
+
+export { TableEditor, tableIsEditable } from './TableEditor';
+export type { TableEditorCallbacks, CellAddress } from './TableEditor';

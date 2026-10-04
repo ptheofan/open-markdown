@@ -263,7 +263,21 @@ export class MarkdownSlicer {
    */
   reassemble(slices: MarkdownSlice[]): string {
     const sorted = [...slices].sort((a, b) => a.startLine - b.startLine);
-    return sorted.map(s => s.raw).join('\n');
+    // Slices hold no blank lines of their own (markdown-it's maps stop at the
+    // last content line), so the gap between two slices' line numbers is what
+    // keeps "Intro." and "Second." two paragraphs instead of one.
+    let out = '';
+    let previousEnd: number | null = null;
+    for (const slice of sorted) {
+      if (previousEnd !== null) {
+        // One newline ends the previous slice's last line; each line of gap
+        // between them is a blank line
+        out += '\n'.repeat(Math.max(0, slice.startLine - previousEnd) + 1);
+      }
+      out += slice.raw;
+      previousEnd = slice.endLine;
+    }
+    return out;
   }
 
   /**

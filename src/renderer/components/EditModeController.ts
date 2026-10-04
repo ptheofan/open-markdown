@@ -12,6 +12,14 @@ import type { InlineMark } from './InlineEditor';
 import { FloatingFormatToolbar, type ToolbarAction } from './FloatingFormatToolbar';
 import { canSerialize } from '../services/inlineMarkdownSerializer';
 import { PreviewableSourceEditor } from './PreviewableSourceEditor';
+import { TableEditor, tableIsEditable } from './TableEditor';
+import type { CellAddress } from './TableEditor';
+import {
+  parseDelimited,
+  parsePipeTableDetailed,
+  serializePipeTable,
+  type TableModel,
+} from '@shared/markdown/pipeTable';
 import type { PreviewablePlugin } from '../../plugins/types/preview';
 
 /**
@@ -50,6 +58,13 @@ export class EditModeController {
   private activeInlineEditor: InlineEditor | null = null;
   private activeRawTextarea: HTMLTextAreaElement | null = null;
   private activePreviewableEditor: PreviewableSourceEditor | null = null;
+  private activeTableEditor: TableEditor | null = null;
+  /** Removes the paste-to-table listener of an open empty paragraph */
+  private activePasteCleanup: (() => void) | null = null;
+  /** Pad table columns to equal width when a table is written back */
+  private padTables = true;
+  /** Whether the document came in ending with a newline, to leave it that way */
+  private trailingNewline = false;
   private toolbarVisible = false;
   private toolbar: FloatingFormatToolbar | null = null;
   private activeMenu: HTMLElement | null = null;
@@ -68,11 +83,17 @@ export class EditModeController {
     this.callbacks = { ...this.callbacks, ...callbacks };
   }
 
+  /** Whether tables are written with columns padded to equal width */
+  setTablePadding(pad: boolean): void {
+    this.padTables = pad;
+  }
+
   /**
    * Enter edit mode - render content as slices
    */
   async enter(markdown: string): Promise<void> {
     this.rawMarkdown = markdown;
+    this.trailingNewline = markdown.endsWith('\n');
     this.slices = this.slicer.slice(markdown);
     await this.renderSlices();
     document.addEventListener('click', this.handleDocumentClick);
@@ -92,14 +113,22 @@ export class EditModeController {
     this.toolbarVisible = false;
     this.sliceElements.clear();
     this.activeEditIndex = null;
-    return this.rawMarkdown;
+    return this.getMarkdown();
   }
 
   /**
-   * Get the current markdown content
+   * Get the current markdown content. A file that ended with a newline keeps
+   * it: the slices themselves never hold one.
    */
   getMarkdown(): string {
+    if (this.trailingNewline && this.rawMarkdown !== '' && !this.rawMarkdown.endsWith('\n')) {
+      return `${this.rawMarkdown}\n`;
+    }
     return this.rawMarkdown;
+  }
+
+  private emitContentChange(): void {
+    this.callbacks.onContentChange?.(this.getMarkdown());
   }
 
   /**
@@ -168,7 +197,7 @@ export class EditModeController {
       // Don't enter edit if clicking a link or a code block's copy button
       if ((e.target as HTMLElement).closest('a, .code-copy-btn')) return;
       e.stopPropagation();
-      this.startEdit(slice.index);
+      this.startEdit(slice.index, e.target);
     });
 
     wrapper.appendChild(handle);
@@ -180,7 +209,7 @@ export class EditModeController {
   /**
    * Start inline editing of a slice using the WYSIWYG InlineEditor.
    */
-  private startEdit(sliceIndex: number): void {
+  private startEdit(sliceIndex: number, target: EventTarget | null = null): void {
     // Already editing this slice — don't restart
     if (this.activeEditIndex === sliceIndex) return;
 
@@ -214,6 +243,12 @@ export class EditModeController {
       return;
     }
 
+    // Tables are edited cell by cell, in place
+    if (slice.type === 'table') {
+      this.startTableEdit(sliceIndex, target);
+      return;
+    }
+
     // Unsupported inline content is handled by the raw editor.
     if (!canSerialize(contentEl)) {
       this.startRawEdit(sliceIndex);
@@ -242,6 +277,136 @@ export class EditModeController {
       this.getToolbar().show(contentEl);
       this.refreshToolbarState();
     }
+
+    // Tabular text or an HTML table pasted into an empty paragraph becomes a table
+    if (slice.raw.trim() === '') {
+      const onPaste = (e: ClipboardEvent): void => {
+        const model = tableFromClipboard(e.clipboardData);
+        if (!model) return;
+        e.preventDefault();
+        e.stopPropagation();
+        this.replaceSliceWithTable(sliceIndex, model);
+      };
+      contentEl.addEventListener('paste', onPaste);
+      this.activePasteCleanup = () => contentEl.removeEventListener('paste', onPaste);
+    }
+  }
+
+  /**
+   * Open a table slice in the cell editor, on the cell that was clicked. A
+   * table the model cannot hold (ragged rows, no delimiter row) or a cell
+   * with content the inline serializer cannot write back opens as markdown,
+   * with the reason in the editor's tooltip.
+   */
+  private startTableEdit(sliceIndex: number, target: EventTarget | null): void {
+    const slice = this.slices.find((s) => s.index === sliceIndex);
+    const el = this.sliceElements.get(sliceIndex);
+    const contentEl = el?.querySelector<HTMLElement>('.slice-content');
+    if (!slice || !el || !contentEl) return;
+
+    const parsed = parsePipeTableDetailed(slice.raw);
+    if (!parsed.model) {
+      const why =
+        parsed.failure === 'ragged'
+          ? 'Edited as markdown: the rows of this table do not all have the same number of cells.'
+          : 'Edited as markdown: this table has no delimiter row the editor can keep.';
+      this.startRawEdit(sliceIndex, why);
+      return;
+    }
+    const table = contentEl.querySelector('table');
+    if (!table || !tableIsEditable(table)) {
+      this.startRawEdit(sliceIndex, 'Edited as markdown: a cell holds content the table editor cannot write back.');
+      return;
+    }
+
+    this.activeEditIndex = sliceIndex;
+    el.classList.add('slice-editing');
+
+    const editor = new TableEditor(contentEl, parsed.model, {
+      onModelChange: (model) => this.applyTableModel(sliceIndex, model),
+      onLeave: (direction) => this.navigateFromSlice(sliceIndex, direction),
+      onRequestLink: (cellEditor) => this.promptAndApplyLink(cellEditor),
+      onRemoveTable: () => this.removeTableSlice(sliceIndex),
+    });
+    this.activeTableEditor = editor;
+    editor.start(cellAddressFromTarget(table, target));
+    if (this.toolbarVisible) {
+      this.getToolbar().show(contentEl);
+      this.refreshToolbarState();
+    }
+  }
+
+  /**
+   * The table editor changed the model: write it back as markdown, update
+   * the document and re-render the table so the editor can re-attach.
+   */
+  private applyTableModel(sliceIndex: number, model: TableModel): void {
+    const slice = this.slices.find((s) => s.index === sliceIndex);
+    const el = this.sliceElements.get(sliceIndex);
+    const contentEl = el?.querySelector<HTMLElement>('.slice-content');
+    if (!slice || !el || !contentEl) return;
+
+    const newRaw = serializePipeTable(model, { pad: this.padTables });
+    if (newRaw !== slice.raw) {
+      const result = this.slicer.updateSlice(this.slices, sliceIndex, newRaw);
+      this.rawMarkdown = result.markdown;
+      this.slices = result.slices;
+      this.emitContentChange();
+    }
+
+    const updated = this.slices.find((s) => s.index === sliceIndex);
+    contentEl.replaceChildren();
+    contentEl.insertAdjacentHTML('afterbegin', this.pluginManager.render(updated?.raw ?? newRaw));
+    this.activeTableEditor?.rebind(model);
+  }
+
+  /**
+   * The table lost its last column or its header: the slice becomes an empty
+   * paragraph, open for typing.
+   */
+  private removeTableSlice(sliceIndex: number): void {
+    const idx = this.slices.findIndex((s) => s.index === sliceIndex);
+    const slice = this.slices[idx];
+    const el = this.sliceElements.get(sliceIndex);
+    if (idx === -1 || !slice || !el) return;
+
+    this.activeTableEditor = null;
+    this.activeEditIndex = null;
+    this.toolbar?.hide();
+    el.classList.remove('slice-editing');
+
+    slice.raw = '';
+    slice.type = 'paragraph';
+    this.rawMarkdown = this.slices.map((s) => s.raw).join('\n\n');
+    this.recomputeLineNumbers();
+    this.emitContentChange();
+
+    this.renderSlicesSync();
+    this.startEdit(slice.index);
+    void this.pluginManager.postRender(this.container);
+  }
+
+  /**
+   * Turn an empty paragraph into a table (from a paste) and open its first cell
+   */
+  private replaceSliceWithTable(sliceIndex: number, model: TableModel): void {
+    const idx = this.slices.findIndex((s) => s.index === sliceIndex);
+    if (idx === -1) return;
+    this.commitActiveEdit();
+
+    const result = this.slicer.updateSlice(
+      this.slices,
+      sliceIndex,
+      serializePipeTable(model, { pad: this.padTables })
+    );
+    this.rawMarkdown = result.markdown;
+    this.emitContentChange();
+
+    this.slices = this.slicer.slice(this.rawMarkdown);
+    void this.renderSlices().then(() => {
+      const table = this.slices[idx];
+      if (table) this.startEdit(table.index);
+    });
   }
 
   /**
@@ -260,7 +425,7 @@ export class EditModeController {
       const result = this.slicer.updateSlice(this.slices, sliceIndex, newRaw);
       this.rawMarkdown = result.markdown;
       this.slices = result.slices;
-      this.callbacks.onContentChange?.(this.rawMarkdown);
+      this.emitContentChange();
     }
 
     el.classList.remove('slice-editing');
@@ -273,7 +438,7 @@ export class EditModeController {
       contentEl.addEventListener('click', (e) => {
         if ((e.target as HTMLElement).closest('a')) return;
         e.stopPropagation();
-        this.startEdit(sliceIndex);
+        this.startEdit(sliceIndex, e.target);
       });
       void this.pluginManager.postRender(contentEl as HTMLElement);
     }
@@ -283,7 +448,7 @@ export class EditModeController {
    * Open a slice in the slim raw-markdown textarea. Used as the fallback for
    * unsupported inline content and as the target of the Cmd+/ toggle.
    */
-  private startRawEdit(sliceIndex: number): void {
+  private startRawEdit(sliceIndex: number, reason?: string): void {
     this.commitActiveEdit();
 
     const slice = this.slices.find((s) => s.index === sliceIndex);
@@ -300,6 +465,7 @@ export class EditModeController {
     textarea.className = 'slice-raw-editor';
     textarea.value = slice.raw;
     textarea.spellcheck = false;
+    if (reason) textarea.title = reason;
 
     const resize = (): void => {
       textarea.style.height = 'auto';
@@ -344,7 +510,7 @@ export class EditModeController {
       const result = this.slicer.updateSlice(this.slices, sliceIndex, newRaw);
       this.rawMarkdown = result.markdown;
       this.slices = result.slices;
-      this.callbacks.onContentChange?.(this.rawMarkdown);
+      this.emitContentChange();
     }
 
     el.classList.remove('slice-editing');
@@ -357,7 +523,7 @@ export class EditModeController {
       contentEl.addEventListener('click', (e) => {
         if ((e.target as HTMLElement).closest('a')) return;
         e.stopPropagation();
-        this.startEdit(sliceIndex);
+        this.startEdit(sliceIndex, e.target);
       });
       void this.pluginManager.postRender(contentEl as HTMLElement);
     }
@@ -428,7 +594,7 @@ export class EditModeController {
 
       this.rawMarkdown = this.slices.map((s) => s.raw).join('\n\n');
       this.recomputeLineNumbers();
-      this.callbacks.onContentChange?.(this.rawMarkdown);
+      this.emitContentChange();
 
       this.renderSlicesSync();
       this.startEdit(slice.index);
@@ -457,7 +623,7 @@ export class EditModeController {
     // startLine-sort still works for later structural actions.
     this.rawMarkdown = this.slices.map((s) => s.raw).join('\n\n');
     this.recomputeLineNumbers();
-    this.callbacks.onContentChange?.(this.rawMarkdown);
+    this.emitContentChange();
 
     this.renderSlicesSync();
     this.startEdit(newSlice.index);
@@ -519,7 +685,17 @@ export class EditModeController {
     if (this.activeEditIndex === null) return;
     const sliceIndex = this.activeEditIndex;
     this.activeEditIndex = null;
+    this.activePasteCleanup?.();
+    this.activePasteCleanup = null;
 
+    if (this.activeTableEditor) {
+      const editor = this.activeTableEditor;
+      this.activeTableEditor = null;
+      this.toolbar?.hide();
+      editor.commit();
+      this.sliceElements.get(sliceIndex)?.classList.remove('slice-editing');
+      return;
+    }
     if (this.activePreviewableEditor) {
       const editor = this.activePreviewableEditor;
       this.activePreviewableEditor = null;
@@ -576,7 +752,7 @@ export class EditModeController {
       this.toolbar?.hide();
       return;
     }
-    if (this.activeEditIndex !== null && this.activeInlineEditor) {
+    if (this.activeEditIndex !== null && this.currentInlineEditor()) {
       const el = this.sliceElements.get(this.activeEditIndex);
       const contentEl = el?.querySelector<HTMLElement>('.slice-content');
       if (contentEl) {
@@ -596,8 +772,13 @@ export class EditModeController {
     return this.toolbar;
   }
 
+  /** The inline editor the toolbar acts on: a slice's, or the open table cell's */
+  private currentInlineEditor(): InlineEditor | null {
+    return this.activeInlineEditor ?? this.activeTableEditor?.getCellEditor() ?? null;
+  }
+
   private handleToolbarAction(action: ToolbarAction): void {
-    const editor = this.activeInlineEditor;
+    const editor = this.currentInlineEditor();
     if (!editor) return;
     if (action === 'link') {
       this.promptAndApplyLink(editor);
@@ -621,8 +802,8 @@ export class EditModeController {
   }
 
   private refreshToolbarState(): void {
-    if (!this.toolbar || !this.activeInlineEditor) return;
-    const editor = this.activeInlineEditor;
+    const editor = this.currentInlineEditor();
+    if (!this.toolbar || !editor) return;
     const active: ToolbarAction[] = [];
     (['bold', 'italic', 'strikethrough', 'code'] as InlineMark[]).forEach((m) => {
       if (editor.isMarkActive(m)) active.push(m);
@@ -890,7 +1071,7 @@ export class EditModeController {
     const result = this.slicer.updateSlice(this.slices, sliceIndex, newRaw);
     this.rawMarkdown = result.markdown;
     this.slices = result.slices;
-    this.callbacks.onContentChange?.(this.rawMarkdown);
+    this.emitContentChange();
 
     // Re-slice and re-render to ensure correct structure
     this.slices = this.slicer.slice(this.rawMarkdown);
@@ -977,7 +1158,7 @@ export class EditModeController {
 
     // Reassemble and re-render
     this.rawMarkdown = this.slicer.reassemble(this.slices);
-    this.callbacks.onContentChange?.(this.rawMarkdown);
+    this.emitContentChange();
 
     // Re-slice and render from scratch for structural changes
     this.slices = this.slicer.slice(this.rawMarkdown);
@@ -992,6 +1173,47 @@ export class EditModeController {
       }
     });
   }
+}
+
+/** The cell under a click, for opening the table editor on it */
+function cellAddressFromTarget(table: HTMLTableElement, target: EventTarget | null): CellAddress | null {
+  if (!(target instanceof Element)) return null;
+  const cellEl = target.closest<HTMLTableCellElement>('th, td');
+  const rowEl = cellEl?.parentElement;
+  if (!cellEl || !(rowEl instanceof HTMLTableRowElement) || !table.contains(cellEl)) return null;
+  const header = table.querySelector('thead tr');
+  if (rowEl === header) return { row: -1, col: cellEl.cellIndex };
+  const bodyRows = Array.from(table.querySelectorAll('tbody tr'));
+  const row = bodyRows.indexOf(rowEl);
+  return row === -1 ? null : { row, col: cellEl.cellIndex };
+}
+
+/**
+ * A table from the clipboard: an HTML table (Sheets, Excel, Numbers, a web
+ * page) by its cells, else tab- or comma-separated text. Null when the
+ * clipboard holds neither.
+ */
+export function tableFromClipboard(data: DataTransfer | null): TableModel | null {
+  if (!data) return null;
+  const html = data.getData('text/html');
+  if (html && /<table[\s>]/i.test(html)) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const rows = Array.from(doc.querySelectorAll('tr'));
+    const cells = rows
+      .map((tr) => Array.from(tr.querySelectorAll('th, td')).map((cell) => (cell.textContent ?? '').trim()))
+      .filter((row) => row.length > 0);
+    if (cells.length >= 1) {
+      const columns = Math.max(...cells.map((row) => row.length));
+      const square = cells.map((row) => [...row, ...Array.from({ length: columns - row.length }, () => '')]);
+      return {
+        indent: '',
+        header: square[0]!,
+        align: Array.from({ length: columns }, () => null),
+        rows: square.slice(1),
+      };
+    }
+  }
+  return parseDelimited(data.getData('text/plain'));
 }
 
 /**

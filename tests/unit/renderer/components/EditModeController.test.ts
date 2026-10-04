@@ -2,6 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi } from 'vitest';
+import MarkdownIt from 'markdown-it';
 import { EditModeController } from '../../../../src/renderer/components/EditModeController';
 import type { PluginManager } from '../../../../src/plugins/core/PluginManager';
 
@@ -386,5 +387,133 @@ describe('EditModeController — previewable mermaid editing', () => {
     controller.commitActiveEditForTest();
     expect(controller.getMarkdown()).toBe('```mermaid\nC --> D\n```');
     expect(onContentChange).toHaveBeenCalledWith('```mermaid\nC --> D\n```');
+  });
+});
+
+describe('EditModeController — tables', () => {
+  const TABLE = ['| Name | Qty |', '| --- | ---: |', '| Apple | 3 |'].join('\n');
+
+  /** A plugin manager that really renders tables, so cells can be found */
+  function makeTablePluginManager(): PluginManager {
+    const md = new MarkdownIt({ html: true });
+    return {
+      render: (text: string): string => md.render(text),
+      postRender: vi.fn(() => Promise.resolve()),
+    } as unknown as PluginManager;
+  }
+
+  function setupTable(): { container: HTMLElement; controller: EditModeController; onContentChange: ReturnType<typeof vi.fn> } {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const controller = new EditModeController(container, makeTablePluginManager());
+    const onContentChange = vi.fn();
+    controller.setCallbacks({ onContentChange });
+    return { container, controller, onContentChange };
+  }
+
+  it('clicking a cell opens that cell in place instead of a textarea', async () => {
+    const { container, controller } = setupTable();
+    await controller.enter(TABLE);
+    const cell = container.querySelector<HTMLElement>('tbody td')!;
+    cell.click();
+    expect(container.querySelector('textarea')).toBeNull();
+    expect(cell.getAttribute('contenteditable')).toBe('true');
+    expect(container.querySelector('.slice-content')?.getAttribute('contenteditable')).toBeNull();
+    expect(container.querySelectorAll('.table-row-handle')).toHaveLength(2);
+  });
+
+  it('an edited cell is written back as an aligned pipe table', async () => {
+    const { container, controller, onContentChange } = setupTable();
+    await controller.enter(TABLE);
+    const cell = container.querySelector<HTMLElement>('tbody td')!;
+    cell.click();
+    cell.textContent = 'Fig';
+    controller.flushPendingEdits();
+    expect(controller.getMarkdown()).toBe(['| Name | Qty |', '| ---- | --: |', '| Fig  |   3 |'].join('\n'));
+    expect(onContentChange).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('[contenteditable="true"]')).toBeNull();
+    expect(container.querySelector('tbody td')?.textContent).toBe('Fig');
+  });
+
+  it('writes the minimal form when padding is off', async () => {
+    const { container, controller } = setupTable();
+    controller.setTablePadding(false);
+    await controller.enter(TABLE);
+    const cell = container.querySelector<HTMLElement>('tbody td')!;
+    cell.click();
+    cell.textContent = 'Fig';
+    controller.flushPendingEdits();
+    expect(controller.getMarkdown()).toBe(['| Name | Qty |', '| --- | --: |', '| Fig | 3 |'].join('\n'));
+  });
+
+  it('a table the model cannot hold opens as markdown with the reason', async () => {
+    const ragged = ['| a | b |', '| --- | --- |', '| 1 |'].join('\n');
+    const { container, controller } = setupTable();
+    await controller.enter(ragged);
+    container.querySelector<HTMLElement>('tbody td')!.click();
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea');
+    expect(textarea).not.toBeNull();
+    expect(textarea?.title).toMatch(/same number of cells/);
+  });
+
+  it('deleting the last column leaves an empty paragraph open for typing', async () => {
+    const one = ['| Only |', '| --- |', '| x |'].join('\n');
+    const doc = `# Title\n\n${one}\n\nAfter.`;
+    const { container, controller, onContentChange } = setupTable();
+    await controller.enter(doc);
+    container.querySelector<HTMLElement>('tbody td')!.click();
+    container.querySelector<HTMLElement>('.table-column-handle')!.click();
+    container.querySelector<HTMLElement>('[data-action="col-delete"]')!.click();
+    expect(onContentChange).toHaveBeenLastCalledWith('# Title\n\n\n\nAfter.');
+    expect(container.querySelector('table')).toBeNull();
+    const slices = container.querySelectorAll('.slice');
+    expect(slices).toHaveLength(3);
+    expect(slices[1]?.querySelector('.slice-content')?.getAttribute('contenteditable')).toBe('true');
+  });
+
+  it('turns tab-separated text pasted into an empty paragraph into a table', async () => {
+    const doc = 'Intro.';
+    const { container, controller } = setupTable();
+    await controller.enter(doc);
+    // An empty paragraph below, as "Add block below" makes
+    const content = container.querySelector<HTMLElement>('.slice-content')!;
+    content.click();
+    const range = document.createRange();
+    range.selectNodeContents(content);
+    range.collapse(false);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(range);
+    content.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+
+    const empty = container.querySelector<HTMLElement>('.slice-content[contenteditable="true"]')!;
+    expect(empty.textContent).toBe('');
+    const data = { getData: (type: string) => (type === 'text/plain' ? 'a\tb\n1\t2' : '') };
+    const paste = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent;
+    Object.defineProperty(paste, 'clipboardData', { value: data });
+    empty.dispatchEvent(paste);
+    expect(paste.defaultPrevented).toBe(true);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(controller.getMarkdown()).toBe(['Intro.', '', '| a   | b   |', '| --- | --- |', '| 1   | 2   |'].join('\n'));
+    expect(container.querySelector('table')).not.toBeNull();
+  });
+});
+
+describe('EditModeController — the file\'s final newline', () => {
+  it('keeps a trailing newline through an edit, and adds none where there was none', async () => {
+    const { container, controller } = setup();
+    const onContentChange = vi.fn();
+    controller.setCallbacks({ onContentChange });
+    await controller.enter('# Title\n');
+    const content = container.querySelector<HTMLElement>('.slice-content')!;
+    content.click();
+    content.textContent = 'New';
+    controller.flushPendingEdits();
+    expect(onContentChange).toHaveBeenCalledWith('# New\n');
+    expect(controller.exit()).toBe('# New\n');
+
+    const bare = setup();
+    await bare.controller.enter('# Title');
+    expect(bare.controller.exit()).toBe('# Title');
   });
 });

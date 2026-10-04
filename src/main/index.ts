@@ -2,6 +2,7 @@
  * Main process entry point
  */
 import { app, shell } from 'electron';
+import { statSync } from 'node:fs';
 import path from 'node:path';
 
 import { registerAllHandlers } from './ipc/handlers';
@@ -17,26 +18,42 @@ import { getFileService } from './services/FileService';
 import { getGoogleDocsLinkStore } from '@main/services/GoogleDocsLinkStore';
 import { MARKDOWN_EXTENSIONS } from '@shared/constants';
 
-let preReadyFilePath: string | null = null;
+/** A file or folder named before the app was ready, opened once it is */
+let preReadyOpen: PendingOpen | null = null;
+
+interface PendingOpen {
+  filePath?: string;
+  folderPath?: string;
+}
+
+function isDirectory(target: string): boolean {
+  try {
+    return statSync(target).isDirectory();
+  } catch {
+    return false;
+  }
+}
 
 // Custom protocol used to serve local image assets must be registered as a
 // privileged scheme before the app `ready` event fires.
 registerAssetProtocolScheme();
 
 /**
- * Check command-line arguments for markdown file
+ * The markdown file or folder named on the command line, if any
  */
-function checkCommandLineArgs(): string | null {
+function checkCommandLineArgs(): PendingOpen | null {
   const args = process.argv.slice(app.isPackaged ? 1 : 2);
 
-  const filePath = args.find((arg) => {
-    if (arg.startsWith('-')) return false;
+  for (const arg of args) {
+    if (arg.startsWith('-')) continue;
+    const resolved = path.isAbsolute(arg) ? arg : path.resolve(arg);
     const ext = path.extname(arg).toLowerCase();
-    return (MARKDOWN_EXTENSIONS as readonly string[]).includes(ext);
-  });
-
-  if (filePath) {
-    return path.isAbsolute(filePath) ? filePath : path.resolve(filePath);
+    if ((MARKDOWN_EXTENSIONS as readonly string[]).includes(ext)) {
+      return { filePath: resolved };
+    }
+    if (isDirectory(resolved)) {
+      return { folderPath: resolved };
+    }
   }
 
   return null;
@@ -47,8 +64,8 @@ function checkCommandLineArgs(): string | null {
  */
 async function initialize(): Promise<void> {
   // Pre-ready open-file event takes priority over CLI args
-  const pendingFilePath = preReadyFilePath ?? checkCommandLineArgs();
-  preReadyFilePath = null;
+  const pending = preReadyOpen ?? checkCommandLineArgs();
+  preReadyOpen = null;
 
   // Initialize services
   // Note: ThemeService needs no initialization — it only detects OS theme.
@@ -67,7 +84,7 @@ async function initialize(): Promise<void> {
   // Set up application menu
   setupApplicationMenu();
 
-  getWindowManager().createWindow(pendingFilePath ?? undefined);
+  getWindowManager().createWindow(pending ?? undefined);
 }
 
 // Electron app lifecycle events
@@ -76,17 +93,27 @@ async function initialize(): Promise<void> {
 app.on('open-file', (event, filePath) => {
   event.preventDefault();
 
-  const ext = path.extname(filePath).toLowerCase();
-  const fileService = getFileService();
-  if (!fileService.isMarkdownFile(ext)) {
-    return;
+  let pending: PendingOpen;
+  if (isDirectory(filePath)) {
+    pending = { folderPath: filePath };
+  } else {
+    const ext = path.extname(filePath).toLowerCase();
+    if (!getFileService().isMarkdownFile(ext)) {
+      return;
+    }
+    pending = { filePath };
   }
 
   if (app.isReady()) {
-    getWindowManager().openFile(filePath);
+    const windows = getWindowManager();
+    if (pending.folderPath) {
+      windows.openFolder(pending.folderPath);
+    } else if (pending.filePath) {
+      windows.openFile(pending.filePath);
+    }
   } else {
     // Store for initialize() to pick up when app is ready
-    preReadyFilePath = filePath;
+    preReadyOpen = pending;
   }
 });
 

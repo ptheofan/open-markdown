@@ -8,21 +8,25 @@ import { app } from 'electron';
 import { promises as fs } from 'fs';
 import path from 'path';
 
-import type { RecentFileEntry } from '@shared/types';
+import type { RecentFileEntry, RecentFolderEntry } from '@shared/types';
 
 const MAX_RECENT_FILES = 10;
+const MAX_RECENT_FOLDERS = 5;
 const RECENT_FILES_FILENAME = 'recent-files.json';
 
 interface RecentFilesData {
   version: number;
   files: RecentFileEntry[];
+  folders?: RecentFolderEntry[];
 }
 
 export class RecentFilesService {
   private dataPath: string;
   private files: RecentFileEntry[] = [];
+  private folders: RecentFolderEntry[] = [];
   private initialized = false;
   private changeListeners: Set<(files: RecentFileEntry[]) => void> = new Set();
+  private folderListeners: Set<(folders: RecentFolderEntry[]) => void> = new Set();
 
   constructor(dataDir?: string) {
     const dir = dataDir ?? app.getPath('userData');
@@ -81,9 +85,46 @@ export class RecentFilesService {
 
   async clearRecentFiles(): Promise<void> {
     this.files = [];
+    this.folders = [];
     app.clearRecentDocuments();
     await this.save();
     this.notifyListeners();
+    this.notifyFolderListeners();
+  }
+
+  getRecentFolders(): RecentFolderEntry[] {
+    return structuredClone(this.folders);
+  }
+
+  /** Remember a folder opened in the sidebar, most recent first */
+  async addRecentFolder(folderPath: string): Promise<void> {
+    this.folders = this.folders.filter((f) => f.folderPath !== folderPath);
+    this.folders.unshift({
+      folderPath,
+      folderName: path.basename(folderPath) || folderPath,
+      openedAt: new Date().toISOString(),
+    });
+    if (this.folders.length > MAX_RECENT_FOLDERS) {
+      this.folders = this.folders.slice(0, MAX_RECENT_FOLDERS);
+    }
+    await this.save();
+    this.notifyFolderListeners();
+  }
+
+  async removeRecentFolder(folderPath: string): Promise<void> {
+    const before = this.folders.length;
+    this.folders = this.folders.filter((f) => f.folderPath !== folderPath);
+    if (this.folders.length !== before) {
+      await this.save();
+      this.notifyFolderListeners();
+    }
+  }
+
+  onRecentFoldersChange(callback: (folders: RecentFolderEntry[]) => void): () => void {
+    this.folderListeners.add(callback);
+    return () => {
+      this.folderListeners.delete(callback);
+    };
   }
 
   onRecentFilesChange(callback: (files: RecentFileEntry[]) => void): () => void {
@@ -104,8 +145,10 @@ export class RecentFilesService {
 
       if (this.isValidData(parsed)) {
         this.files = parsed.files;
+        this.folders = parsed.folders ?? [];
       } else {
         this.files = [];
+        this.folders = [];
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
@@ -123,12 +166,24 @@ export class RecentFilesService {
       const data: RecentFilesData = {
         version: 1,
         files: this.files,
+        folders: this.folders,
       };
 
       await fs.writeFile(this.dataPath, JSON.stringify(data, null, 2), 'utf-8');
     } catch (error) {
       console.error('Failed to save recent files:', error);
       throw error;
+    }
+  }
+
+  private notifyFolderListeners(): void {
+    const copy = this.getRecentFolders();
+    for (const listener of this.folderListeners) {
+      try {
+        listener(copy);
+      } catch (error) {
+        console.error('Error in recent folders change listener:', error);
+      }
     }
   }
 
@@ -148,6 +203,7 @@ export class RecentFilesService {
     const obj = value as Record<string, unknown>;
     if (typeof obj['version'] !== 'number') return false;
     if (!Array.isArray(obj['files'])) return false;
+    if (obj['folders'] !== undefined && !Array.isArray(obj['folders'])) return false;
     return true;
   }
 }

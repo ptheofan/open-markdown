@@ -190,3 +190,8 @@ export { createUpdateBanner, UpdateBanner } from './UpdateBanner';
 export type { UpdateBannerCallbacks } from './UpdateBanner';
 export { createReleaseNotesDialog } from './ReleaseNotesDialog';
 export type { ReleaseNotesDialog } from './ReleaseNotesDialog';
+
+export { createFolderTree, FolderTree } from './FolderTree';
+export type { FolderTreeDeps } from './FolderTree';
+export { createSidebar, Sidebar } from './Sidebar';
+export type { SidebarTab, SidebarOptions } from './Sidebar';

@@ -41,6 +41,7 @@ import {
 } from './DocumentBrowserHandler';
 import { registerExportHandlers, unregisterExportHandlers } from './ExportHandler';
 import { registerUpdateHandlers, unregisterUpdateHandlers } from './UpdateHandler';
+import { registerFolderHandlers, unregisterFolderHandlers } from './FolderHandler';
 
 /**
  * Register all IPC handlers
@@ -59,6 +60,7 @@ export function registerAllHandlers(): void {
   registerDocumentBrowserHandlers();
   registerExportHandlers();
   registerUpdateHandlers();
+  registerFolderHandlers();
 }
 
 /**
@@ -78,6 +80,7 @@ export function unregisterAllHandlers(): void {
   unregisterDocumentBrowserHandlers();
   unregisterExportHandlers();
   unregisterUpdateHandlers();
+  unregisterFolderHandlers();
 }
 
 // Re-export individual handlers

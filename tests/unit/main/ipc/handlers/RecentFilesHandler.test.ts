@@ -11,7 +11,7 @@ import { IPC_CHANNELS } from '@shared/types/api';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import type { RecentFilesService } from '@main/services/RecentFilesService';
-import type { RecentFileEntry } from '@shared/types';
+import type { RecentFileEntry, RecentFolderEntry } from '@shared/types';
 
 interface MockRecentFilesService {
   getRecentFiles: ReturnType<typeof vi.fn>;
@@ -19,7 +19,11 @@ interface MockRecentFilesService {
   removeRecentFile: ReturnType<typeof vi.fn>;
   clearRecentFiles: ReturnType<typeof vi.fn>;
   onRecentFilesChange: ReturnType<typeof vi.fn>;
+  getRecentFolders: ReturnType<typeof vi.fn>;
+  addRecentFolder: ReturnType<typeof vi.fn>;
+  onRecentFoldersChange: ReturnType<typeof vi.fn>;
   _triggerChange: (files: RecentFileEntry[]) => void;
+  _triggerFoldersChange: (folders: RecentFolderEntry[]) => void;
 }
 
 // Mock Electron modules
@@ -45,8 +49,18 @@ vi.mock('electron', () => {
 
 function createMockService(): MockRecentFilesService {
   let changeCallback: ((files: RecentFileEntry[]) => void) | null = null;
+  let foldersCallback: ((folders: RecentFolderEntry[]) => void) | null = null;
 
   return {
+    getRecentFolders: vi.fn(() => []),
+    addRecentFolder: vi.fn(() => Promise.resolve()),
+    onRecentFoldersChange: vi.fn((callback: (folders: RecentFolderEntry[]) => void) => {
+      foldersCallback = callback;
+      return () => { foldersCallback = null; };
+    }),
+    _triggerFoldersChange: (folders: RecentFolderEntry[]) => {
+      foldersCallback?.(folders);
+    },
     getRecentFiles: vi.fn(() => []),
     addRecentFile: vi.fn(() => Promise.resolve()),
     removeRecentFile: vi.fn(() => Promise.resolve()),
@@ -176,6 +190,28 @@ describe('RecentFilesHandler', () => {
 
       expect(destroyedWin.webContents.send).not.toHaveBeenCalled();
       expect(aliveWin.webContents.send).toHaveBeenCalled();
+    });
+    it('serves recent folders and broadcasts their changes', async () => {
+      const folders: RecentFolderEntry[] = [
+        { folderPath: '/work/docs', folderName: 'docs', openedAt: '2026-01-01T00:00:00Z' },
+      ];
+      mockService.getRecentFolders.mockReturnValue(folders);
+      const send = vi.fn();
+      (BrowserWindow.getAllWindows as ReturnType<typeof vi.fn>).mockReturnValue([
+        { isDestroyed: () => false, webContents: { send } },
+      ]);
+
+      registerRecentFilesHandlers(mockService as unknown as RecentFilesService);
+
+      const get = mockIpcMain._getHandler(IPC_CHANNELS.RECENT_FILES.GET_FOLDERS)!;
+      expect(get({})).toEqual(folders);
+
+      const add = mockIpcMain._getHandler(IPC_CHANNELS.RECENT_FILES.ADD_FOLDER)!;
+      await add({}, '/work/notes');
+      expect(mockService.addRecentFolder).toHaveBeenCalledWith('/work/notes');
+
+      mockService._triggerFoldersChange(folders);
+      expect(send).toHaveBeenCalledWith(IPC_CHANNELS.RECENT_FILES.ON_FOLDERS_CHANGE, folders);
     });
   });
 

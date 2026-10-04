@@ -97,7 +97,16 @@ export type {
 } from './fileAssociation';
 
 // Recent files types
-export type { RecentFileEntry } from './recentFiles';
+export type { RecentFileEntry, RecentFolderEntry } from './recentFiles';
+
+// Folder sidebar types
+export type {
+  FolderEntryKind,
+  FolderEntry,
+  FolderListOptions,
+  FolderChangeEvent,
+  FolderAPI,
+} from './folder';
 
 // Google Docs types
 export type {

@@ -30,6 +30,8 @@ import {
   createLightbox,
   createUpdateBanner,
   createReleaseNotesDialog,
+  createFolderTree,
+  createSidebar,
   Toast,
   type MarkdownViewer,
   type DropZone,
@@ -55,6 +57,8 @@ import {
   type Lightbox,
   type UpdateBanner,
   type ReleaseNotesDialog,
+  type FolderTree,
+  type Sidebar,
 } from './renderer/components';
 import type { EditModeCallbacks } from './renderer/components/EditModeController';
 import type { SectionCopyFormat } from './renderer/components/MarkdownViewer';
@@ -83,6 +87,8 @@ import type {
   ExternalEditorId,
   ExternalFileOpenEvent,
   RecentFileEntry,
+  RecentFolderEntry,
+  FolderChangeEvent,
   MermaidDiagramData,
   TableColumnWidths,
   ViewerDescription,
@@ -112,6 +118,15 @@ interface AppState {
 
 /** localStorage key remembering whether the outline panel is shown */
 const OUTLINE_VISIBLE_KEY = 'outline-panel-visible';
+
+/** localStorage key remembering the folder open in the sidebar */
+const LAST_FOLDER_KEY = 'sidebar-last-folder';
+
+/**
+ * How long after start-up to wait for a file or folder named on launch
+ * before bringing back the folder from last time
+ */
+const FOLDER_RESTORE_DELAY_MS = 400;
 
 /** Most document text handed to the document browser for content filtering */
 const DESCRIBE_TEXT_LIMIT = 200_000;
@@ -150,6 +165,8 @@ class App {
   private lightbox: Lightbox | null = null;
   private updateBanner: UpdateBanner | null = null;
   private releaseNotesDialog: ReleaseNotesDialog | null = null;
+  private sidebar: Sidebar | null = null;
+  private folderTree: FolderTree | null = null;
   /** Documents this window has shown, for Back and Forward */
   private readonly history = new NavigationHistory();
 
@@ -188,6 +205,7 @@ class App {
       window.electronAPI.app.signalReady();
       await this.initializeRecentFiles();
       this.showWelcomeScreen();
+      this.scheduleFolderRestore();
     } catch (error) {
       console.error('Failed to initialize app:', error);
       this.showError('Failed to initialize application');
@@ -214,6 +232,8 @@ class App {
     try {
       const files = await window.electronAPI.recentFiles.get();
       this.recentFilesDropdown?.updateRecentFiles(files);
+      const folders = await window.electronAPI.recentFiles.getFolders();
+      this.recentFilesDropdown?.updateRecentFolders(folders);
     } catch (error) {
       console.error('Failed to load recent files:', error);
     }
@@ -308,6 +328,7 @@ class App {
         contentContainer: viewerContainer,
         onVisibilityChange: (visible) => {
           this.toolbar?.setOutlineVisible(visible);
+          if (visible) this.sidebar?.activate('outline');
           try {
             localStorage.setItem(OUTLINE_VISIBLE_KEY, visible ? '1' : '0');
           } catch {
@@ -323,6 +344,43 @@ class App {
       }
       this.outlinePanel.setVisible(outlineVisible);
       this.toolbar.setOutlineVisible(outlineVisible);
+    }
+
+    // The sidebar holds the open folder's files and the outline, in tabs
+    const sidebarElement = document.getElementById('sidebar');
+    const sidebarTabs = document.getElementById('sidebar-tabs');
+    const folderPanelElement = document.getElementById('folder-panel');
+    if (sidebarElement && sidebarTabs && folderPanelElement && outlinePanelElement) {
+      this.sidebar = createSidebar({
+        root: sidebarElement,
+        tabs: sidebarTabs,
+        filesPane: folderPanelElement,
+        outlinePane: outlinePanelElement,
+        viewer: viewerElement,
+      });
+      this.folderTree = createFolderTree(folderPanelElement, {
+        list: (dirPath, options) => window.electronAPI.folder.list(dirPath, options),
+        listAll: (root, options) => window.electronAPI.folder.listAll(root, options),
+        watch: (dirPath) => window.electronAPI.folder.watch(dirPath),
+        unwatch: (dirPath) => window.electronAPI.folder.unwatch(dirPath),
+        onOpenFile: (filePath, { newWindow }) => {
+          if (newWindow) {
+            void window.electronAPI.window.openNew(filePath);
+          } else {
+            void this.loadFile(filePath);
+          }
+        },
+        onClose: () => {
+          void this.closeFolder();
+        },
+        showContextMenu: (items) => window.electronAPI.contextMenu.show({ items, x: 0, y: 0 }),
+        onRevealInFileManager: (targetPath) => {
+          void window.electronAPI.shell.revealInFileManager(targetPath);
+        },
+        onCopyPath: (targetPath) => {
+          void window.electronAPI.clipboard.writeText(targetPath);
+        },
+      });
     }
 
     // Create copy dropdown if element exists
@@ -347,6 +405,12 @@ class App {
         },
         onClearRecentFiles: () => {
           void window.electronAPI.recentFiles.clear();
+        },
+        onOpenFolder: () => {
+          void this.handleOpenFolder();
+        },
+        onSelectRecentFolder: (folderPath: string) => {
+          void this.openFolder(folderPath);
         },
       });
     }
@@ -515,6 +579,10 @@ class App {
     this.dropZone.setOnFileDrop((filePath) => {
       void this.handleFileDrop(filePath);
     });
+    this.dropZone.setOnFolderDrop((folderPath) => {
+      void this.openFolder(folderPath);
+    });
+
     this.dropZone.setOnOpenLinkClick(() => {
       void this.handleOpenFile();
     });
@@ -705,7 +773,11 @@ class App {
     // External file open listener (from Finder, command line)
     const cleanupExternalOpen = window.electronAPI.fileAssociation.onExternalOpen(
       (event: ExternalFileOpenEvent) => {
-        void this.loadFile(event.filePath);
+        if (event.folderPath) {
+          void this.openFolder(event.folderPath);
+        } else if (event.filePath) {
+          void this.loadFile(event.filePath);
+        }
       }
     );
     this.cleanupFunctions.push(cleanupExternalOpen);
@@ -717,6 +789,18 @@ class App {
       }
     );
     this.cleanupFunctions.push(cleanupRecentFiles);
+    const cleanupRecentFolders = window.electronAPI.recentFiles.onFoldersChange(
+      (folders: RecentFolderEntry[]) => {
+        this.recentFilesDropdown?.updateRecentFolders(folders);
+      }
+    );
+    this.cleanupFunctions.push(cleanupRecentFolders);
+
+    // A watched folder changed on disk
+    const cleanupFolderChange = window.electronAPI.folder.onChange((event: FolderChangeEvent) => {
+      this.folderTree?.handleChange(event.dirPath);
+    });
+    this.cleanupFunctions.push(cleanupFolderChange);
 
     // Menu action listener (from application menu)
     const cleanupMenuAction = window.electronAPI.menu.onAction(
@@ -748,6 +832,15 @@ class App {
             break;
           case 'toggle-outline':
             this.outlinePanel?.toggle();
+            break;
+          case 'open-folder':
+            void this.handleOpenFolder();
+            break;
+          case 'close-folder':
+            void this.closeFolder();
+            break;
+          case 'focus-files':
+            this.focusFiles();
             break;
           case 'print':
             void this.handleExport('print');
@@ -936,6 +1029,98 @@ class App {
   }
 
   /**
+   * Ask for a folder and show it in the sidebar
+   */
+  private async handleOpenFolder(): Promise<void> {
+    try {
+      const folderPath = await window.electronAPI.folder.openDialog();
+      if (!folderPath) return;
+      await this.openFolder(folderPath);
+    } catch (error) {
+      console.error('Failed to open folder:', error);
+      this.showError('Failed to open folder');
+    }
+  }
+
+  /**
+   * Show a folder in the sidebar. An empty window also opens the folder's
+   * README (or index, or first document) unless told not to.
+   */
+  private async openFolder(folderPath: string, options: { openDefault?: boolean } = {}): Promise<void> {
+    if (!this.folderTree || !this.sidebar) return;
+    const openDefault = options.openDefault ?? true;
+
+    await this.folderTree.open(folderPath);
+    this.sidebar.setFilesAvailable(true);
+    this.sidebar.activate('files');
+    try {
+      localStorage.setItem(LAST_FOLDER_KEY, folderPath);
+    } catch {
+      // Storage unavailable: the folder just is not restored next time
+    }
+    try {
+      await window.electronAPI.recentFiles.addFolder(folderPath);
+    } catch {
+      // Non-fatal
+    }
+
+    if (openDefault && !this.state.currentFilePath) {
+      const document = await window.electronAPI.folder.defaultDocument(folderPath);
+      if (document && this.folderTree.getRoot() === folderPath) {
+        await this.loadFile(document);
+      }
+    }
+  }
+
+  /**
+   * Take the folder out of the sidebar; the document stays open
+   */
+  private async closeFolder(): Promise<void> {
+    if (!this.folderTree?.isOpen()) return;
+    await this.folderTree.close({ silent: true });
+    this.sidebar?.setFilesAvailable(false);
+    try {
+      localStorage.removeItem(LAST_FOLDER_KEY);
+    } catch {
+      // Storage unavailable
+    }
+  }
+
+  /**
+   * Bring the Files pane forward and put the keyboard in its filter box;
+   * with no folder open, ask for one.
+   */
+  private focusFiles(): void {
+    if (!this.folderTree?.isOpen()) {
+      void this.handleOpenFolder();
+      return;
+    }
+    this.sidebar?.activate('files');
+    this.folderTree.focus();
+  }
+
+  /**
+   * Bring back the folder from last time, unless the launch named a file or
+   * folder of its own (that arrives shortly after the renderer says ready).
+   * The document is left to the reader: a relaunch should not start reading
+   * for them.
+   */
+  private scheduleFolderRestore(): void {
+    let saved: string | null = null;
+    try {
+      saved = localStorage.getItem(LAST_FOLDER_KEY);
+    } catch {
+      saved = null;
+    }
+    if (!saved) return;
+    const folderPath = saved;
+    setTimeout(() => {
+      if (this.state.currentFilePath || this.folderTree?.isOpen()) return;
+      void this.openFolder(folderPath, { openDefault: false });
+    }, FOLDER_RESTORE_DELAY_MS);
+  }
+
+  /**
    * Handle file drop
    */
   private async handleFileDrop(filePath: string): Promise<void> {
@@ -974,6 +1159,7 @@ class App {
 
       // Update state
       this.state.currentFilePath = filePath;
+      this.folderTree?.setCurrentFile(filePath);
 
       // Update UI
       const fileName = filePath.split('/').pop() ?? 'Unknown';
@@ -1100,6 +1286,7 @@ class App {
     // Clear state
     this.state.currentFilePath = null;
     this.state.isWatching = false;
+    this.folderTree?.setCurrentFile(null);
 
     // Update UI
     this.toolbar?.setFileName(null);
@@ -2151,6 +2338,8 @@ class App {
     this.openPathBar?.destroy();
     this.documentBrowser?.destroy();
     this.outlinePanel?.destroy();
+    this.folderTree?.destroy();
+    this.sidebar?.destroy();
     this.recentFilesDropdown?.destroy();
     this.openExternalDropdown?.destroy();
     this.googleDocsButton?.destroy();

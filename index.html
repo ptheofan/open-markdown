@@ -165,14 +165,21 @@
               <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
               <path d="M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708l3-3z"/>
             </svg>
-            <h2>Drop Markdown File Here</h2>
+            <h2>Drop Markdown File or Folder Here</h2>
             <p>or click <a href="#" id="drop-zone-open-link" class="drop-zone-link">Open</a> to browse</p>
-            <p class="drop-zone-hint">Supports .md and .markdown files</p>
+            <p class="drop-zone-hint">Supports .md and .markdown files, or a folder of them</p>
           </div>
         </div>
 
-        <!-- Document outline (headings), shown beside the viewer -->
-        <aside id="outline-panel" class="outline-panel outline-panel-collapsed" aria-hidden="true"></aside>
+        <!-- Sidebar: the open folder's files and the document outline -->
+        <aside id="sidebar" class="sidebar sidebar-hidden" aria-hidden="true">
+          <div id="sidebar-tabs" class="sidebar-tabs hidden" role="tablist">
+            <button type="button" class="sidebar-tab" role="tab" data-sidebar-tab="files">Files</button>
+            <button type="button" class="sidebar-tab" role="tab" data-sidebar-tab="outline">Outline</button>
+          </div>
+          <div id="folder-panel" class="folder-panel"></div>
+          <aside id="outline-panel" class="outline-panel outline-panel-collapsed" aria-hidden="true"></aside>
+        </aside>
 
         <!-- Markdown Viewer (shown when file is open) -->
         <article id="markdown-viewer" class="markdown-viewer hidden">

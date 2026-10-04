@@ -20,6 +20,10 @@ import type {
   PathResolveResult,
   FullscreenChangeEvent,
   RecentFileEntry,
+  RecentFolderEntry,
+  FolderEntry,
+  FolderListOptions,
+  FolderChangeEvent,
   DocumentBrowserSnapshot,
   ViewerDescription,
   ResolvedTheme,
@@ -329,6 +333,64 @@ const electronAPI: ElectronAPI = {
 
       return () => {
         ipcRenderer.removeListener(IPC_CHANNELS.RECENT_FILES.ON_CHANGE, handler);
+      };
+    },
+
+    getFolders: (): Promise<RecentFolderEntry[]> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.RECENT_FILES.GET_FOLDERS);
+    },
+
+    addFolder: (folderPath: string): Promise<void> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.RECENT_FILES.ADD_FOLDER, folderPath);
+    },
+
+    onFoldersChange: (callback: (folders: RecentFolderEntry[]) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: RecentFolderEntry[]): void => {
+        callback(data);
+      };
+      ipcRenderer.on(IPC_CHANNELS.RECENT_FILES.ON_FOLDERS_CHANGE, handler);
+      return () => {
+        ipcRenderer.removeListener(IPC_CHANNELS.RECENT_FILES.ON_FOLDERS_CHANGE, handler);
+      };
+    },
+  },
+
+  folder: {
+    openDialog: (): Promise<string | null> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.FOLDER.OPEN_DIALOG);
+    },
+
+    isDirectory: (targetPath: string): Promise<boolean> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.FOLDER.IS_DIRECTORY, targetPath);
+    },
+
+    list: (dirPath: string, options: FolderListOptions): Promise<FolderEntry[]> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.FOLDER.LIST, dirPath, options);
+    },
+
+    listAll: (root: string, options: { showAll: boolean }): Promise<string[]> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.FOLDER.LIST_ALL, root, options);
+    },
+
+    defaultDocument: (root: string): Promise<string | null> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.FOLDER.DEFAULT_DOCUMENT, root);
+    },
+
+    watch: (dirPath: string): Promise<void> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.FOLDER.WATCH, dirPath);
+    },
+
+    unwatch: (dirPath: string): Promise<void> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.FOLDER.UNWATCH, dirPath);
+    },
+
+    onChange: (callback: (event: FolderChangeEvent) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: FolderChangeEvent): void => {
+        callback(data);
+      };
+      ipcRenderer.on(IPC_CHANNELS.FOLDER.ON_CHANGE, handler);
+      return () => {
+        ipcRenderer.removeListener(IPC_CHANNELS.FOLDER.ON_CHANGE, handler);
       };
     },
   },

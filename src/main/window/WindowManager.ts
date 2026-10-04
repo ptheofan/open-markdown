@@ -6,7 +6,7 @@ import path from 'node:path';
 
 import { DEFAULT_WINDOW, APP_CONFIG } from '@shared/constants';
 import { IPC_CHANNELS } from '@shared/types/api';
-import type { WindowState } from '@shared/types';
+import type { ExternalFileOpenEvent, WindowState } from '@shared/types';
 import type { PreferencesService } from '../services/PreferencesService';
 import { getPreferencesService } from '../services/PreferencesService';
 
@@ -22,8 +22,8 @@ export class WindowManager {
   private windows: Map<number, BrowserWindow> = new Map();
   private windowFilePaths: Map<number, string | null> = new Map();
   private saveTimers: Map<number, NodeJS.Timeout> = new Map();
-  /** Files waiting for a window whose renderer has not signalled ready yet */
-  private pendingFilePaths: Map<number, string> = new Map();
+  /** Files or folders waiting for a window whose renderer has not signalled ready yet */
+  private pendingOpens: Map<number, ExternalFileOpenEvent> = new Map();
   private readyRenderers: Set<number> = new Set();
   private preferencesService?: PreferencesService;
 
@@ -32,10 +32,12 @@ export class WindowManager {
   }
 
   /**
-   * Create a window, optionally with a file to open once its renderer is
-   * ready to receive it.
+   * Create a window, optionally with a file or folder to open once its
+   * renderer is ready to receive it.
    */
-  createWindow(filePath?: string): BrowserWindow {
+  createWindow(open?: string | ExternalFileOpenEvent): BrowserWindow {
+    const pending: ExternalFileOpenEvent | undefined =
+      typeof open === 'string' ? { filePath: open } : open;
     const savedState = this.getSavedWindowState();
 
     const win = new BrowserWindow({
@@ -64,8 +66,8 @@ export class WindowManager {
 
     this.windows.set(win.id, win);
     this.windowFilePaths.set(win.id, null);
-    if (filePath) {
-      this.pendingFilePaths.set(win.id, filePath);
+    if (pending && (pending.filePath || pending.folderPath)) {
+      this.pendingOpens.set(win.id, pending);
     }
 
     win.webContents.ipc.once(IPC_CHANNELS.APP.RENDERER_READY, () => {
@@ -125,7 +127,7 @@ export class WindowManager {
       this.windows.delete(win.id);
       this.windowFilePaths.delete(win.id);
       this.saveTimers.delete(win.id);
-      this.pendingFilePaths.delete(win.id);
+      this.pendingOpens.delete(win.id);
       this.readyRenderers.delete(win.id);
     });
 
@@ -190,9 +192,21 @@ export class WindowManager {
       return existingWin;
     }
 
+    return this.openInEmptyOrNewWindow({ filePath });
+  }
+
+  /**
+   * Show a folder in the sidebar: in an empty window when there is one,
+   * else in a new window.
+   */
+  openFolder(folderPath: string): BrowserWindow {
+    return this.openInEmptyOrNewWindow({ folderPath });
+  }
+
+  private openInEmptyOrNewWindow(open: ExternalFileOpenEvent): BrowserWindow {
     const emptyWin = this.getEmptyWindow();
     if (emptyWin && !emptyWin.isDestroyed()) {
-      this.pendingFilePaths.set(emptyWin.id, filePath);
+      this.pendingOpens.set(emptyWin.id, open);
       if (this.readyRenderers.has(emptyWin.id)) {
         this.sendPendingFile(emptyWin.id);
       }
@@ -200,7 +214,7 @@ export class WindowManager {
       return emptyWin;
     }
 
-    return this.createWindow(filePath);
+    return this.createWindow(open);
   }
 
   /**
@@ -221,23 +235,22 @@ export class WindowManager {
     this.saveTimers.clear();
     this.windows.clear();
     this.windowFilePaths.clear();
-    this.pendingFilePaths.clear();
+    this.pendingOpens.clear();
     this.readyRenderers.clear();
   }
 
   /**
-   * Hand a window the file waiting for it, once its renderer can take it.
+   * Hand a window the file or folder waiting for it, once its renderer can
+   * take it.
    */
   private sendPendingFile(windowId: number): void {
-    const filePath = this.pendingFilePaths.get(windowId);
-    if (!filePath) return;
+    const pending = this.pendingOpens.get(windowId);
+    if (!pending) return;
 
     const win = this.windows.get(windowId);
     if (win && !win.isDestroyed()) {
-      win.webContents.send(IPC_CHANNELS.FILE_ASSOCIATION.ON_EXTERNAL_OPEN, {
-        filePath,
-      });
-      this.pendingFilePaths.delete(windowId);
+      win.webContents.send(IPC_CHANNELS.FILE_ASSOCIATION.ON_EXTERNAL_OPEN, pending);
+      this.pendingOpens.delete(windowId);
     }
   }
 

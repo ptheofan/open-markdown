@@ -1,7 +1,7 @@
 {
   "name": "markdown-viewer",
   "productName": "Open Markdown",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "A macOS desktop markdown viewer with GitHub-style rendering and plugin support",
   "main": ".vite/build/index.js",
   "private": true,

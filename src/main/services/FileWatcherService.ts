@@ -17,6 +17,10 @@ export type FileDeleteCallback = (event: FileDeleteEvent) => void;
 interface WatchedFileEntry {
   watcher: FSWatcher;
   windowIds: Set<number>;
+  /** Settles once chokidar's initial scan is done, or the entry is closed first. */
+  ready: Promise<void>;
+  /** Lets anyone waiting on `ready` go when the entry closes before it is ready. */
+  settle: () => void;
 }
 
 interface WindowCallbacks {
@@ -38,9 +42,11 @@ export class FileWatcherService {
 
     if (existing) {
       existing.windowIds.add(windowId);
+      await this.whenReady(filePath, existing);
       return;
     }
 
+    let entry: WatchedFileEntry;
     try {
       const watcher = watch(filePath, {
         persistent: true,
@@ -51,10 +57,18 @@ export class FileWatcherService {
         },
       });
 
-      const entry: WatchedFileEntry = {
-        watcher,
-        windowIds: new Set([windowId]),
-      };
+      let settle: () => void = () => undefined;
+      const ready = new Promise<void>((resolve, reject) => {
+        settle = resolve;
+        watcher.once('ready', () => resolve());
+        watcher.once('error', reject);
+      });
+
+      // The entry is stored before chokidar is ready, so a second watch of the
+      // same file joins this watcher instead of starting another, and an
+      // unwatch in the meantime has something to close.
+      entry = { watcher, windowIds: new Set([windowId]), ready, settle };
+      this.watchedFiles.set(filePath, entry);
 
       watcher.on('change', (changedPath: string) => {
         this.cancelPendingDelete(changedPath);
@@ -73,14 +87,27 @@ export class FileWatcherService {
       watcher.on('error', (error: unknown) => {
         console.error('File watcher error:', error);
       });
-
-      await new Promise<void>((resolve, reject) => {
-        watcher.once('ready', () => resolve());
-        watcher.once('error', reject);
-      });
-
-      this.watchedFiles.set(filePath, entry);
     } catch (error) {
+      throw new FileWatchError(
+        filePath,
+        error instanceof Error ? error.message : 'Unknown error'
+      );
+    }
+
+    await this.whenReady(filePath, entry);
+  }
+
+  /**
+   * Wait for a watcher to finish starting. One that fails to start is closed
+   * and dropped, and every window waiting on it gets the error.
+   */
+  private async whenReady(filePath: string, entry: WatchedFileEntry): Promise<void> {
+    try {
+      await entry.ready;
+    } catch (error) {
+      if (this.watchedFiles.get(filePath) === entry) {
+        await this.closeWatcherEntry(filePath, entry);
+      }
       throw new FileWatchError(
         filePath,
         error instanceof Error ? error.message : 'Unknown error'
@@ -174,8 +201,13 @@ export class FileWatcherService {
 
   private async closeWatcherEntry(filePath: string, entry: WatchedFileEntry): Promise<void> {
     this.cancelPendingDelete(filePath);
+    // Drop the entry first so a watch arriving during close starts afresh
+    // rather than joining a watcher on its way out.
+    if (this.watchedFiles.get(filePath) === entry) {
+      this.watchedFiles.delete(filePath);
+    }
+    entry.settle();
     await entry.watcher.close();
-    this.watchedFiles.delete(filePath);
   }
 
   /**
@@ -237,6 +269,7 @@ export class FileWatcherService {
 
     // Remove the entry and close the watcher (fire-and-forget since file is already gone)
     this.watchedFiles.delete(filePath);
+    entry.settle();
     void entry.watcher.close();
     this.cancelPendingDelete(filePath);
   }

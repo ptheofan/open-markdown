@@ -518,6 +518,50 @@ describe('FileWatcherService', () => {
       expect(service.isWatchingFile(testFile)).toBe(true);
     });
   });
+
+  describe('while a watcher is still starting', () => {
+    it('shares one watcher between concurrent watches of the same file', async () => {
+      const { watch } = await import('chokidar');
+
+      await Promise.all([service.watch(testFile, 1), service.watch(testFile, 2)]);
+
+      expect(watch).toHaveBeenCalledTimes(1);
+
+      await service.unwatch(testFile, 1);
+      await service.unwatch(testFile, 2);
+      expect(getWatcher(0).close).toHaveBeenCalledTimes(1);
+      expect(service.isWatchingFile(testFile)).toBe(false);
+    });
+
+    it('closes the watcher when the file is unwatched before it is ready', async () => {
+      const watching = service.watch(testFile, 1);
+      await service.unwatch(testFile, 1);
+      await watching;
+
+      expect(getWatcher(0).close).toHaveBeenCalled();
+      expect(service.isWatchingFile(testFile)).toBe(false);
+    });
+
+    it('closes a watcher that failed to start', async () => {
+      const { watch } = await import('chokidar');
+      const errorWatcher = createMockWatcher();
+      errorWatcher.once.mockImplementation((event: string, callback: (error: Error) => void) => {
+        if (event === 'error') {
+          setTimeout(() => callback(new Error('Watch failed')), 0);
+        }
+        return errorWatcher;
+      });
+      vi.mocked(watch).mockReturnValueOnce(errorWatcher as unknown as ReturnType<typeof watch>);
+
+      const first = service.watch(testFile, 1);
+      const second = service.watch(testFile, 2);
+
+      await expect(first).rejects.toThrow('Watch failed');
+      await expect(second).rejects.toThrow('Watch failed');
+      expect(errorWatcher.close).toHaveBeenCalled();
+      expect(service.isWatchingFile(testFile)).toBe(false);
+    });
+  });
 });
 
 describe('getFileWatcherService', () => {

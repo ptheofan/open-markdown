@@ -153,7 +153,14 @@ function alignToLocal(localBase: string[], remoteBase: string[]): number[] {
   return map;
 }
 
+/**
+ * Whether two edits contend for the same part of the baseline. Two insertions
+ * at the same index cover no blocks, but they still fight over one spot: if
+ * they were replayed one after the other, the same block appended by both
+ * sides would land twice.
+ */
 function overlaps(a: Edit, b: Edit): boolean {
+  if (a.start === a.end && b.start === b.end) return a.start === b.start;
   return a.start < b.end && b.start < a.end;
 }
 
@@ -206,10 +213,14 @@ function replay(base: string[], localEdits: Edit[], remoteEdits: Edit[]): MergeO
       // reaching into it. One big edit -- the Doc emptied, say -- can cover
       // several of the other side's, and settling only the first would leave
       // the rest replaying against indices the region has already consumed.
+      // The pair that started the region is taken up front: two insertions
+      // at one spot make an empty region that nothing would otherwise reach.
       let start = Math.min(le.start, re.start);
       let end = Math.max(le.end, re.end);
-      const ls: Edit[] = [];
-      const rs: Edit[] = [];
+      const ls: Edit[] = [le];
+      const rs: Edit[] = [re];
+      li++;
+      ri++;
       for (let grew = true; grew;) {
         grew = false;
         while (li < localEdits.length && localEdits[li]!.start < end) {

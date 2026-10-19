@@ -421,6 +421,41 @@ describe('FileHandler', () => {
       expect(unsubscribeDelete).toHaveBeenCalled();
       expect(mockFileWatcherService.unwatchAll).toHaveBeenCalledWith(1);
     });
+
+    it('listens for the window closing once, however many files it watches', async () => {
+      const closeCallbacks: (() => void)[] = [];
+      const mockWindow = {
+        id: 7,
+        isDestroyed: vi.fn(() => false),
+        webContents: { send: vi.fn() },
+        once: vi.fn((_event: string, cb: () => void) => {
+          closeCallbacks.push(cb);
+        }),
+      };
+      vi.mocked(BrowserWindow.fromWebContents).mockReturnValue(mockWindow as unknown as BrowserWindow);
+      const firstUnsubscribe = vi.fn();
+      const latestUnsubscribe = vi.fn();
+      mockFileWatcherService.onFileChange
+        .mockReturnValueOnce(firstUnsubscribe)
+        .mockReturnValue(latestUnsubscribe);
+      mockFileWatcherService.onFileDelete.mockReturnValue(vi.fn());
+      mockFileWatcherService.watch.mockResolvedValue(undefined);
+      mockFileWatcherService.unwatchAll.mockResolvedValue(undefined);
+
+      registerFileHandlers();
+
+      const handler = mockIpcMain._getHandler(IPC_CHANNELS.FILE.WATCH);
+      await handler?.({ sender: {} }, '/a.md');
+      await handler?.({ sender: {} }, '/b.md');
+      await handler?.({ sender: {} }, '/c.md');
+
+      expect(closeCallbacks).toHaveLength(1);
+
+      // Closing drops the subscriptions of the file the window shows last
+      closeCallbacks[0]?.();
+      expect(latestUnsubscribe).toHaveBeenCalled();
+      expect(mockFileWatcherService.unwatchAll).toHaveBeenCalledWith(7);
+    });
   });
 
   describe('UNWATCH handler', () => {

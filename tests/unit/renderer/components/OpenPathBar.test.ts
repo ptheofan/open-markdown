@@ -24,6 +24,7 @@ describe('OpenPathBar', () => {
   let bar: OpenPathBar;
   let callbacks: {
     resolve: ReturnType<typeof vi.fn<OpenPathBarCallbacks['resolve']>>;
+    grantAccess: ReturnType<typeof vi.fn<OpenPathBarCallbacks['grantAccess']>>;
     onOpen: ReturnType<typeof vi.fn<OpenPathBarCallbacks['onOpen']>>;
     getBaseDir: ReturnType<typeof vi.fn<OpenPathBarCallbacks['getBaseDir']>>;
   };
@@ -54,6 +55,7 @@ describe('OpenPathBar', () => {
     document.body.appendChild(container);
     callbacks = {
       resolve: vi.fn<OpenPathBarCallbacks['resolve']>(),
+      grantAccess: vi.fn<OpenPathBarCallbacks['grantAccess']>(),
       onOpen: vi.fn<OpenPathBarCallbacks['onOpen']>(),
       getBaseDir: vi.fn<OpenPathBarCallbacks['getBaseDir']>(
         () => '/docs/project'
@@ -177,6 +179,44 @@ describe('OpenPathBar', () => {
     bar.show();
 
     type('nope.md');
+    press('Enter');
+    await flush();
+
+    expect(callbacks.onOpen).not.toHaveBeenCalled();
+    expect(bar.isVisible()).toBe(true);
+  });
+
+  it('asks for access on Enter when the sandbox blocks the file, then opens the pick', async () => {
+    callbacks.resolve.mockResolvedValue({
+      success: false,
+      filePath: '/Users/me/a.md',
+      needsAccess: true,
+      error: 'blocked',
+    });
+    callbacks.grantAccess.mockResolvedValue(ok('/Users/me/a.md'));
+    bar.show();
+    type('/Users/me/a.md');
+    await flush();
+
+    press('Enter');
+    await flush();
+
+    expect(callbacks.grantAccess).toHaveBeenCalledWith('/Users/me/a.md');
+    expect(callbacks.onOpen).toHaveBeenCalledWith('/Users/me/a.md');
+    expect(bar.isVisible()).toBe(false);
+  });
+
+  it('stays open when access is not granted', async () => {
+    callbacks.resolve.mockResolvedValue({
+      success: false,
+      filePath: '/Users/me/a.md',
+      needsAccess: true,
+    });
+    callbacks.grantAccess.mockResolvedValue({ success: false, error: 'Cancelled.' });
+    bar.show();
+    type('/Users/me/a.md');
+    await flush();
+
     press('Enter');
     await flush();
 

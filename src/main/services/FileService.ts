@@ -3,7 +3,7 @@
  */
 import { dialog, BrowserWindow } from 'electron';
 import { readFile, writeFile, stat } from 'node:fs/promises';
-import { homedir } from 'node:os';
+import { homedir, userInfo } from 'node:os';
 import path from 'node:path';
 
 import { MARKDOWN_EXTENSIONS, MAX_FILE_SIZE_BYTES } from '@shared/constants';
@@ -22,6 +22,25 @@ import type {
   FileStats,
   PathResolveResult,
 } from '@shared/types';
+
+/**
+ * The user's real home folder. Inside the macOS sandbox HOME points at the
+ * app's container (~/Library/Containers/<id>/Data), which is not where a
+ * typed ~ is meant to go; the account record still has the real one.
+ */
+function realHomeDir(): string {
+  try {
+    return userInfo().homedir || homedir();
+  } catch {
+    return homedir();
+  }
+}
+
+/** The sandbox refuses the file rather than it being missing */
+function isAccessDenied(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | null)?.code;
+  return code === 'EPERM' || code === 'EACCES';
+}
 
 /**
  * Service for handling file operations
@@ -99,7 +118,7 @@ export class FileService {
   async resolvePath(
     input: string,
     baseFilePath: string | null,
-    homeDir: string = homedir()
+    homeDir: string = realHomeDir()
   ): Promise<PathResolveResult> {
     const resolved = resolveDocumentPath(input, baseFilePath, homeDir);
     if (!resolved) {
@@ -111,12 +130,21 @@ export class FileService {
     let stats: Awaited<ReturnType<typeof stat>>;
     try {
       stats = await stat(filePath);
-    } catch {
+    } catch (error) {
+      if (isAccessDenied(error) && this.isMarkdownFile(path.extname(filePath))) {
+        return {
+          success: false,
+          filePath,
+          resolvedFrom,
+          needsAccess: true,
+          error: 'macOS needs your OK to open this file. Press Enter to confirm it.',
+        };
+      }
       return {
         success: false,
         filePath,
         resolvedFrom,
-        error: 'No such file.',
+        error: isAccessDenied(error) ? 'Permission denied.' : 'No such file.',
       };
     }
 
@@ -139,6 +167,43 @@ export class FileService {
     }
 
     return { success: true, filePath, resolvedFrom };
+  }
+
+  /**
+   * Show an open dialog that starts on filePath so the user can grant the
+   * sandbox access to it with one click. Resolves to whatever file they pick.
+   */
+  async grantAccess(
+    filePath: string,
+    parentWindow?: BrowserWindow
+  ): Promise<PathResolveResult> {
+    const options: Electron.OpenDialogOptions = {
+      title: 'Open Markdown File',
+      defaultPath: filePath,
+      buttonLabel: 'Open',
+      filters: [
+        { name: 'Markdown Files', extensions: ['md', 'markdown', 'mdown', 'mkd'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+      properties: ['openFile'],
+    };
+
+    const result = parentWindow
+      ? await dialog.showOpenDialog(parentWindow, options)
+      : await dialog.showOpenDialog(options);
+
+    const picked = result.canceled ? undefined : result.filePaths[0];
+    if (!picked) {
+      return { success: false, filePath, error: 'Cancelled.' };
+    }
+    if (!this.isMarkdownFile(path.extname(picked))) {
+      return {
+        success: false,
+        filePath: picked,
+        error: `Not a markdown file (${MARKDOWN_EXTENSIONS.join(', ')}).`,
+      };
+    }
+    return { success: true, filePath: picked, resolvedFrom: 'absolute' };
   }
 
   /**

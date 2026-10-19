@@ -60,6 +60,10 @@ const electronAPI: ElectronAPI = {
       return ipcRenderer.invoke(IPC_CHANNELS.FILE.RESOLVE_PATH, input);
     },
 
+    grantAccess: (filePath: string): Promise<PathResolveResult> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.FILE.GRANT_ACCESS, filePath);
+    },
+
     resolveReferences: (
       documentPath: string,
       refs: string[]

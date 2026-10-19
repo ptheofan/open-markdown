@@ -52,6 +52,16 @@ export function registerFileHandlers(): void {
     }
   );
 
+  // The sandbox only lets the app read files the user picked, so a typed
+  // path it blocks is confirmed in an open dialog that starts on that file.
+  ipcMain.handle(
+    IPC_CHANNELS.FILE.GRANT_ACCESS,
+    async (event, filePath: string): Promise<PathResolveResult> => {
+      const window = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+      return fileService.grantAccess(filePath, window);
+    }
+  );
+
   // Resolve file references written in a document against its folder and
   // the project root (Preferences → Document → Project root, else the nearest
   // .git). Only existing files resolve.
@@ -163,6 +173,7 @@ export function registerFileHandlers(): void {
 export function unregisterFileHandlers(): void {
   ipcMain.removeHandler(IPC_CHANNELS.FILE.OPEN_DIALOG);
   ipcMain.removeHandler(IPC_CHANNELS.FILE.RESOLVE_PATH);
+  ipcMain.removeHandler(IPC_CHANNELS.FILE.GRANT_ACCESS);
   ipcMain.removeHandler(IPC_CHANNELS.FILE.RESOLVE_REFERENCES);
   ipcMain.removeHandler(IPC_CHANNELS.FILE.CHECK_LINKS);
   ipcMain.removeHandler(IPC_CHANNELS.FILE.READ);

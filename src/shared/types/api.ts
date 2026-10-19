@@ -33,6 +33,7 @@ export const IPC_CHANNELS = {
   FILE: {
     OPEN_DIALOG: 'file:open-dialog',
     RESOLVE_PATH: 'file:resolve-path',
+    GRANT_ACCESS: 'file:grant-access',
     RESOLVE_REFERENCES: 'file:resolve-references',
     CHECK_LINKS: 'file:check-links',
     READ: 'file:read',
@@ -178,6 +179,11 @@ export interface FileAPI {
   openDialog: () => Promise<FileOpenResult>;
   /** Resolve a typed or pasted path against this window's document */
   resolvePath: (input: string) => Promise<PathResolveResult>;
+  /**
+   * Ask the user to confirm a sandbox-blocked file in an open dialog that
+   * starts on it; resolves to the file they picked
+   */
+  grantAccess: (filePath: string) => Promise<PathResolveResult>;
   /**
    * Resolve file references written in a document (`src/app.ts`) to the
    * absolute paths of existing files, keyed by the reference; null for the

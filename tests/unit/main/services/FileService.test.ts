@@ -113,6 +113,37 @@ describe('FileService', () => {
     });
   });
 
+  describe('grantAccess', () => {
+    it('opens the dialog on the file and returns the pick', async () => {
+      vi.mocked(dialog.showOpenDialog).mockResolvedValue({
+        canceled: false,
+        filePaths: ['/Users/me/a.md'],
+      });
+
+      const result = await fileService.grantAccess('/Users/me/a.md');
+
+      expect(dialog.showOpenDialog).toHaveBeenCalledWith(
+        expect.objectContaining({ defaultPath: '/Users/me/a.md' })
+      );
+      expect(result).toEqual({
+        success: true,
+        filePath: '/Users/me/a.md',
+        resolvedFrom: 'absolute',
+      });
+    });
+
+    it('fails when the dialog is cancelled', async () => {
+      vi.mocked(dialog.showOpenDialog).mockResolvedValue({
+        canceled: true,
+        filePaths: [],
+      });
+
+      const result = await fileService.grantAccess('/Users/me/a.md');
+
+      expect(result.success).toBe(false);
+    });
+  });
+
   describe('resolvePath', () => {
     const HOME = '/Users/me';
     const DOC = '/Users/me/notes/todo.md';
@@ -174,6 +205,18 @@ describe('FileService', () => {
       expect(result.filePath).toBe('/Users/me/notes/missing.md');
       expect(result.resolvedFrom).toBe('document');
       expect(result.error).toContain('No such file');
+    });
+
+    it('flags a markdown file the sandbox blocks instead of calling it missing', async () => {
+      vi.mocked(fs.stat).mockRejectedValue(
+        Object.assign(new Error('EPERM'), { code: 'EPERM' })
+      );
+
+      const result = await fileService.resolvePath('/Users/me/a.md', DOC, HOME);
+
+      expect(result.success).toBe(false);
+      expect(result.needsAccess).toBe(true);
+      expect(result.filePath).toBe('/Users/me/a.md');
     });
 
     it('rejects a folder', async () => {

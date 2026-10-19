@@ -290,6 +290,7 @@ class App {
     // resolved in main against this window's document.
     this.openPathBar = createOpenPathBar(document.body, {
       resolve: (input) => window.electronAPI.file.resolvePath(input),
+      grantAccess: (filePath) => window.electronAPI.file.grantAccess(filePath),
       onOpen: (filePath) => {
         void this.loadFile(filePath);
       },

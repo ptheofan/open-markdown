@@ -300,6 +300,25 @@ describe('EditModeController — floating toolbar wiring', () => {
     expect(slices[1]!.classList.contains('slice-editing')).toBe(true);
   });
 
+  it('Enter keeps the separators between the other slices as they were', async () => {
+    const { container, controller } = setup();
+    await controller.enter('Hello world\n\n- a\n- b\n\n# End');
+    const content = container.querySelector<HTMLElement>('.slice-content')!;
+    content.click();
+    const textNode = content.firstChild!.firstChild!;
+    const range = document.createRange();
+    range.setStart(textNode, 5);
+    range.collapse(true);
+    const sel = window.getSelection()!;
+    sel.removeAllRanges();
+    sel.addRange(range);
+    content.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter', bubbles: true, cancelable: true,
+    }));
+    // The tight list stays tight: no blank line forced between its items
+    expect(controller.getMarkdown()).toBe('Hello\n\n world\n\n- a\n- b\n\n# End');
+  });
+
   it('a toolbar bold action wraps the selection in the active editor', async () => {
     const { container, controller } = setup();
     await controller.enter('Hello world');
@@ -469,6 +488,29 @@ describe('EditModeController — tables', () => {
     const slices = container.querySelectorAll('.slice');
     expect(slices).toHaveLength(3);
     expect(slices[1]?.querySelector('.slice-content')?.getAttribute('contenteditable')).toBe('true');
+  });
+
+  it('deleting the last column leaves a tight list elsewhere tight', async () => {
+    const one = ['| Only |', '| --- |', '| x |'].join('\n');
+    const { container, controller, onContentChange } = setupTable();
+    await controller.enter(`- a\n- b\n\n${one}`);
+    container.querySelector<HTMLElement>('tbody td')!.click();
+    container.querySelector<HTMLElement>('.table-column-handle')!.click();
+    container.querySelector<HTMLElement>('[data-action="col-delete"]')!.click();
+    expect(onContentChange).toHaveBeenLastCalledWith('- a\n- b\n\n');
+  });
+
+  it('keeps CRLF line endings through a table edit', async () => {
+    const doc = ['# Title', '', TABLE, '', 'After.', ''].join('\n').replace(/\n/g, '\r\n');
+    const { container, controller } = setupTable();
+    await controller.enter(doc);
+    const cell = container.querySelector<HTMLElement>('tbody td')!;
+    cell.click();
+    cell.textContent = 'Fig';
+    controller.flushPendingEdits();
+    expect(controller.getMarkdown()).toBe(
+      ['# Title', '', '| Name | Qty |', '| ---- | --: |', '| Fig  |   3 |', '', 'After.', ''].join('\r\n')
+    );
   });
 
   it('turns tab-separated text pasted into an empty paragraph into a table', async () => {

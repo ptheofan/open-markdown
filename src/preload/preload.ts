@@ -25,6 +25,7 @@ import type {
   FolderListOptions,
   FolderChangeEvent,
   DocumentBrowserSnapshot,
+  PinnedDocumentEntry,
   ViewerDescription,
   ResolvedTheme,
   ThemeChangeEvent,
@@ -372,6 +373,10 @@ const electronAPI: ElectronAPI = {
       return ipcRenderer.invoke(IPC_CHANNELS.FOLDER.IS_DIRECTORY, targetPath);
     },
 
+    ensureAccess: (folderPath: string): Promise<boolean> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.FOLDER.ENSURE_ACCESS, folderPath);
+    },
+
     list: (dirPath: string, options: FolderListOptions): Promise<FolderEntry[]> => {
       return ipcRenderer.invoke(IPC_CHANNELS.FOLDER.LIST, dirPath, options);
     },
@@ -431,6 +436,14 @@ const electronAPI: ElectronAPI = {
 
     openFile: (filePath: string): Promise<void> => {
       return ipcRenderer.invoke(IPC_CHANNELS.DOCUMENT_BROWSER.OPEN_FILE, filePath);
+    },
+
+    pin: (filePath: string): Promise<PinnedDocumentEntry[] | null> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.DOCUMENT_BROWSER.PIN, filePath);
+    },
+
+    unpin: (filePath: string): Promise<PinnedDocumentEntry[]> => {
+      return ipcRenderer.invoke(IPC_CHANNELS.DOCUMENT_BROWSER.UNPIN, filePath);
     },
 
     onDescribeRequest: (callback: () => ViewerDescription): (() => void) => {

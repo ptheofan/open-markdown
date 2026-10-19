@@ -6,6 +6,7 @@ import { createQuickSwitcher, rankItems } from '@renderer/components/QuickSwitch
 import type { DocumentBrowserSnapshot } from '@shared/types';
 
 const SNAPSHOT: DocumentBrowserSnapshot = {
+  pinned: [],
   open: [
     { windowId: 1, filePath: '/repo/docs/plan.md', fileName: 'plan.md', text: '', isCurrent: true } as never,
     { windowId: 2, filePath: '/repo/README.md', fileName: 'README.md', text: '', isCurrent: false } as never,

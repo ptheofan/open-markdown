@@ -74,6 +74,8 @@ const recent: RecentFileEntry[] = [
   { filePath: '/docs/old.md', fileName: 'old.md', openedAt: '2026-09-01T00:00:00Z' },
 ];
 
+let pinned: { filePath: string; fileName: string; pinnedAt: string }[] = [];
+
 function makeService(
   windows: FakeWindow[],
   filePaths: Record<number, string | null>,
@@ -88,6 +90,9 @@ function makeService(
       getWindowFilePath: (id) => filePaths[id] ?? null,
     },
     getRecentFiles: () => recent,
+    getPinnedFiles: () => pinned,
+    modifiedAt: (filePath) =>
+      Promise.resolve(filePath === '/docs/gone.md' ? null : '2026-10-19T10:00:00.000Z'),
     describe: overrides.describe ?? (() => Promise.resolve(describedRect)),
     capture: overrides.capture ?? (() => Promise.resolve(fakeImage(1600))),
   });
@@ -142,6 +147,26 @@ describe('DocumentBrowserService', () => {
       const snapshot = await service.buildSnapshot(null);
 
       expect(snapshot.open.map((e) => e.windowId)).toEqual([1]);
+    });
+
+    it('should list pins with when they changed and the window showing them', async () => {
+      pinned = [
+        { filePath: '/docs/a.md', fileName: 'a.md', pinnedAt: '2026-10-01T00:00:00.000Z' },
+        { filePath: '/docs/gone.md', fileName: 'gone.md', pinnedAt: '2026-10-01T00:00:00.000Z' },
+        { filePath: '/docs/old.md', fileName: 'old.md', pinnedAt: '2026-10-01T00:00:00.000Z' },
+      ];
+      const service = makeService([fakeWindow(1)], { 1: '/docs/a.md' });
+
+      const snapshot = await service.buildSnapshot(1);
+      pinned = [];
+
+      expect(snapshot.pinned.map((e) => [e.filePath, e.modifiedAt, e.windowId])).toEqual([
+        ['/docs/a.md', '2026-10-19T10:00:00.000Z', 1],
+        ['/docs/gone.md', null, null],
+        ['/docs/old.md', '2026-10-19T10:00:00.000Z', null],
+      ]);
+      // A pinned file is not listed again under recent
+      expect(snapshot.recent).toEqual([]);
     });
 
     it('should leave out recent files that are open in a window', async () => {

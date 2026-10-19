@@ -30,6 +30,11 @@ export interface FolderAPI {
   /** Ask the user for a folder; null when they cancel */
   openDialog: () => Promise<string | null>;
   isDirectory: (targetPath: string) => Promise<boolean>;
+  /**
+   * Make sure the folder can be read, asking the user to allow it when the
+   * macOS sandbox refuses it; false when it cannot be read
+   */
+  ensureAccess: (folderPath: string) => Promise<boolean>;
   /** Entries of one directory, directories first, ignored names left out */
   list: (dirPath: string, options: FolderListOptions) => Promise<FolderEntry[]>;
   /** Every document under the root, as paths relative to it, for filtering */

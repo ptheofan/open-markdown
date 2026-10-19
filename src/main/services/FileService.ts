@@ -1,7 +1,7 @@
 /**
  * FileService - Handles file operations in the main process
  */
-import { dialog, BrowserWindow } from 'electron';
+import type { BrowserWindow } from 'electron';
 import { readFile, writeFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -14,6 +14,7 @@ import {
 
 import { resolveDocumentPath } from './DocumentPathResolver';
 import { isAccessDenied, realHomeDir } from './sandboxPaths';
+import { getSecurityBookmarkService } from './SecurityBookmarkService';
 
 import type {
   FileOpenResult,
@@ -45,9 +46,7 @@ export class FileService {
       properties: ['openFile'],
     };
 
-    const result = parentWindow
-      ? await dialog.showOpenDialog(parentWindow, options)
-      : await dialog.showOpenDialog(options);
+    const result = await getSecurityBookmarkService().showOpenDialog(parentWindow, options);
 
     if (result.canceled || result.filePaths.length === 0) {
       return {
@@ -169,9 +168,7 @@ export class FileService {
       properties: ['openFile'],
     };
 
-    const result = parentWindow
-      ? await dialog.showOpenDialog(parentWindow, options)
-      : await dialog.showOpenDialog(options);
+    const result = await getSecurityBookmarkService().showOpenDialog(parentWindow, options);
 
     const picked = result.canceled ? undefined : result.filePaths[0];
     if (!picked) {
@@ -302,9 +299,7 @@ export class FileService {
       properties: ['openDirectory'],
     };
 
-    const result = parentWindow
-      ? await dialog.showOpenDialog(parentWindow, options)
-      : await dialog.showOpenDialog(options);
+    const result = await getSecurityBookmarkService().showOpenDialog(parentWindow, options);
 
     const picked = result.canceled ? undefined : result.filePaths[0];
     if (!picked) return false;

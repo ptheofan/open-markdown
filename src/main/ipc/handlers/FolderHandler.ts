@@ -1,13 +1,17 @@
 /**
  * IPC handlers for the folder sidebar
  */
-import { BrowserWindow, dialog, ipcMain } from 'electron';
+import { BrowserWindow, ipcMain } from 'electron';
+import { readdir } from 'node:fs/promises';
+import path from 'node:path';
 
 import { IPC_CHANNELS } from '@shared/types/api';
 import type { FolderEntry, FolderListOptions } from '@shared/types/folder';
 
 import { defaultDocument, isDirectoryPath, listDirectory, walkFolder } from '../../services/FolderService';
 import { getFolderWatcherService } from '../../services/FolderWatcherService';
+import { isAccessDenied } from '../../services/sandboxPaths';
+import { getSecurityBookmarkService } from '../../services/SecurityBookmarkService';
 
 const windowSubscriptions = new Map<number, () => void>();
 
@@ -20,11 +24,33 @@ export function registerFolderHandlers(): void {
       title: 'Open Folder',
       properties: ['openDirectory', 'createDirectory'],
     };
-    const result = window
-      ? await dialog.showOpenDialog(window, options)
-      : await dialog.showOpenDialog(options);
+    const result = await getSecurityBookmarkService().showOpenDialog(window ?? undefined, options);
     if (result.canceled) return null;
     return result.filePaths[0] ?? null;
+  });
+
+  // The macOS sandbox refuses a remembered folder until the user picks it
+  // again; ask once, starting on it, and keep the access for later launches.
+  ipcMain.handle(IPC_CHANNELS.FOLDER.ENSURE_ACCESS, async (event, folderPath: string): Promise<boolean> => {
+    if (typeof folderPath !== 'string') return false;
+    try {
+      await readdir(folderPath);
+      return true;
+    } catch (error) {
+      if (!isAccessDenied(error)) return false;
+    }
+    const window = BrowserWindow.fromWebContents(event.sender);
+    const result = await getSecurityBookmarkService().showOpenDialog(window ?? undefined, {
+      title: 'Allow Access to Folder',
+      message: `macOS needs your OK to show ${folderPath}.`,
+      defaultPath: folderPath,
+      buttonLabel: 'Allow',
+      properties: ['openDirectory'],
+    });
+    const picked = result.canceled ? undefined : result.filePaths[0];
+    if (!picked) return false;
+    const relative = path.relative(picked, folderPath);
+    return !relative.startsWith('..') && !path.isAbsolute(relative);
   });
 
   ipcMain.handle(IPC_CHANNELS.FOLDER.IS_DIRECTORY, (_event, targetPath: string): Promise<boolean> => {
@@ -96,6 +122,7 @@ export function registerFolderHandlers(): void {
 
 export function unregisterFolderHandlers(): void {
   ipcMain.removeHandler(IPC_CHANNELS.FOLDER.OPEN_DIALOG);
+  ipcMain.removeHandler(IPC_CHANNELS.FOLDER.ENSURE_ACCESS);
   ipcMain.removeHandler(IPC_CHANNELS.FOLDER.IS_DIRECTORY);
   ipcMain.removeHandler(IPC_CHANNELS.FOLDER.LIST);
   ipcMain.removeHandler(IPC_CHANNELS.FOLDER.LIST_ALL);

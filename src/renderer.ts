@@ -307,6 +307,8 @@ class App {
     // window, the same as opening it from Finder.
     this.documentBrowser = createDocumentBrowser(document.body, {
       loadSnapshot: () => window.electronAPI.documentBrowser.getSnapshot(),
+      pin: (filePath) => window.electronAPI.documentBrowser.pin(filePath),
+      unpin: (filePath) => window.electronAPI.documentBrowser.unpin(filePath),
       onSelectOpenDocument: (entry) => {
         void window.electronAPI.documentBrowser.focusWindow(entry.windowId);
       },
@@ -1053,6 +1055,21 @@ class App {
   private async openFolder(folderPath: string, options: { openDefault?: boolean } = {}): Promise<void> {
     if (!this.folderTree || !this.sidebar) return;
     const openDefault = options.openDefault ?? true;
+
+    // In the macOS sandbox a remembered folder may need the user's OK again
+    if (!(await window.electronAPI.folder.ensureAccess(folderPath))) {
+      if (options.openDefault === false) {
+        // A restore the user declined is not offered again next launch
+        try {
+          localStorage.removeItem(LAST_FOLDER_KEY);
+        } catch {
+          // Storage unavailable
+        }
+      } else {
+        this.showError(`Cannot open ${folderPath}`);
+      }
+      return;
+    }
 
     await this.folderTree.open(folderPath);
     this.sidebar.setFilesAvailable(true);

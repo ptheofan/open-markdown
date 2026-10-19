@@ -17,6 +17,7 @@ import {
 import type { DocumentBrowserSnapshot } from '@shared/types';
 
 const snapshot: DocumentBrowserSnapshot = {
+  pinned: [],
   open: [
     {
       windowId: 1,
@@ -119,6 +120,8 @@ describe('DocumentBrowser', () => {
   let browser: DocumentBrowser;
   let callbacks: {
     loadSnapshot: ReturnType<typeof vi.fn>;
+    pin: ReturnType<typeof vi.fn>;
+    unpin: ReturnType<typeof vi.fn>;
     onSelectOpenDocument: ReturnType<typeof vi.fn>;
     onSelectRecentFile: ReturnType<typeof vi.fn>;
   };
@@ -129,6 +132,8 @@ describe('DocumentBrowser', () => {
     Element.prototype.scrollIntoView = vi.fn();
     callbacks = {
       loadSnapshot: vi.fn(() => Promise.resolve(snapshot)),
+      pin: vi.fn(),
+      unpin: vi.fn(),
       onSelectOpenDocument: vi.fn(),
       onSelectRecentFile: vi.fn(),
     };
@@ -225,6 +230,65 @@ describe('DocumentBrowser', () => {
     expect(browser.isVisible()).toBe(false);
   });
 
+  it('should list pinned documents first, with when they were modified', async () => {
+    callbacks.loadSnapshot.mockResolvedValue({
+      ...snapshot,
+      pinned: [
+        { filePath: '/docs/spec.md', fileName: 'spec.md', pinnedAt: '', modifiedAt: '2026-10-19T10:00:00.000Z', windowId: null },
+        { filePath: '/docs/gone.md', fileName: 'gone.md', pinnedAt: '', modifiedAt: null, windowId: null },
+      ],
+    });
+
+    await browser.show();
+
+    const titles = Array.from(document.querySelectorAll('.doc-browser-section-title')).map(
+      (el) => el.firstChild?.textContent
+    );
+    expect(titles[0]).toBe('Pinned');
+    expect(tileNames().slice(0, 2)).toEqual(['spec.md', 'gone.md']);
+    const times = tiles().slice(0, 2).map((t) => t.querySelector('.doc-browser-tile-time')?.textContent);
+    expect(times[0]).toMatch(/^Modified .+ · /);
+    expect(times[1]).toBe('Cannot be read');
+
+    tiles()[0]?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(callbacks.onSelectRecentFile).toHaveBeenCalledWith(
+      expect.objectContaining({ filePath: '/docs/spec.md' })
+    );
+  });
+
+  it('should pin from a tile without opening it, and move the file out of Recent', async () => {
+    callbacks.pin.mockResolvedValue([
+      { filePath: '/docs/todo.md', fileName: 'todo.md', pinnedAt: '', modifiedAt: '2026-10-19T10:00:00.000Z', windowId: null },
+    ]);
+    await browser.show();
+
+    const todoTile = tiles().find((t) => t.title === '/docs/todo.md');
+    todoTile?.querySelector<HTMLElement>('.doc-browser-pin')?.dispatchEvent(
+      new MouseEvent('click', { bubbles: true })
+    );
+    await vi.waitFor(() => expect(tileNames()[0]).toBe('todo.md'));
+
+    expect(callbacks.pin).toHaveBeenCalledWith('/docs/todo.md');
+    expect(callbacks.onSelectRecentFile).not.toHaveBeenCalled();
+    expect(tileNames().filter((n) => n === 'todo.md')).toHaveLength(1);
+    expect(browser.isVisible()).toBe(true);
+  });
+
+  it('should unpin from a pinned tile', async () => {
+    callbacks.loadSnapshot.mockResolvedValue({
+      ...snapshot,
+      pinned: [{ filePath: '/docs/spec.md', fileName: 'spec.md', pinnedAt: '', modifiedAt: null, windowId: null }],
+    });
+    callbacks.unpin.mockResolvedValue([]);
+    await browser.show();
+
+    tiles()[0]?.querySelector<HTMLElement>('.doc-browser-pin-on')?.dispatchEvent(
+      new MouseEvent('click', { bubbles: true })
+    );
+    await vi.waitFor(() => expect(tileNames()).not.toContain('spec.md'));
+    expect(callbacks.unpin).toHaveBeenCalledWith('/docs/spec.md');
+  });
+
   it('should filter both sections as the user types', async () => {
     await browser.show();
     const input = document.querySelector('.doc-browser-input') as HTMLInputElement;
@@ -262,7 +326,7 @@ describe('DocumentBrowser', () => {
   });
 
   it('should say so when there is nothing to show at all', async () => {
-    callbacks.loadSnapshot.mockResolvedValue({ open: [], recent: [] });
+    callbacks.loadSnapshot.mockResolvedValue({ pinned: [], open: [], recent: [] });
 
     await browser.show();
 

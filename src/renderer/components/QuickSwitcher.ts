@@ -32,13 +32,21 @@ function searchText(item: SwitcherItem): string {
 }
 
 /**
- * Open documents first, then recent files that are not open, ranked by
+ * Open documents first, then pinned and recent files that are not open, ranked by
  * the query. With no query the lists keep their order.
  */
 export function rankItems(snapshot: DocumentBrowserSnapshot, query: string): SwitcherItem[] {
   const openPaths = new Set(snapshot.open.map((e) => e.filePath));
   const items: SwitcherItem[] = [
     ...snapshot.open.map((entry): SwitcherItem => ({ kind: 'open', entry })),
+    ...snapshot.pinned
+      .filter((entry) => !openPaths.has(entry.filePath))
+      .map(
+        (entry): SwitcherItem => ({
+          kind: 'recent',
+          entry: { filePath: entry.filePath, fileName: entry.fileName, openedAt: entry.pinnedAt },
+        })
+      ),
     ...snapshot.recent
       .filter((entry) => !openPaths.has(entry.filePath))
       .map((entry): SwitcherItem => ({ kind: 'recent', entry })),
@@ -60,7 +68,7 @@ export class QuickSwitcher {
   private readonly callbacks: QuickSwitcherCallbacks;
   private readonly handleKeydown: (e: KeyboardEvent) => void;
 
-  private snapshot: DocumentBrowserSnapshot = { open: [], recent: [] };
+  private snapshot: DocumentBrowserSnapshot = { pinned: [], open: [], recent: [] };
   private items: SwitcherItem[] = [];
   private selectedIndex = 0;
   private visible = false;

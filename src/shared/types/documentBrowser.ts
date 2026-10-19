@@ -1,4 +1,4 @@
-import type { RecentFileEntry } from './recentFiles';
+import type { PinnedFileEntry, RecentFileEntry } from './recentFiles';
 
 /**
  * Where the document view sits inside a window, in CSS pixels of the page,
@@ -28,10 +28,21 @@ export interface OpenDocumentEntry {
 }
 
 /**
- * Everything the document browser shows: open documents first, then recent
- * files that are not open in any window.
+ * A pinned document, with when it was last changed on disk
+ */
+export interface PinnedDocumentEntry extends PinnedFileEntry {
+  /** ISO 8601 modification time, or null when the file cannot be read */
+  modifiedAt: string | null;
+  /** The window showing it, or null when it is not open */
+  windowId: number | null;
+}
+
+/**
+ * Everything the document browser shows: pinned documents, open documents,
+ * then recent files that are neither pinned nor open in any window.
  */
 export interface DocumentBrowserSnapshot {
+  pinned: PinnedDocumentEntry[];
   open: OpenDocumentEntry[];
   recent: RecentFileEntry[];
 }

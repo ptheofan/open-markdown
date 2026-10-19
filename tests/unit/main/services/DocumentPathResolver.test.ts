@@ -105,3 +105,54 @@ describe('resolveDocumentPath', () => {
     );
   });
 });
+
+describe('on Windows', () => {
+  const WIN_HOME = 'C:\\Users\\me';
+  const WIN_DOC = 'C:\\Users\\me\\notes\\todo.md';
+
+  it('keeps backslashes as path separators', () => {
+    expect(cleanPathInput('C:\\Users\\me\\a.md', 'win32')).toBe(
+      'C:\\Users\\me\\a.md'
+    );
+    expect(cleanPathInput('"\\\\server\\share\\a.md"', 'win32')).toBe(
+      '\\\\server\\share\\a.md'
+    );
+  });
+
+  it('turns a file:// URL into a drive or UNC path', () => {
+    expect(cleanPathInput('file:///C:/My%20Docs/a.md', 'win32')).toBe(
+      'C:\\My Docs\\a.md'
+    );
+    expect(cleanPathInput('file://server/share/a.md', 'win32')).toBe(
+      '\\\\server\\share\\a.md'
+    );
+  });
+
+  it('keeps drive and UNC paths absolute', () => {
+    expect(
+      resolveDocumentPath('C:\\Users\\me\\a.md', WIN_DOC, WIN_HOME, 'win32')
+    ).toEqual({ filePath: 'C:\\Users\\me\\a.md', resolvedFrom: 'absolute' });
+    expect(
+      resolveDocumentPath('\\\\server\\share\\a.md', WIN_DOC, WIN_HOME, 'win32')
+        ?.filePath
+    ).toBe('\\\\server\\share\\a.md');
+  });
+
+  it('expands ~ followed by either separator', () => {
+    expect(
+      resolveDocumentPath('~\\docs\\a.md', WIN_DOC, WIN_HOME, 'win32')
+    ).toEqual({ filePath: 'C:\\Users\\me\\docs\\a.md', resolvedFrom: 'absolute' });
+    expect(
+      resolveDocumentPath('~/docs/a.md', WIN_DOC, WIN_HOME, 'win32')?.filePath
+    ).toBe('C:\\Users\\me\\docs\\a.md');
+  });
+
+  it('resolves a relative path from the folder of the current document', () => {
+    expect(
+      resolveDocumentPath('..\\design\\spec.md', WIN_DOC, WIN_HOME, 'win32')
+    ).toEqual({
+      filePath: 'C:\\Users\\me\\design\\spec.md',
+      resolvedFrom: 'document',
+    });
+  });
+});

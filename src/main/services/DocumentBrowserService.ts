@@ -6,12 +6,15 @@
  * files that are not open anywhere are listed after the open documents.
  */
 import type { BrowserWindow, NativeImage, Rectangle } from 'electron';
+import { stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { IPC_CHANNELS } from '@shared/types/api';
 import type {
   DocumentBrowserSnapshot,
   OpenDocumentEntry,
+  PinnedDocumentEntry,
+  PinnedFileEntry,
   RecentFileEntry,
   ViewerDescription,
 } from '@shared/types';
@@ -30,6 +33,9 @@ export interface DocumentBrowserWindowSource {
 export interface DocumentBrowserDeps {
   windows: DocumentBrowserWindowSource;
   getRecentFiles: () => RecentFileEntry[];
+  getPinnedFiles?: () => PinnedFileEntry[];
+  /** When a file last changed, or null when it cannot be read. Defaults to stat. */
+  modifiedAt?: (filePath: string) => Promise<string | null>;
   /** Ask a window's renderer for its document view. Defaults to an IPC round trip. */
   describe?: (win: BrowserWindow) => Promise<ViewerDescription | null>;
   /** Capture an area of a window. Defaults to `webContents.capturePage`. */
@@ -83,6 +89,14 @@ export function describeWindow(
   });
 }
 
+async function statModifiedAt(filePath: string): Promise<string | null> {
+  try {
+    return (await stat(filePath)).mtime.toISOString();
+  } catch {
+    return null;
+  }
+}
+
 function capturePage(
   win: BrowserWindow,
   rect: Rectangle
@@ -109,6 +123,8 @@ export function toCaptureRect(
 export class DocumentBrowserService {
   private readonly windows: DocumentBrowserWindowSource;
   private readonly getRecentFiles: () => RecentFileEntry[];
+  private readonly getPinnedFiles: () => PinnedFileEntry[];
+  private readonly modifiedAt: (filePath: string) => Promise<string | null>;
   private readonly describe: (
     win: BrowserWindow
   ) => Promise<ViewerDescription | null>;
@@ -126,6 +142,8 @@ export class DocumentBrowserService {
   constructor(deps: DocumentBrowserDeps) {
     this.windows = deps.windows;
     this.getRecentFiles = deps.getRecentFiles;
+    this.getPinnedFiles = deps.getPinnedFiles ?? (() => []);
+    this.modifiedAt = deps.modifiedAt ?? statModifiedAt;
     this.describe = deps.describe ?? ((win) => describeWindow(win));
     this.capture = deps.capture ?? capturePage;
   }
@@ -152,12 +170,40 @@ export class DocumentBrowserService {
       )
     );
 
-    const openPaths = new Set(open.map((entry) => entry.filePath));
+    const windowByPath = new Map(open.map((entry) => [entry.filePath, entry.windowId]));
+    const pinned = await this.pinnedEntries(windowByPath);
+
+    const pinnedPaths = new Set(pinned.map((entry) => entry.filePath));
     const recent = this.getRecentFiles().filter(
-      (entry) => !openPaths.has(entry.filePath)
+      (entry) => !windowByPath.has(entry.filePath) && !pinnedPaths.has(entry.filePath)
     );
 
-    return { open, recent };
+    return { pinned, open, recent };
+  }
+
+  /**
+   * The pinned documents with when each last changed, and the window showing
+   * it, if any. Without a map of open documents the windows are asked.
+   */
+  async pinnedEntries(windowByPath?: Map<string, number>): Promise<PinnedDocumentEntry[]> {
+    const windows =
+      windowByPath ??
+      new Map(
+        this.windows
+          .getAllWindows()
+          .filter((win) => !win.isDestroyed())
+          .flatMap((win) => {
+            const filePath = this.windows.getWindowFilePath(win.id);
+            return filePath ? [[filePath, win.id] as [string, number]] : [];
+          })
+      );
+    return Promise.all(
+      this.getPinnedFiles().map(async (entry) => ({
+        ...entry,
+        modifiedAt: await this.modifiedAt(entry.filePath),
+        windowId: windows.get(entry.filePath) ?? null,
+      }))
+    );
   }
 
   /** Drop the cached thumbnail of a window that no longer exists. */

@@ -97,6 +97,23 @@ describe('resolveFileReferences', () => {
 describe('resolveRelativeLink', () => {
   const probe = fakeFs(['/repo/docs/guide.md', '/repo/docs/img/a b.png', '/repo/README.md'], []);
 
+  it('takes ~ as the home folder, not a folder named ~', async () => {
+    const homeProbe = fakeFs(['/Users/me/notes/a.md'], []);
+    expect(await resolveRelativeLink('~/notes/a.md', '/repo/docs/plan.md', homeProbe, '/Users/me')).toEqual({
+      path: '/Users/me/notes/a.md',
+      exists: true,
+    });
+  });
+
+  it('marks a file the sandbox refuses as blocked rather than missing', async () => {
+    const blockedProbe = { ...fakeFs([], []), isBlocked: (p: string) => Promise.resolve(p === '/repo/docs/guide.md') };
+    expect(await resolveRelativeLink('guide.md', '/repo/docs/plan.md', blockedProbe)).toEqual({
+      path: '/repo/docs/guide.md',
+      exists: false,
+      blocked: true,
+    });
+  });
+
   it('resolves against the document folder and says whether the file is there', async () => {
     expect(await resolveRelativeLink('./guide.md', DOC.replace('/plans/plan.md', '/plan.md'), probe)).toEqual({
       path: '/repo/docs/guide.md',

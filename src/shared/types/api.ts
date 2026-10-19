@@ -5,6 +5,8 @@ import type { UpdatesAPI } from './updates';
 export interface LinkTarget {
   path: string;
   exists: boolean;
+  /** Something is there, but the macOS sandbox has not been given access to it */
+  blocked?: boolean;
 }
 import type {
   FileOpenResult,
@@ -23,7 +25,7 @@ import type {
 } from './fileAssociation';
 import type { RecentFileEntry, RecentFolderEntry } from './recentFiles';
 import type { FolderAPI } from './folder';
-import type { DocumentBrowserSnapshot, ViewerDescription } from './documentBrowser';
+import type { DocumentBrowserSnapshot, PinnedDocumentEntry, ViewerDescription } from './documentBrowser';
 import type { GoogleDocLink, GoogleDocsResolveResult, GoogleAuthState, MermaidDiagramData, TableColumnWidths, SyncProgressUpdate, SyncResolveMode, SyncDirection } from './google-docs';
 
 /**
@@ -33,6 +35,8 @@ export const IPC_CHANNELS = {
   FILE: {
     OPEN_DIALOG: 'file:open-dialog',
     RESOLVE_PATH: 'file:resolve-path',
+    GRANT_ACCESS: 'file:grant-access',
+    GRANT_FOLDER_ACCESS: 'file:grant-folder-access',
     RESOLVE_REFERENCES: 'file:resolve-references',
     CHECK_LINKS: 'file:check-links',
     READ: 'file:read',
@@ -93,6 +97,7 @@ export const IPC_CHANNELS = {
   FOLDER: {
     OPEN_DIALOG: 'folder:open-dialog',
     IS_DIRECTORY: 'folder:is-directory',
+    ENSURE_ACCESS: 'folder:ensure-access',
     LIST: 'folder:list',
     LIST_ALL: 'folder:list-all',
     DEFAULT_DOCUMENT: 'folder:default-document',
@@ -120,6 +125,8 @@ export const IPC_CHANNELS = {
     GET_SNAPSHOT: 'document-browser:get-snapshot',
     FOCUS_WINDOW: 'document-browser:focus-window',
     OPEN_FILE: 'document-browser:open-file',
+    PIN: 'document-browser:pin',
+    UNPIN: 'document-browser:unpin',
     DESCRIBE_REQUEST: 'document-browser:describe-request',
     DESCRIBE_RESPONSE: 'document-browser:describe-response',
   },
@@ -178,6 +185,16 @@ export interface FileAPI {
   openDialog: () => Promise<FileOpenResult>;
   /** Resolve a typed or pasted path against this window's document */
   resolvePath: (input: string) => Promise<PathResolveResult>;
+  /**
+   * Ask the user to confirm a sandbox-blocked file in an open dialog that
+   * starts on it; resolves to the file they picked
+   */
+  grantAccess: (filePath: string) => Promise<PathResolveResult>;
+  /**
+   * Ask the user to confirm the folder holding a sandbox-blocked file, so it
+   * and its neighbours (linked documents, images) can be read; true if granted
+   */
+  grantFolderAccess: (filePath: string) => Promise<boolean>;
   /**
    * Resolve file references written in a document (`src/app.ts`) to the
    * absolute paths of existing files, keyed by the reference; null for the
@@ -337,6 +354,10 @@ export interface DocumentBrowserAPI {
   focusWindow: (windowId: number) => Promise<void>;
   /** Open a file the way Finder would: focus its window, reuse an empty one, or open a new one. */
   openFile: (filePath: string) => Promise<void>;
+  /** Pin a document to the top of the browser; the pins after, or null when it was not pinned */
+  pin: (filePath: string) => Promise<PinnedDocumentEntry[] | null>;
+  /** Unpin a document; the pins after */
+  unpin: (filePath: string) => Promise<PinnedDocumentEntry[]>;
   /**
    * Answer the main process when it asks where this window's document view
    * is. Returns a cleanup function.

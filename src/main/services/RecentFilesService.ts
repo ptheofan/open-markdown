@@ -8,7 +8,7 @@ import { app } from 'electron';
 import { promises as fs } from 'fs';
 import path from 'path';
 
-import type { RecentFileEntry, RecentFolderEntry } from '@shared/types';
+import type { PinnedFileEntry, RecentFileEntry, RecentFolderEntry } from '@shared/types';
 
 const MAX_RECENT_FILES = 10;
 const MAX_RECENT_FOLDERS = 5;
@@ -18,12 +18,15 @@ interface RecentFilesData {
   version: number;
   files: RecentFileEntry[];
   folders?: RecentFolderEntry[];
+  pinned?: PinnedFileEntry[];
 }
 
 export class RecentFilesService {
   private dataPath: string;
   private files: RecentFileEntry[] = [];
   private folders: RecentFolderEntry[] = [];
+  /** Pinned by the user; kept until unpinned, not cleared with recents */
+  private pinned: PinnedFileEntry[] = [];
   private initialized = false;
   private changeListeners: Set<(files: RecentFileEntry[]) => void> = new Set();
   private folderListeners: Set<(folders: RecentFolderEntry[]) => void> = new Set();
@@ -92,6 +95,33 @@ export class RecentFilesService {
     this.notifyFolderListeners();
   }
 
+  getPinnedFiles(): PinnedFileEntry[] {
+    return structuredClone(this.pinned);
+  }
+
+  isPinned(filePath: string): boolean {
+    return this.pinned.some((f) => f.filePath === filePath);
+  }
+
+  /** Pin a document; pinning it again keeps its place */
+  async pinFile(filePath: string): Promise<void> {
+    if (this.isPinned(filePath)) return;
+    this.pinned.push({
+      filePath,
+      fileName: path.basename(filePath),
+      pinnedAt: new Date().toISOString(),
+    });
+    await this.save();
+  }
+
+  async unpinFile(filePath: string): Promise<void> {
+    const before = this.pinned.length;
+    this.pinned = this.pinned.filter((f) => f.filePath !== filePath);
+    if (this.pinned.length !== before) {
+      await this.save();
+    }
+  }
+
   getRecentFolders(): RecentFolderEntry[] {
     return structuredClone(this.folders);
   }
@@ -146,6 +176,7 @@ export class RecentFilesService {
       if (this.isValidData(parsed)) {
         this.files = parsed.files;
         this.folders = parsed.folders ?? [];
+        this.pinned = parsed.pinned ?? [];
       } else {
         this.files = [];
         this.folders = [];
@@ -167,6 +198,7 @@ export class RecentFilesService {
         version: 1,
         files: this.files,
         folders: this.folders,
+        pinned: this.pinned,
       };
 
       await fs.writeFile(this.dataPath, JSON.stringify(data, null, 2), 'utf-8');
@@ -204,6 +236,7 @@ export class RecentFilesService {
     if (typeof obj['version'] !== 'number') return false;
     if (!Array.isArray(obj['files'])) return false;
     if (obj['folders'] !== undefined && !Array.isArray(obj['folders'])) return false;
+    if (obj['pinned'] !== undefined && !Array.isArray(obj['pinned'])) return false;
     return true;
   }
 }

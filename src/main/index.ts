@@ -13,6 +13,8 @@ import {
 import { setupApplicationMenu } from './menu/applicationMenu';
 import { getPreferencesService } from './services/PreferencesService';
 import { getRecentFilesService } from './services/RecentFilesService';
+import { getSecurityBookmarkService } from './services/SecurityBookmarkService';
+import { isAccessDenied } from './services/sandboxPaths';
 import { getWindowManager } from './window/WindowManager';
 import { getFileService } from './services/FileService';
 import { getGoogleDocsLinkStore } from '@main/services/GoogleDocsLinkStore';
@@ -29,8 +31,10 @@ interface PendingOpen {
 function isDirectory(target: string): boolean {
   try {
     return statSync(target).isDirectory();
-  } catch {
-    return false;
+  } catch (error) {
+    // The macOS sandbox refuses a folder it was not given; one without an
+    // extension is taken for a folder, and the window asks for access to it
+    return isAccessDenied(error) && path.extname(target) === '';
   }
 }
 
@@ -72,6 +76,8 @@ async function initialize(): Promise<void> {
   // PreferencesService is the single source of truth for theme mode preference.
   await getPreferencesService().initialize();
   await getRecentFilesService().initialize();
+  // Before any window reads a file: restores the sandbox access kept from last time
+  await getSecurityBookmarkService().initialize();
   await getGoogleDocsLinkStore().initialize();
   // GoogleAuthService initializes lazily on first use (avoids keychain prompt at startup)
 

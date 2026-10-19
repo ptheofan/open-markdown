@@ -1,14 +1,16 @@
 /**
  * DocumentBrowser - Overlay for finding a document among open windows
  *
- * Shows every open document as a thumbnail of its document view, then recent
- * files that are not open anywhere, with a box that filters both by name and
- * (for open documents) by content. Everything is in memory, so filtering is
+ * Shows pinned documents with when they last changed, every open document as
+ * a thumbnail of its document view, then recent files that are not open
+ * anywhere, with a box that filters by name and (for open documents) by
+ * content. Any document can be pinned or unpinned from its tile. Everything is in memory, so filtering is
  * instant; the only wait is the capture when the overlay opens.
  */
 import type {
   DocumentBrowserSnapshot,
   OpenDocumentEntry,
+  PinnedDocumentEntry,
   RecentFileEntry,
 } from '@shared/types';
 
@@ -17,14 +19,19 @@ export interface DocumentBrowserCallbacks {
   loadSnapshot: () => Promise<DocumentBrowserSnapshot>;
   /** An open document other than the current one was chosen. */
   onSelectOpenDocument: (entry: OpenDocumentEntry) => void;
-  /** A recent file was chosen. */
-  onSelectRecentFile: (entry: RecentFileEntry) => void;
+  /** A recent file, or a pinned one not open anywhere, was chosen. */
+  onSelectRecentFile: (entry: { filePath: string }) => void;
+  /** Pin a document; resolves to the pins after, or null when it was not pinned. */
+  pin: (filePath: string) => Promise<PinnedDocumentEntry[] | null>;
+  /** Unpin a document; resolves to the pins after. */
+  unpin: (filePath: string) => Promise<PinnedDocumentEntry[]>;
 }
 
 const ROOT_CLASS = 'doc-browser';
 const VISIBLE_CLASS = 'doc-browser-visible';
 const TILE_CLASS = 'doc-browser-tile';
 const SELECTED_CLASS = 'doc-browser-tile-selected';
+const PIN_CLASS = 'doc-browser-pin';
 
 /** Characters of context shown on either side of a content match */
 const SNIPPET_CONTEXT = 40;
@@ -32,6 +39,7 @@ const SNIPPET_CONTEXT = 40;
 const FALLBACK_PREVIEW_CHARS = 600;
 
 type BrowserItem =
+  | { kind: 'pinned'; entry: PinnedDocumentEntry }
   | { kind: 'open'; entry: OpenDocumentEntry }
   | { kind: 'recent'; entry: RecentFileEntry };
 
@@ -49,8 +57,8 @@ function matchesAll(terms: string[], ...haystacks: string[]): boolean {
 
 /**
  * Keep the entries that match the query. Open documents match on file name,
- * path or content; recent files only on name and path, since their content
- * is not in memory.
+ * path or content; pinned and recent files only on name and path, since
+ * their content is not in memory.
  */
 export function filterSnapshot(
   snapshot: DocumentBrowserSnapshot,
@@ -60,6 +68,9 @@ export function filterSnapshot(
   if (terms.length === 0) return snapshot;
 
   return {
+    pinned: snapshot.pinned.filter((entry) =>
+      matchesAll(terms, entry.fileName, entry.filePath)
+    ),
     open: snapshot.open.filter((entry) =>
       matchesAll(terms, entry.fileName, entry.filePath, entry.text)
     ),
@@ -101,6 +112,19 @@ export function findSnippet(text: string, query: string): string | null {
 function parentDir(filePath: string): string {
   const slash = filePath.lastIndexOf('/');
   return slash > 0 ? filePath.slice(0, slash) : '';
+}
+
+/**
+ * When a pinned file last changed: the date and time, and how long ago.
+ */
+export function formatModified(isoString: string | null, now = new Date()): string {
+  if (!isoString) return 'Cannot be read';
+  const date = new Date(isoString);
+  const absolute = date.toLocaleString(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+  return `Modified ${absolute} · ${formatTimeAgo(isoString, now)}`;
 }
 
 export function formatTimeAgo(isoString: string, now = new Date()): string {
@@ -164,7 +188,7 @@ export class DocumentBrowser {
       snapshot = await this.callbacks.loadSnapshot();
     } catch (error) {
       console.error('Failed to load document browser snapshot:', error);
-      snapshot = { open: [], recent: [] };
+      snapshot = { pinned: [], open: [], recent: [] };
     }
     if (seq !== this.loadSeq) return;
 
@@ -234,6 +258,13 @@ export class DocumentBrowser {
     });
 
     this.body.addEventListener('click', (e: MouseEvent) => {
+      const pin = (e.target as HTMLElement).closest<HTMLElement>(`.${PIN_CLASS}`);
+      if (pin) {
+        e.stopPropagation();
+        const filePath = pin.dataset.path;
+        if (filePath) void this.togglePin(filePath, pin.dataset.pinned === 'true');
+        return;
+      }
       const tile = (e.target as HTMLElement).closest<HTMLElement>(
         `.${TILE_CLASS}`
       );
@@ -289,13 +320,14 @@ export class DocumentBrowser {
     }
   }
 
-  private render(): void {
+  private render(keepSelection = 0): void {
     if (!this.snapshot) return;
 
     const query = this.input.value;
     const filtered = filterSnapshot(this.snapshot, query);
 
     this.items = [
+      ...filtered.pinned.map((entry): BrowserItem => ({ kind: 'pinned', entry })),
       ...filtered.open.map((entry): BrowserItem => ({ kind: 'open', entry })),
       ...filtered.recent.map(
         (entry): BrowserItem => ({ kind: 'recent', entry })
@@ -305,7 +337,9 @@ export class DocumentBrowser {
     this.body.innerHTML = '';
 
     const hasAnything =
-      this.snapshot.open.length > 0 || this.snapshot.recent.length > 0;
+      this.snapshot.pinned.length > 0 ||
+      this.snapshot.open.length > 0 ||
+      this.snapshot.recent.length > 0;
     if (!hasAnything) {
       this.body.appendChild(
         this.message('No documents open and nothing opened recently.')
@@ -320,6 +354,16 @@ export class DocumentBrowser {
     }
 
     let index = 0;
+    if (filtered.pinned.length > 0) {
+      const grid = this.section(
+        'Pinned',
+        filtered.pinned.length,
+        'doc-browser-grid-pinned'
+      );
+      for (const entry of filtered.pinned) {
+        grid.appendChild(this.pinnedTile(entry, index++));
+      }
+    }
     if (filtered.open.length > 0) {
       const grid = this.section(
         'Open documents',
@@ -342,7 +386,7 @@ export class DocumentBrowser {
     }
 
     this.selectedIndex = -1;
-    this.select(0);
+    this.select(Math.min(keepSelection, this.items.length - 1));
   }
 
   private message(text: string): HTMLElement {
@@ -391,12 +435,88 @@ export class DocumentBrowser {
     return tile;
   }
 
+  /**
+   * The pin toggle in a tile's corner. A span, since a tile is a button and
+   * buttons cannot nest.
+   */
+  private pinButton(filePath: string): HTMLElement {
+    const pinned = this.snapshot?.pinned.some((p) => p.filePath === filePath) ?? false;
+    const el = document.createElement('span');
+    el.className = `${PIN_CLASS}${pinned ? ' doc-browser-pin-on' : ''}`;
+    el.setAttribute('role', 'button');
+    el.setAttribute('aria-label', pinned ? 'Unpin' : 'Pin');
+    el.title = pinned ? 'Unpin' : 'Pin to the top';
+    el.dataset.path = filePath;
+    el.dataset.pinned = String(pinned);
+    el.innerHTML =
+      '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M9.8 1.5 14.5 6.2l-1.4.6-2.6 2.6.3 3.3-1.2 1.2-2.9-2.9-3.6 3.6-.7-.7 3.6-3.6L3.1 7.4l1.2-1.2 3.3.3 2.6-2.6z"/></svg>';
+    return el;
+  }
+
+  private pinnedTile(entry: PinnedDocumentEntry, index: number): HTMLElement {
+    const tile = this.tileBase(index, 'pinned', entry.filePath);
+    tile.appendChild(this.pinButton(entry.filePath));
+
+    const nameRow = document.createElement('div');
+    nameRow.className = 'doc-browser-tile-name-row';
+    const name = document.createElement('span');
+    name.className = 'doc-browser-tile-name';
+    name.textContent = entry.fileName;
+    nameRow.appendChild(name);
+    if (entry.windowId !== null) {
+      const badge = document.createElement('span');
+      badge.className = 'doc-browser-badge';
+      badge.textContent = 'Open';
+      nameRow.appendChild(badge);
+    }
+
+    const dir = document.createElement('span');
+    dir.className = 'doc-browser-tile-path';
+    dir.textContent = parentDir(entry.filePath);
+
+    const when = document.createElement('span');
+    when.className = `doc-browser-tile-time${entry.modifiedAt ? '' : ' doc-browser-tile-missing'}`;
+    when.textContent = formatModified(entry.modifiedAt);
+
+    tile.appendChild(nameRow);
+    tile.appendChild(dir);
+    tile.appendChild(when);
+    return tile;
+  }
+
+  /**
+   * Pin or unpin, then redraw with the new pins and the filter kept. A file
+   * pinned from Recent leaves Recent; one unpinned shows there next time.
+   */
+  private async togglePin(filePath: string, pinned: boolean): Promise<void> {
+    let next: PinnedDocumentEntry[] | null;
+    try {
+      next = pinned
+        ? await this.callbacks.unpin(filePath)
+        : await this.callbacks.pin(filePath);
+    } catch (error) {
+      console.error('Failed to change pin:', error);
+      return;
+    }
+    if (!next || !this.snapshot || !this.visible) return;
+
+    const pinnedPaths = new Set(next.map((p) => p.filePath));
+    this.snapshot = {
+      ...this.snapshot,
+      pinned: next,
+      recent: this.snapshot.recent.filter((r) => !pinnedPaths.has(r.filePath)),
+    };
+    this.render(this.selectedIndex);
+    this.input.focus();
+  }
+
   private openTile(
     entry: OpenDocumentEntry,
     index: number,
     query: string
   ): HTMLElement {
     const tile = this.tileBase(index, 'open', entry.filePath);
+    tile.appendChild(this.pinButton(entry.filePath));
 
     const thumb = document.createElement('div');
     thumb.className = 'doc-browser-thumb';
@@ -459,6 +579,7 @@ export class DocumentBrowser {
 
   private recentTile(entry: RecentFileEntry, index: number): HTMLElement {
     const tile = this.tileBase(index, 'recent', entry.filePath);
+    tile.appendChild(this.pinButton(entry.filePath));
 
     const name = document.createElement('span');
     name.className = 'doc-browser-tile-name';
@@ -529,11 +650,20 @@ export class DocumentBrowser {
   private activate(index: number): void {
     const item = this.items[index];
     if (!item) return;
+    const openDocuments = this.snapshot?.open ?? [];
 
     this.hide();
     if (item.kind === 'open') {
       if (!item.entry.isCurrent) {
         this.callbacks.onSelectOpenDocument(item.entry);
+      }
+    } else if (item.kind === 'pinned') {
+      const { windowId } = item.entry;
+      const open = openDocuments.find((o) => o.windowId === windowId);
+      if (windowId !== null && open) {
+        if (!open.isCurrent) this.callbacks.onSelectOpenDocument(open);
+      } else {
+        this.callbacks.onSelectRecentFile(item.entry);
       }
     } else {
       this.callbacks.onSelectRecentFile(item.entry);

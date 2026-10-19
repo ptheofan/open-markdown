@@ -22,6 +22,10 @@ import type {
 // Track per-window subscription cleanup functions to prevent duplicate callbacks
 const windowSubscriptions = new Map<number, () => void>();
 
+// Windows that already clean up after themselves on close; a window watches a
+// new file on every navigation, and one listener per watch would pile up
+const windowsWithCloseCleanup = new WeakSet<BrowserWindow>();
+
 /**
  * Register file-related IPC handlers
  */
@@ -49,6 +53,25 @@ export function registerFileHandlers(): void {
         ? getWindowManager().getWindowFilePath(window.id)
         : null;
       return fileService.resolvePath(input, baseFilePath);
+    }
+  );
+
+  // The sandbox only lets the app read files the user picked, so a typed
+  // path it blocks is confirmed in an open dialog that starts on that file.
+  ipcMain.handle(
+    IPC_CHANNELS.FILE.GRANT_ACCESS,
+    async (event, filePath: string): Promise<PathResolveResult> => {
+      const window = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+      return fileService.grantAccess(filePath, window);
+    }
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.FILE.GRANT_FOLDER_ACCESS,
+    async (event, filePath: string): Promise<boolean> => {
+      if (typeof filePath !== 'string') return false;
+      const window = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+      return fileService.grantFolderAccess(filePath, window);
     }
   );
 
@@ -133,11 +156,14 @@ export function registerFileHandlers(): void {
       windowSubscriptions.set(windowId, cleanup);
 
       // Clean up subscriptions when window closes
-      window.once('closed', () => {
-        cleanup();
-        void fileWatcherService.unwatchAll(windowId);
-        getWindowManager().setWindowFilePath(windowId, null);
-      });
+      if (!windowsWithCloseCleanup.has(window)) {
+        windowsWithCloseCleanup.add(window);
+        window.once('closed', () => {
+          windowSubscriptions.get(windowId)?.();
+          void fileWatcherService.unwatchAll(windowId);
+          getWindowManager().setWindowFilePath(windowId, null);
+        });
+      }
 
       await fileWatcherService.watch(filePath, windowId);
       getWindowManager().setWindowFilePath(windowId, filePath);
@@ -163,6 +189,8 @@ export function registerFileHandlers(): void {
 export function unregisterFileHandlers(): void {
   ipcMain.removeHandler(IPC_CHANNELS.FILE.OPEN_DIALOG);
   ipcMain.removeHandler(IPC_CHANNELS.FILE.RESOLVE_PATH);
+  ipcMain.removeHandler(IPC_CHANNELS.FILE.GRANT_ACCESS);
+  ipcMain.removeHandler(IPC_CHANNELS.FILE.GRANT_FOLDER_ACCESS);
   ipcMain.removeHandler(IPC_CHANNELS.FILE.RESOLVE_REFERENCES);
   ipcMain.removeHandler(IPC_CHANNELS.FILE.CHECK_LINKS);
   ipcMain.removeHandler(IPC_CHANNELS.FILE.READ);

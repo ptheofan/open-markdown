@@ -113,6 +113,56 @@ describe('FileService', () => {
     });
   });
 
+  describe('grantAccess', () => {
+    it('opens the dialog on the file and returns the pick', async () => {
+      vi.mocked(dialog.showOpenDialog).mockResolvedValue({
+        canceled: false,
+        filePaths: ['/Users/me/a.md'],
+      });
+
+      const result = await fileService.grantAccess('/Users/me/a.md');
+
+      expect(dialog.showOpenDialog).toHaveBeenCalledWith(
+        expect.objectContaining({ defaultPath: '/Users/me/a.md' })
+      );
+      expect(result).toEqual({
+        success: true,
+        filePath: '/Users/me/a.md',
+        resolvedFrom: 'absolute',
+      });
+    });
+
+    it('fails when the dialog is cancelled', async () => {
+      vi.mocked(dialog.showOpenDialog).mockResolvedValue({
+        canceled: true,
+        filePaths: [],
+      });
+
+      const result = await fileService.grantAccess('/Users/me/a.md');
+
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe('grantFolderAccess', () => {
+    it('grants when the picked folder holds the file', async () => {
+      vi.mocked(dialog.showOpenDialog).mockResolvedValue({ canceled: false, filePaths: ['/Users/me'] });
+
+      expect(await fileService.grantFolderAccess('/Users/me/notes/a.md')).toBe(true);
+      expect(dialog.showOpenDialog).toHaveBeenCalledWith(
+        expect.objectContaining({ defaultPath: '/Users/me/notes', properties: ['openDirectory'] })
+      );
+    });
+
+    it('does not grant for a folder elsewhere, or on cancel', async () => {
+      vi.mocked(dialog.showOpenDialog).mockResolvedValue({ canceled: false, filePaths: ['/tmp'] });
+      expect(await fileService.grantFolderAccess('/Users/me/notes/a.md')).toBe(false);
+
+      vi.mocked(dialog.showOpenDialog).mockResolvedValue({ canceled: true, filePaths: [] });
+      expect(await fileService.grantFolderAccess('/Users/me/notes/a.md')).toBe(false);
+    });
+  });
+
   describe('resolvePath', () => {
     const HOME = '/Users/me';
     const DOC = '/Users/me/notes/todo.md';
@@ -176,6 +226,18 @@ describe('FileService', () => {
       expect(result.error).toContain('No such file');
     });
 
+    it('flags a markdown file the sandbox blocks instead of calling it missing', async () => {
+      vi.mocked(fs.stat).mockRejectedValue(
+        Object.assign(new Error('EPERM'), { code: 'EPERM' })
+      );
+
+      const result = await fileService.resolvePath('/Users/me/a.md', DOC, HOME);
+
+      expect(result.success).toBe(false);
+      expect(result.needsAccess).toBe(true);
+      expect(result.filePath).toBe('/Users/me/a.md');
+    });
+
     it('rejects a folder', async () => {
       vi.mocked(fs.stat).mockResolvedValue(fileStats(true));
 
@@ -206,6 +268,17 @@ describe('FileService', () => {
 
   describe('readFile', () => {
     const filePath = '/path/to/test.md';
+
+    it('says access is needed when the sandbox refuses the file', async () => {
+      vi.mocked(fs.stat).mockRejectedValue(
+        Object.assign(new Error('EPERM'), { code: 'EPERM' })
+      );
+
+      const result = await fileService.readFile(filePath);
+
+      expect(result.success).toBe(false);
+      expect(result.needsAccess).toBe(true);
+    });
 
     it('should successfully read a markdown file', async () => {
       const content = '# Test Content\n\nSome text';

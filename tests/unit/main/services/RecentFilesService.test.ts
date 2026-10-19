@@ -194,6 +194,35 @@ describe('RecentFilesService', () => {
     });
   });
 
+  describe('pinned files', () => {
+    beforeEach(async () => {
+      await service.initialize();
+    });
+
+    it('pins in order, once, and survives a reload', async () => {
+      await service.pinFile('/a/one.md');
+      await service.pinFile('/b/two.md');
+      await service.pinFile('/a/one.md');
+
+      const reloaded = createRecentFilesService(tempDir);
+      await reloaded.initialize();
+      expect(reloaded.getPinnedFiles().map((p) => p.filePath)).toEqual(['/a/one.md', '/b/two.md']);
+      expect(reloaded.getPinnedFiles()[0]?.fileName).toBe('one.md');
+    });
+
+    it('unpins', async () => {
+      await service.pinFile('/a/one.md');
+      await service.unpinFile('/a/one.md');
+      expect(service.isPinned('/a/one.md')).toBe(false);
+    });
+
+    it('keeps pins when recent files are cleared', async () => {
+      await service.pinFile('/a/one.md');
+      await service.clearRecentFiles();
+      expect(service.isPinned('/a/one.md')).toBe(true);
+    });
+  });
+
   describe('clearRecentFiles', () => {
     beforeEach(async () => {
       await service.initialize();

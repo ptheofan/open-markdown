@@ -10,6 +10,8 @@ import type { PathResolveResult } from '@shared/types';
 export interface OpenPathBarCallbacks {
   /** Resolve the typed text against this window's document */
   resolve: (input: string) => Promise<PathResolveResult>;
+  /** Have the user confirm a sandbox-blocked file; resolves to their pick */
+  grantAccess: (filePath: string) => Promise<PathResolveResult>;
   /** Open the resolved file in this window */
   onOpen: (filePath: string) => void;
   /** Folder relative paths start from, or null to start from home */
@@ -203,6 +205,19 @@ export class OpenPathBar {
         this.debounceTimer = null;
       }
       result = await this.resolveNow();
+    }
+
+    if (result?.needsAccess && result.filePath) {
+      try {
+        result = await this.callbacks.grantAccess(result.filePath);
+      } catch (error) {
+        console.error('Failed to grant access:', error);
+        return;
+      }
+      if (!result.success) {
+        this.input.focus();
+        return;
+      }
     }
 
     if (result?.success && result.filePath) {

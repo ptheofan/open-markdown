@@ -1132,12 +1132,14 @@ class App {
   }
 
   /**
-   * Load and display a markdown file
+   * Load and display a markdown file. Resolves to whether the window moved
+   * to it: a file that cannot be read leaves the current document in place.
    */
   private async loadFile(
     filePath: string,
     options: { fromHistory?: boolean; scrollTop?: number } = {}
-  ): Promise<void> {
+  ): Promise<boolean> {
+    let switched = false;
     try {
       // Exit edit mode if active
       if (this.state.isEditMode) {
@@ -1149,11 +1151,6 @@ class App {
         this.history.rememberScroll(document.getElementById('markdown-viewer')?.scrollTop ?? 0);
       }
 
-      // Stop watching previous file
-      if (this.state.currentFilePath && this.state.isWatching) {
-        await this.stopWatching();
-      }
-
       // Read file content
       const result = await window.electronAPI.file.read(filePath);
 
@@ -1161,8 +1158,15 @@ class App {
         throw new Error(result.error ?? 'Failed to read file');
       }
 
+      // Stop watching previous file, only now that this one replaces it: a
+      // failed read keeps the document on show live-reloading
+      if (this.state.currentFilePath && this.state.isWatching) {
+        await this.stopWatching();
+      }
+
       // Update state
       this.state.currentFilePath = filePath;
+      switched = true;
       this.folderTree?.setCurrentFile(filePath);
 
       // Update UI
@@ -1210,7 +1214,14 @@ class App {
       } catch {
         // Non-fatal
       }
+
+      // Whatever is on show keeps reloading, even if this went wrong between
+      // stopping one watch and starting the next
+      if (this.state.currentFilePath && !this.state.isWatching) {
+        await this.startWatching(this.state.currentFilePath);
+      }
     }
+    return switched;
   }
 
   /**
@@ -1317,7 +1328,13 @@ class App {
     this.history.rememberScroll(document.getElementById('markdown-viewer')?.scrollTop ?? 0);
     const entry = direction === 'back' ? this.history.back() : this.history.forward();
     if (!entry) return;
-    await this.loadFile(entry.filePath, { fromHistory: true, scrollTop: entry.scrollTop });
+    const moved = await this.loadFile(entry.filePath, { fromHistory: true, scrollTop: entry.scrollTop });
+    if (!moved) {
+      // The document did not change, so neither does the place in history
+      if (direction === 'back') this.history.forward();
+      else this.history.back();
+      this.updateNavigationButtons();
+    }
   }
 
   /**

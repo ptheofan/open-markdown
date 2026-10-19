@@ -62,6 +62,15 @@ export function registerFileHandlers(): void {
     }
   );
 
+  ipcMain.handle(
+    IPC_CHANNELS.FILE.GRANT_FOLDER_ACCESS,
+    async (event, filePath: string): Promise<boolean> => {
+      if (typeof filePath !== 'string') return false;
+      const window = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+      return fileService.grantFolderAccess(filePath, window);
+    }
+  );
+
   // Resolve file references written in a document against its folder and
   // the project root (Preferences → Document → Project root, else the nearest
   // .git). Only existing files resolve.
@@ -174,6 +183,7 @@ export function unregisterFileHandlers(): void {
   ipcMain.removeHandler(IPC_CHANNELS.FILE.OPEN_DIALOG);
   ipcMain.removeHandler(IPC_CHANNELS.FILE.RESOLVE_PATH);
   ipcMain.removeHandler(IPC_CHANNELS.FILE.GRANT_ACCESS);
+  ipcMain.removeHandler(IPC_CHANNELS.FILE.GRANT_FOLDER_ACCESS);
   ipcMain.removeHandler(IPC_CHANNELS.FILE.RESOLVE_REFERENCES);
   ipcMain.removeHandler(IPC_CHANNELS.FILE.CHECK_LINKS);
   ipcMain.removeHandler(IPC_CHANNELS.FILE.READ);

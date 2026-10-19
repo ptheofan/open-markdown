@@ -3,7 +3,6 @@
  */
 import { dialog, BrowserWindow } from 'electron';
 import { readFile, writeFile, stat } from 'node:fs/promises';
-import { homedir, userInfo } from 'node:os';
 import path from 'node:path';
 
 import { MARKDOWN_EXTENSIONS, MAX_FILE_SIZE_BYTES } from '@shared/constants';
@@ -14,6 +13,7 @@ import {
 } from '@shared/errors';
 
 import { resolveDocumentPath } from './DocumentPathResolver';
+import { isAccessDenied, realHomeDir } from './sandboxPaths';
 
 import type {
   FileOpenResult,
@@ -22,25 +22,6 @@ import type {
   FileStats,
   PathResolveResult,
 } from '@shared/types';
-
-/**
- * The user's real home folder. Inside the macOS sandbox HOME points at the
- * app's container (~/Library/Containers/<id>/Data), which is not where a
- * typed ~ is meant to go; the account record still has the real one.
- */
-function realHomeDir(): string {
-  try {
-    return userInfo().homedir || homedir();
-  } catch {
-    return homedir();
-  }
-}
-
-/** The sandbox refuses the file rather than it being missing */
-function isAccessDenied(error: unknown): boolean {
-  const code = (error as NodeJS.ErrnoException | null)?.code;
-  return code === 'EPERM' || code === 'EACCES';
-}
 
 /**
  * Service for handling file operations
@@ -213,6 +194,13 @@ export class FileService {
     try {
       // Check if file exists and get stats
       const stats = await this.getFileStats(filePath);
+      if (!stats && (await this.isBlocked(filePath))) {
+        return {
+          success: false,
+          needsAccess: true,
+          error: `macOS has not given Open Markdown access to ${filePath}.`,
+        };
+      }
       if (!stats) {
         const error = new FileNotFoundError(filePath);
         return {
@@ -293,6 +281,44 @@ export class FileService {
       };
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * Show a folder dialog that starts on the folder holding filePath. Picking
+   * it gives the sandbox access to everything inside for this session.
+   * Resolves true when the picked folder contains filePath.
+   */
+  async grantFolderAccess(
+    filePath: string,
+    parentWindow?: BrowserWindow
+  ): Promise<boolean> {
+    const folder = path.dirname(filePath);
+    const options: Electron.OpenDialogOptions = {
+      title: 'Allow Access to Folder',
+      message: `macOS needs your OK to open files in ${folder}.`,
+      defaultPath: folder,
+      buttonLabel: 'Allow',
+      properties: ['openDirectory'],
+    };
+
+    const result = parentWindow
+      ? await dialog.showOpenDialog(parentWindow, options)
+      : await dialog.showOpenDialog(options);
+
+    const picked = result.canceled ? undefined : result.filePaths[0];
+    if (!picked) return false;
+    const relative = path.relative(picked, filePath);
+    return !relative.startsWith('..') && !path.isAbsolute(relative);
+  }
+
+  /** Whether the file is there but the sandbox refuses it */
+  private async isBlocked(filePath: string): Promise<boolean> {
+    try {
+      await stat(filePath);
+      return false;
+    } catch (error) {
+      return isAccessDenied(error);
     }
   }
 

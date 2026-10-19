@@ -52,6 +52,7 @@ const mockFileService = {
   readFile: vi.fn(),
   resolvePath: vi.fn(),
   grantAccess: vi.fn(),
+  grantFolderAccess: vi.fn(),
 };
 
 const mockFileWatcherService = {

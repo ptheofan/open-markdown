@@ -1154,8 +1154,18 @@ class App {
         await this.stopWatching();
       }
 
-      // Read file content
-      const result = await window.electronAPI.file.read(filePath);
+      // Read file content. The macOS sandbox may not have access yet: ask
+      // for the folder, which also covers the documents and images it links to.
+      let result = await window.electronAPI.file.read(filePath);
+      if (!result.success && result.needsAccess) {
+        if (await window.electronAPI.file.grantFolderAccess(filePath)) {
+          result = await window.electronAPI.file.read(filePath);
+        }
+        if (!result.success) {
+          this.showError(result.error ?? 'Failed to read file');
+          return;
+        }
+      }
 
       if (!result.success) {
         throw new Error(result.error ?? 'Failed to read file');

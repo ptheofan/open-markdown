@@ -17,6 +17,8 @@ export interface FileReadResult {
   content?: string;
   error?: string;
   stats?: FileStats;
+  /** The file is there but the macOS sandbox has not been given access to it */
+  needsAccess?: boolean;
 }
 
 /**

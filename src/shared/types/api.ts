@@ -5,6 +5,8 @@ import type { UpdatesAPI } from './updates';
 export interface LinkTarget {
   path: string;
   exists: boolean;
+  /** Something is there, but the macOS sandbox has not been given access to it */
+  blocked?: boolean;
 }
 import type {
   FileOpenResult,
@@ -34,6 +36,7 @@ export const IPC_CHANNELS = {
     OPEN_DIALOG: 'file:open-dialog',
     RESOLVE_PATH: 'file:resolve-path',
     GRANT_ACCESS: 'file:grant-access',
+    GRANT_FOLDER_ACCESS: 'file:grant-folder-access',
     RESOLVE_REFERENCES: 'file:resolve-references',
     CHECK_LINKS: 'file:check-links',
     READ: 'file:read',
@@ -184,6 +187,11 @@ export interface FileAPI {
    * starts on it; resolves to the file they picked
    */
   grantAccess: (filePath: string) => Promise<PathResolveResult>;
+  /**
+   * Ask the user to confirm the folder holding a sandbox-blocked file, so it
+   * and its neighbours (linked documents, images) can be read; true if granted
+   */
+  grantFolderAccess: (filePath: string) => Promise<boolean>;
   /**
    * Resolve file references written in a document (`src/app.ts`) to the
    * absolute paths of existing files, keyed by the reference; null for the

@@ -82,6 +82,12 @@ describe('resolveLocalPath', () => {
     );
   });
 
+  it('takes ~ as the home folder', () => {
+    const result = resolveLocalPath(BASE, '~/notes/a.md');
+    expect(result).not.toContain('/~/');
+    expect(result?.endsWith(path.join('notes', 'a.md'))).toBe(true);
+  });
+
   it('keeps an absolute path as-is', () => {
     expect(resolveLocalPath(BASE, '/elsewhere/notes.md')).toBe(
       path.resolve('/elsewhere/notes.md')

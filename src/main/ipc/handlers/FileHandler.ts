@@ -22,6 +22,10 @@ import type {
 // Track per-window subscription cleanup functions to prevent duplicate callbacks
 const windowSubscriptions = new Map<number, () => void>();
 
+// Windows that already clean up after themselves on close; a window watches a
+// new file on every navigation, and one listener per watch would pile up
+const windowsWithCloseCleanup = new WeakSet<BrowserWindow>();
+
 /**
  * Register file-related IPC handlers
  */
@@ -133,11 +137,14 @@ export function registerFileHandlers(): void {
       windowSubscriptions.set(windowId, cleanup);
 
       // Clean up subscriptions when window closes
-      window.once('closed', () => {
-        cleanup();
-        void fileWatcherService.unwatchAll(windowId);
-        getWindowManager().setWindowFilePath(windowId, null);
-      });
+      if (!windowsWithCloseCleanup.has(window)) {
+        windowsWithCloseCleanup.add(window);
+        window.once('closed', () => {
+          windowSubscriptions.get(windowId)?.();
+          void fileWatcherService.unwatchAll(windowId);
+          getWindowManager().setWindowFilePath(windowId, null);
+        });
+      }
 
       await fileWatcherService.watch(filePath, windowId);
       getWindowManager().setWindowFilePath(windowId, filePath);

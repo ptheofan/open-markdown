@@ -6,6 +6,7 @@
  * matching on name and path. Arrow keys move, Enter opens, Esc closes.
  */
 import { rankByFuzzy } from '../services/fuzzy';
+import { parentDirOf } from '../utils/paths';
 
 import type { DocumentBrowserSnapshot, OpenDocumentEntry, RecentFileEntry } from '@shared/types';
 
@@ -46,11 +47,6 @@ export function rankItems(snapshot: DocumentBrowserSnapshot, query: string): Swi
   return rankByFuzzy(query, items, searchText)
     .map(({ item }) => item)
     .slice(0, MAX_ITEMS);
-}
-
-function parentDir(filePath: string): string {
-  const slash = filePath.lastIndexOf('/');
-  return slash > 0 ? filePath.slice(0, slash) : '';
 }
 
 export class QuickSwitcher {
@@ -225,7 +221,7 @@ export class QuickSwitcher {
 
       const dir = document.createElement('span');
       dir.className = 'quick-switcher-path';
-      dir.textContent = parentDir(item.entry.filePath);
+      dir.textContent = parentDirOf(item.entry.filePath);
 
       li.append(name, badge, dir);
       this.list.appendChild(li);

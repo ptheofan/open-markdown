@@ -72,6 +72,7 @@ import {
   type DocumentCopyService,
   type CopyDocumentType,
 } from './renderer/services';
+import { fileNameOf } from './renderer/utils/paths';
 import { isDomainError } from '@shared/errors';
 import { BUILTIN_PLUGINS, MARKDOWN_EXTENSIONS } from '@shared/constants';
 import { applyTheme as applyThemeCSS, generateCompleteThemeCSS } from './themes';
@@ -1165,7 +1166,7 @@ class App {
       this.folderTree?.setCurrentFile(filePath);
 
       // Update UI
-      const fileName = filePath.split('/').pop() ?? 'Unknown';
+      const fileName = fileNameOf(filePath) || 'Unknown';
       this.toolbar?.setFileName(fileName);
       this.statusBar?.setFilePath(filePath);
       this.statusBar?.setModifiedTime(

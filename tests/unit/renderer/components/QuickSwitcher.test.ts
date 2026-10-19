@@ -71,6 +71,16 @@ describe('QuickSwitcher', () => {
     expect(document.querySelector('.quick-switcher-item-selected')?.textContent).toContain('plan.md');
   });
 
+  it('shows the folder of a Windows path without the file name', async () => {
+    loadSnapshot.mockResolvedValue({
+      open: [],
+      recent: [{ filePath: 'C:\\notes\\a.md', fileName: 'a.md', openedAt: '2026-01-01T00:00:00Z' }],
+    });
+    create().show();
+    await settle();
+    expect(document.querySelector('.quick-switcher-path')?.textContent).toBe('C:\\notes');
+  });
+
   it('filters as the user types and opens the selection on Enter', async () => {
     const switcher = create();
     switcher.show();

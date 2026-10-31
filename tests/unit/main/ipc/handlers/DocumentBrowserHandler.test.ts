@@ -44,7 +44,7 @@ vi.mock('@main/window/WindowManager', () => ({
 }));
 
 vi.mock('@main/services/RecentFilesService', () => ({
-  getRecentFilesService: () => ({ getRecentFiles: () => [] }),
+  getRecentFilesService: () => ({ getRecentFiles: () => [], getPinnedFiles: () => [] }),
 }));
 
 type MockIpcMain = typeof ipcMain & {
@@ -145,6 +145,6 @@ describe('DocumentBrowserHandler', () => {
     const result = await handler?.({ sender: {} });
 
     expect(mockWindowManager.getAllWindows).toHaveBeenCalled();
-    expect(result).toEqual({ open: [], recent: [] });
+    expect(result).toEqual({ pinned: [], open: [], recent: [] });
   });
 });

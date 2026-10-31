@@ -4,9 +4,11 @@
  * Paths arrive as text from a terminal, a chat, or another document, so the
  * input is cleaned the way a shell would read it before it is resolved: a
  * trailing newline from a copy, quotes around the whole thing, a file:// URL,
- * a leading ~, and backslash-escaped spaces are all accepted.
+ * a leading ~, and backslash-escaped spaces are all accepted. On Windows the
+ * backslash is the path separator, so it is never read as an escape there.
  */
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import type { PathResolveBase } from '@shared/types';
 
@@ -19,12 +21,16 @@ export interface ResolvedDocumentPath {
  * Strip the decoration a pasted path tends to carry so that only the path
  * itself is left. Returns an empty string when nothing usable remains.
  */
-export function cleanPathInput(raw: string): string {
+export function cleanPathInput(
+  raw: string,
+  platform: NodeJS.Platform = process.platform
+): string {
+  const windows = platform === 'win32';
   let input = raw.trim();
 
   if (input.startsWith('file://')) {
     try {
-      input = decodeURIComponent(new URL(input).pathname);
+      input = fileURLToPath(input, { windows });
     } catch {
       input = decodeURIComponent(input.slice('file://'.length));
     }
@@ -37,7 +43,9 @@ export function cleanPathInput(raw: string): string {
   }
 
   // Shell-escaped characters: "My\ Notes" is the folder "My Notes"
-  input = input.replace(/\\(.)/g, '$1');
+  if (!windows) {
+    input = input.replace(/\\(.)/g, '$1');
+  }
 
   return input;
 }
@@ -51,28 +59,35 @@ export function cleanPathInput(raw: string): string {
 export function resolveDocumentPath(
   raw: string,
   baseFilePath: string | null,
-  homeDir: string
+  homeDir: string,
+  platform: NodeJS.Platform = process.platform
 ): ResolvedDocumentPath | null {
-  const input = cleanPathInput(raw);
+  const windows = platform === 'win32';
+  const p = windows ? path.win32 : path.posix;
+  const input = cleanPathInput(raw, platform);
   if (!input) return null;
 
-  if (input === '~' || input.startsWith('~/')) {
+  if (
+    input === '~' ||
+    input.startsWith('~/') ||
+    (windows && input.startsWith('~\\'))
+  ) {
     return {
-      filePath: path.normalize(path.join(homeDir, input.slice(1))),
+      filePath: p.normalize(p.join(homeDir, input.slice(1))),
       resolvedFrom: 'absolute',
     };
   }
 
-  if (path.isAbsolute(input)) {
-    return { filePath: path.normalize(input), resolvedFrom: 'absolute' };
+  if (p.isAbsolute(input)) {
+    return { filePath: p.normalize(input), resolvedFrom: 'absolute' };
   }
 
   if (baseFilePath) {
     return {
-      filePath: path.resolve(path.dirname(baseFilePath), input),
+      filePath: p.resolve(p.dirname(baseFilePath), input),
       resolvedFrom: 'document',
     };
   }
 
-  return { filePath: path.resolve(homeDir, input), resolvedFrom: 'home' };
+  return { filePath: p.resolve(homeDir, input), resolvedFrom: 'home' };
 }

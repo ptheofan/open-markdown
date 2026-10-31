@@ -72,6 +72,7 @@ import {
   type DocumentCopyService,
   type CopyDocumentType,
 } from './renderer/services';
+import { fileNameOf } from './renderer/utils/paths';
 import { isDomainError } from '@shared/errors';
 import { BUILTIN_PLUGINS, MARKDOWN_EXTENSIONS } from '@shared/constants';
 import { applyTheme as applyThemeCSS, generateCompleteThemeCSS } from './themes';
@@ -290,6 +291,7 @@ class App {
     // resolved in main against this window's document.
     this.openPathBar = createOpenPathBar(document.body, {
       resolve: (input) => window.electronAPI.file.resolvePath(input),
+      grantAccess: (filePath) => window.electronAPI.file.grantAccess(filePath),
       onOpen: (filePath) => {
         void this.loadFile(filePath);
       },
@@ -306,6 +308,8 @@ class App {
     // window, the same as opening it from Finder.
     this.documentBrowser = createDocumentBrowser(document.body, {
       loadSnapshot: () => window.electronAPI.documentBrowser.getSnapshot(),
+      pin: (filePath) => window.electronAPI.documentBrowser.pin(filePath),
+      unpin: (filePath) => window.electronAPI.documentBrowser.unpin(filePath),
       onSelectOpenDocument: (entry) => {
         void window.electronAPI.documentBrowser.focusWindow(entry.windowId);
       },
@@ -1053,6 +1057,21 @@ class App {
     if (!this.folderTree || !this.sidebar) return;
     const openDefault = options.openDefault ?? true;
 
+    // In the macOS sandbox a remembered folder may need the user's OK again
+    if (!(await window.electronAPI.folder.ensureAccess(folderPath))) {
+      if (options.openDefault === false) {
+        // A restore the user declined is not offered again next launch
+        try {
+          localStorage.removeItem(LAST_FOLDER_KEY);
+        } catch {
+          // Storage unavailable
+        }
+      } else {
+        this.showError(`Cannot open ${folderPath}`);
+      }
+      return;
+    }
+
     await this.folderTree.open(folderPath);
     this.sidebar.setFilesAvailable(true);
     this.sidebar.activate('files');
@@ -1131,12 +1150,14 @@ class App {
   }
 
   /**
-   * Load and display a markdown file
+   * Load and display a markdown file. Resolves to whether the window moved
+   * to it: a file that cannot be read leaves the current document in place.
    */
   private async loadFile(
     filePath: string,
     options: { fromHistory?: boolean; scrollTop?: number } = {}
-  ): Promise<void> {
+  ): Promise<boolean> {
+    let switched = false;
     try {
       // Exit edit mode if active
       if (this.state.isEditMode) {
@@ -1148,24 +1169,36 @@ class App {
         this.history.rememberScroll(document.getElementById('markdown-viewer')?.scrollTop ?? 0);
       }
 
-      // Stop watching previous file
-      if (this.state.currentFilePath && this.state.isWatching) {
-        await this.stopWatching();
+      // Read file content. The macOS sandbox may not have access yet: ask
+      // for the folder, which also covers the documents and images it links to.
+      let result = await window.electronAPI.file.read(filePath);
+      if (!result.success && result.needsAccess) {
+        if (await window.electronAPI.file.grantFolderAccess(filePath)) {
+          result = await window.electronAPI.file.read(filePath);
+        }
+        if (!result.success) {
+          this.showError(result.error ?? 'Failed to read file');
+          return false;
+        }
       }
-
-      // Read file content
-      const result = await window.electronAPI.file.read(filePath);
 
       if (!result.success) {
         throw new Error(result.error ?? 'Failed to read file');
       }
 
+      // Stop watching previous file, only now that this one replaces it: a
+      // failed read keeps the document on show live-reloading
+      if (this.state.currentFilePath && this.state.isWatching) {
+        await this.stopWatching();
+      }
+
       // Update state
       this.state.currentFilePath = filePath;
+      switched = true;
       this.folderTree?.setCurrentFile(filePath);
 
       // Update UI
-      const fileName = filePath.split('/').pop() ?? 'Unknown';
+      const fileName = fileNameOf(filePath) || 'Unknown';
       this.toolbar?.setFileName(fileName);
       this.statusBar?.setFilePath(filePath);
       this.statusBar?.setModifiedTime(
@@ -1209,7 +1242,14 @@ class App {
       } catch {
         // Non-fatal
       }
+
+      // Whatever is on show keeps reloading, even if this went wrong between
+      // stopping one watch and starting the next
+      if (this.state.currentFilePath && !this.state.isWatching) {
+        await this.startWatching(this.state.currentFilePath);
+      }
     }
+    return switched;
   }
 
   /**
@@ -1316,7 +1356,13 @@ class App {
     this.history.rememberScroll(document.getElementById('markdown-viewer')?.scrollTop ?? 0);
     const entry = direction === 'back' ? this.history.back() : this.history.forward();
     if (!entry) return;
-    await this.loadFile(entry.filePath, { fromHistory: true, scrollTop: entry.scrollTop });
+    const moved = await this.loadFile(entry.filePath, { fromHistory: true, scrollTop: entry.scrollTop });
+    if (!moved) {
+      // The document did not change, so neither does the place in history
+      if (direction === 'back') this.history.forward();
+      else this.history.back();
+      this.updateNavigationButtons();
+    }
   }
 
   /**

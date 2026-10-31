@@ -8,13 +8,16 @@
  * write paths relative to.
  */
 import { stat } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import path from 'node:path';
+
+import { isAccessDenied, realHomeDir } from './sandboxPaths';
 
 /** Pluggable filesystem probe, so the walk can be tested without a disk */
 export interface ReferenceProbe {
   isFile: (filePath: string) => Promise<boolean>;
   isDirectory: (dirPath: string) => Promise<boolean>;
+  /** Something is there but the sandbox refuses it; optional for tests */
+  isBlocked?: (filePath: string) => Promise<boolean>;
 }
 
 const MAX_ANCESTORS = 12;
@@ -35,7 +38,20 @@ export async function fsProbeIsDirectory(dirPath: string): Promise<boolean> {
   }
 }
 
-export const fsProbe: ReferenceProbe = { isFile: fsProbeIsFile, isDirectory: fsProbeIsDirectory };
+export async function fsProbeIsBlocked(filePath: string): Promise<boolean> {
+  try {
+    await stat(filePath);
+    return false;
+  } catch (error) {
+    return isAccessDenied(error);
+  }
+}
+
+export const fsProbe: ReferenceProbe = {
+  isFile: fsProbeIsFile,
+  isDirectory: fsProbeIsDirectory,
+  isBlocked: fsProbeIsBlocked,
+};
 
 /**
  * The nearest ancestor of `dir` (itself included) that contains `.git`, or
@@ -82,7 +98,7 @@ export async function resolveFileReference(
   options: { projectRoot?: string | null; home?: string; probe?: ReferenceProbe } = {}
 ): Promise<string | null> {
   const probe = options.probe ?? fsProbe;
-  const home = options.home ?? homedir();
+  const home = options.home ?? realHomeDir();
   const documentDir = path.dirname(documentPath);
 
   let candidates: string[];
@@ -135,12 +151,15 @@ export interface LinkTarget {
   path: string;
   /** Whether a file is there */
   exists: boolean;
+  /** Something is there, but the macOS sandbox has not been given access to it */
+  blocked?: boolean;
 }
 
 export async function resolveRelativeLink(
   href: string,
   documentPath: string,
-  probe: ReferenceProbe = fsProbe
+  probe: ReferenceProbe = fsProbe,
+  home: string = realHomeDir()
 ): Promise<LinkTarget | null> {
   const trimmed = href.trim();
   if (!trimmed || trimmed.startsWith('#') || /^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return null;
@@ -153,10 +172,17 @@ export async function resolveRelativeLink(
     // Keep as written
   }
 
-  const candidate = path.isAbsolute(target)
-    ? path.normalize(target)
-    : path.resolve(path.dirname(documentPath), target);
-  return { path: candidate, exists: await probe.isFile(candidate) };
+  let candidate: string;
+  if (target === '~' || target.startsWith('~/')) {
+    candidate = path.join(home, target.slice(1));
+  } else if (path.isAbsolute(target)) {
+    candidate = path.normalize(target);
+  } else {
+    candidate = path.resolve(path.dirname(documentPath), target);
+  }
+  if (await probe.isFile(candidate)) return { path: candidate, exists: true };
+  if (await probe.isBlocked?.(candidate)) return { path: candidate, exists: false, blocked: true };
+  return { path: candidate, exists: false };
 }
 
 /**

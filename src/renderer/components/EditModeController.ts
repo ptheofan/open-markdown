@@ -65,6 +65,8 @@ export class EditModeController {
   private padTables = true;
   /** Whether the document came in ending with a newline, to leave it that way */
   private trailingNewline = false;
+  /** The file's line ending, restored on output; edits work in '\n' */
+  private eol: '\n' | '\r\n' = '\n';
   private toolbarVisible = false;
   private toolbar: FloatingFormatToolbar | null = null;
   private activeMenu: HTMLElement | null = null;
@@ -92,6 +94,10 @@ export class EditModeController {
    * Enter edit mode - render content as slices
    */
   async enter(markdown: string): Promise<void> {
+    // A CRLF file is edited as LF (table serialization and reassembly write
+    // '\n') and written back as CRLF. A file with mixed endings is left as is.
+    this.eol = /\r\n/.test(markdown) && !/(^|[^\r])\n/.test(markdown) ? '\r\n' : '\n';
+    if (this.eol === '\r\n') markdown = markdown.replace(/\r\n/g, '\n');
     this.rawMarkdown = markdown;
     this.trailingNewline = markdown.endsWith('\n');
     this.slices = this.slicer.slice(markdown);
@@ -118,13 +124,14 @@ export class EditModeController {
 
   /**
    * Get the current markdown content. A file that ended with a newline keeps
-   * it: the slices themselves never hold one.
+   * it: the slices themselves never hold one. A CRLF file gets CRLF back.
    */
   getMarkdown(): string {
-    if (this.trailingNewline && this.rawMarkdown !== '' && !this.rawMarkdown.endsWith('\n')) {
-      return `${this.rawMarkdown}\n`;
+    let markdown = this.rawMarkdown;
+    if (this.trailingNewline && markdown !== '' && !markdown.endsWith('\n')) {
+      markdown = `${markdown}\n`;
     }
-    return this.rawMarkdown;
+    return this.eol === '\r\n' ? markdown.replace(/\n/g, '\r\n') : markdown;
   }
 
   private emitContentChange(): void {
@@ -377,8 +384,7 @@ export class EditModeController {
 
     slice.raw = '';
     slice.type = 'paragraph';
-    this.rawMarkdown = this.slices.map((s) => s.raw).join('\n\n');
-    this.recomputeLineNumbers();
+    this.rebuildFromSlices();
     this.emitContentChange();
 
     this.renderSlicesSync();
@@ -592,8 +598,7 @@ export class EditModeController {
       };
       this.slices.splice(idx, 0, empty);
 
-      this.rawMarkdown = this.slices.map((s) => s.raw).join('\n\n');
-      this.recomputeLineNumbers();
+      this.rebuildFromSlices(empty);
       this.emitContentChange();
 
       this.renderSlicesSync();
@@ -618,11 +623,8 @@ export class EditModeController {
     // is a valid paragraph in our model but markdown can't express an empty
     // paragraph, so slicer.slice() would collapse it away and startEdit would
     // land on the next existing slice instead of the new empty one. We rebuild
-    // rawMarkdown with '\n\n' separators (paragraph break — single '\n' would
-    // soft-break) and recompute line numbers manually so reassemble's
-    // startLine-sort still works for later structural actions.
-    this.rawMarkdown = this.slices.map((s) => s.raw).join('\n\n');
-    this.recomputeLineNumbers();
+    // rawMarkdown from the slices directly instead.
+    this.rebuildFromSlices(newSlice);
     this.emitContentChange();
 
     this.renderSlicesSync();
@@ -663,18 +665,26 @@ export class EditModeController {
   }
 
   /**
-   * Walk this.slices in order and assign startLine/endLine values consistent
-   * with a '\n\n'-joined reassembly. Each slice occupies its own line range
-   * plus one blank-line separator before the next.
+   * Rebuild rawMarkdown from this.slices in array order, reassigning
+   * startLine/endLine so reassemble's startLine-sort still works for later
+   * structural actions. Neighbours keep the blank lines they had between them
+   * (a tight list stays tight); an inserted slice gets one blank line on each
+   * side (a paragraph break — a single '\n' would soft-break).
    */
-  private recomputeLineNumbers(): void {
+  private rebuildFromSlices(inserted?: MarkdownSlice): void {
+    const gaps = this.slices.map((s, i) => {
+      const prev = this.slices[i - 1];
+      if (!prev) return 0;
+      if (s === inserted || prev === inserted) return 1;
+      return Math.max(0, s.startLine - prev.endLine);
+    });
     let line = 0;
-    for (const s of this.slices) {
-      s.startLine = line;
-      const lineCount = s.raw === '' ? 1 : s.raw.split('\n').length;
-      s.endLine = line + lineCount;
-      line = s.endLine + 1; // +1 for the blank separator between slices
-    }
+    this.slices.forEach((s, i) => {
+      s.startLine = line + gaps[i]!;
+      s.endLine = s.startLine + s.raw.split('\n').length;
+      line = s.endLine;
+    });
+    this.rawMarkdown = this.slicer.reassemble(this.slices);
   }
 
   /**

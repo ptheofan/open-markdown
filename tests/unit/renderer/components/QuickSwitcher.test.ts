@@ -6,6 +6,7 @@ import { createQuickSwitcher, rankItems } from '@renderer/components/QuickSwitch
 import type { DocumentBrowserSnapshot } from '@shared/types';
 
 const SNAPSHOT: DocumentBrowserSnapshot = {
+  pinned: [],
   open: [
     { windowId: 1, filePath: '/repo/docs/plan.md', fileName: 'plan.md', text: '', isCurrent: true } as never,
     { windowId: 2, filePath: '/repo/README.md', fileName: 'README.md', text: '', isCurrent: false } as never,
@@ -69,6 +70,17 @@ describe('QuickSwitcher', () => {
     expect(document.activeElement).toBe(document.querySelector('.quick-switcher-input'));
     expect(document.querySelectorAll('.quick-switcher-item')).toHaveLength(4);
     expect(document.querySelector('.quick-switcher-item-selected')?.textContent).toContain('plan.md');
+  });
+
+  it('shows the folder of a Windows path without the file name', async () => {
+    loadSnapshot.mockResolvedValue({
+      pinned: [],
+      open: [],
+      recent: [{ filePath: 'C:\\notes\\a.md', fileName: 'a.md', openedAt: '2026-01-01T00:00:00Z' }],
+    });
+    create().show();
+    await settle();
+    expect(document.querySelector('.quick-switcher-path')?.textContent).toBe('C:\\notes');
   });
 
   it('filters as the user types and opens the selection on Enter', async () => {

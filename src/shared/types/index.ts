@@ -62,6 +62,7 @@ export type {
 export type {
   ViewerDescription,
   OpenDocumentEntry,
+  PinnedDocumentEntry,
   DocumentBrowserSnapshot,
 } from './documentBrowser';
 
@@ -97,7 +98,7 @@ export type {
 } from './fileAssociation';
 
 // Recent files types
-export type { RecentFileEntry, RecentFolderEntry } from './recentFiles';
+export type { PinnedFileEntry, RecentFileEntry, RecentFolderEntry } from './recentFiles';
 
 // Folder sidebar types
 export type {

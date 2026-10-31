@@ -363,3 +363,34 @@ describe('an edit on one side that swallows an edit on the other', () => {
     });
   });
 });
+
+describe('insertions both sides made at the same spot', () => {
+  it('adds a block once when both sides appended the same one', () => {
+    const result = threeWayMerge({
+      localBase: 'A\n\nB\n\nC\n',
+      local: 'A\n\nB\n\nC\n\nD\n',
+      remoteBase: 'A\n\nB\n\nC\n',
+      remote: 'A\n\nB\n\nC\n\nD\n',
+    });
+
+    expect(result.changes).toEqual([]);
+    expect(result.blocks).toEqual(['A', 'B', 'C', 'D']);
+  });
+
+  it('raises a conflict when the two sides inserted different blocks', () => {
+    const result = threeWayMerge({
+      localBase: 'A\n\nB\n',
+      local: 'A\n\nLOCAL\n\nB\n',
+      remoteBase: 'A\n\nB\n',
+      remote: 'A\n\nREMOTE\n\nB\n',
+    });
+
+    expect(result.changes).toHaveLength(1);
+    expect(result.changes[0]).toMatchObject({
+      kind: 'conflict',
+      local: 'LOCAL',
+      remote: 'REMOTE',
+    });
+    expect(joinBlocks(result.blocks)).toBe('A\n\nLOCAL\n\nB\n');
+  });
+});

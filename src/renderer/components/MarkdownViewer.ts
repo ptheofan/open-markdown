@@ -542,7 +542,7 @@ export class MarkdownViewer {
     if (anchors.length === 0 || !documentPath) return;
 
     const hrefs = Array.from(new Set(anchors.map((a) => a.getAttribute('href') ?? '')));
-    let targets: Record<string, { path: string; exists: boolean } | null> = {};
+    let targets: Record<string, { path: string; exists: boolean; blocked?: boolean } | null> = {};
     try {
       targets = await window.electronAPI.file.checkLinks(documentPath, hrefs);
     } catch {
@@ -553,7 +553,8 @@ export class MarkdownViewer {
     for (const anchor of anchors) {
       const target = targets[anchor.getAttribute('href') ?? ''];
       if (!target) continue;
-      if (target.exists) {
+      if (target.exists || target.blocked) {
+        // A blocked file is asked about when clicked, so it is not broken
         anchor.classList.remove('local-link-broken');
         anchor.title = target.path;
       } else {

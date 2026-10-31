@@ -5,6 +5,7 @@
  * Runs in the preload context, where Node's `path` module is available to
  * resolve relative references against the document's location.
  */
+import { homedir, userInfo } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -55,9 +56,22 @@ export function resolveLocalPath(baseFilePath: string, ref: string): string | nu
     decoded = cleaned;
   }
 
+  // ~ is the user's real home; in the macOS sandbox HOME is the app container
+  if (decoded === '~' || decoded.startsWith('~/')) {
+    return path.join(realHomeDir(), decoded.slice(1));
+  }
+
   return path.isAbsolute(decoded)
     ? decoded
     : path.resolve(path.dirname(baseFilePath), decoded);
+}
+
+function realHomeDir(): string {
+  try {
+    return userInfo().homedir || homedir();
+  } catch {
+    return homedir();
+  }
 }
 
 /**

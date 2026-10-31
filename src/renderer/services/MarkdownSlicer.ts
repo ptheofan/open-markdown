@@ -103,9 +103,13 @@ export class MarkdownSlicer {
               if (tokens[i]!.type === 'list_item_close') itemDepth--;
               if (itemDepth > 0) i++;
             }
-            // tokens[i] is now list_item_close
-            const closeToken = tokens[i]!;
-            const endLine = closeToken.map ? closeToken.map[1] : startLine + 1;
+            // tokens[i] is now list_item_close. Close tokens carry no map, so
+            // the item's extent (continuation lines, nested lists) comes from
+            // its open token, less any blank lines before the next item.
+            let endLine = t.map ? t.map[1] : startLine + 1;
+            while (endLine > startLine + 1 && (lines[endLine - 1] ?? '').trim() === '') {
+              endLine--;
+            }
             const raw = this.extractLines(lines, startLine, endLine);
 
             slices.push({

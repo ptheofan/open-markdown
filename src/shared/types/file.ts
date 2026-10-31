@@ -17,6 +17,8 @@ export interface FileReadResult {
   content?: string;
   error?: string;
   stats?: FileStats;
+  /** The file is there but the macOS sandbox has not been given access to it */
+  needsAccess?: boolean;
 }
 
 /**
@@ -66,6 +68,11 @@ export interface PathResolveResult {
   filePath?: string;
   /** What a relative input was resolved against */
   resolvedFrom?: PathResolveBase;
+  /**
+   * The file exists but the macOS sandbox blocks it until the user picks it
+   * in an open dialog (Mac App Store build)
+   */
+  needsAccess?: boolean;
   error?: string;
 }
 

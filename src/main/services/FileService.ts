@@ -1,9 +1,8 @@
 /**
  * FileService - Handles file operations in the main process
  */
-import { dialog, BrowserWindow } from 'electron';
+import type { BrowserWindow } from 'electron';
 import { readFile, writeFile, stat } from 'node:fs/promises';
-import { homedir } from 'node:os';
 import path from 'node:path';
 
 import { MARKDOWN_EXTENSIONS, MAX_FILE_SIZE_BYTES } from '@shared/constants';
@@ -14,6 +13,8 @@ import {
 } from '@shared/errors';
 
 import { resolveDocumentPath } from './DocumentPathResolver';
+import { isAccessDenied, realHomeDir } from './sandboxPaths';
+import { getSecurityBookmarkService } from './SecurityBookmarkService';
 
 import type {
   FileOpenResult,
@@ -45,9 +46,7 @@ export class FileService {
       properties: ['openFile'],
     };
 
-    const result = parentWindow
-      ? await dialog.showOpenDialog(parentWindow, options)
-      : await dialog.showOpenDialog(options);
+    const result = await getSecurityBookmarkService().showOpenDialog(parentWindow, options);
 
     if (result.canceled || result.filePaths.length === 0) {
       return {
@@ -99,7 +98,7 @@ export class FileService {
   async resolvePath(
     input: string,
     baseFilePath: string | null,
-    homeDir: string = homedir()
+    homeDir: string = realHomeDir()
   ): Promise<PathResolveResult> {
     const resolved = resolveDocumentPath(input, baseFilePath, homeDir);
     if (!resolved) {
@@ -111,12 +110,21 @@ export class FileService {
     let stats: Awaited<ReturnType<typeof stat>>;
     try {
       stats = await stat(filePath);
-    } catch {
+    } catch (error) {
+      if (isAccessDenied(error) && this.isMarkdownFile(path.extname(filePath))) {
+        return {
+          success: false,
+          filePath,
+          resolvedFrom,
+          needsAccess: true,
+          error: 'macOS needs your OK to open this file. Press Enter to confirm it.',
+        };
+      }
       return {
         success: false,
         filePath,
         resolvedFrom,
-        error: 'No such file.',
+        error: isAccessDenied(error) ? 'Permission denied.' : 'No such file.',
       };
     }
 
@@ -142,12 +150,54 @@ export class FileService {
   }
 
   /**
+   * Show an open dialog that starts on filePath so the user can grant the
+   * sandbox access to it with one click. Resolves to whatever file they pick.
+   */
+  async grantAccess(
+    filePath: string,
+    parentWindow?: BrowserWindow
+  ): Promise<PathResolveResult> {
+    const options: Electron.OpenDialogOptions = {
+      title: 'Open Markdown File',
+      defaultPath: filePath,
+      buttonLabel: 'Open',
+      filters: [
+        { name: 'Markdown Files', extensions: ['md', 'markdown', 'mdown', 'mkd'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+      properties: ['openFile'],
+    };
+
+    const result = await getSecurityBookmarkService().showOpenDialog(parentWindow, options);
+
+    const picked = result.canceled ? undefined : result.filePaths[0];
+    if (!picked) {
+      return { success: false, filePath, error: 'Cancelled.' };
+    }
+    if (!this.isMarkdownFile(path.extname(picked))) {
+      return {
+        success: false,
+        filePath: picked,
+        error: `Not a markdown file (${MARKDOWN_EXTENSIONS.join(', ')}).`,
+      };
+    }
+    return { success: true, filePath: picked, resolvedFrom: 'absolute' };
+  }
+
+  /**
    * Read a file from the filesystem
    */
   async readFile(filePath: string): Promise<FileReadResult> {
     try {
       // Check if file exists and get stats
       const stats = await this.getFileStats(filePath);
+      if (!stats && (await this.isBlocked(filePath))) {
+        return {
+          success: false,
+          needsAccess: true,
+          error: `macOS has not given Open Markdown access to ${filePath}.`,
+        };
+      }
       if (!stats) {
         const error = new FileNotFoundError(filePath);
         return {
@@ -228,6 +278,42 @@ export class FileService {
       };
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * Show a folder dialog that starts on the folder holding filePath. Picking
+   * it gives the sandbox access to everything inside for this session.
+   * Resolves true when the picked folder contains filePath.
+   */
+  async grantFolderAccess(
+    filePath: string,
+    parentWindow?: BrowserWindow
+  ): Promise<boolean> {
+    const folder = path.dirname(filePath);
+    const options: Electron.OpenDialogOptions = {
+      title: 'Allow Access to Folder',
+      message: `macOS needs your OK to open files in ${folder}.`,
+      defaultPath: folder,
+      buttonLabel: 'Allow',
+      properties: ['openDirectory'],
+    };
+
+    const result = await getSecurityBookmarkService().showOpenDialog(parentWindow, options);
+
+    const picked = result.canceled ? undefined : result.filePaths[0];
+    if (!picked) return false;
+    const relative = path.relative(picked, filePath);
+    return !relative.startsWith('..') && !path.isAbsolute(relative);
+  }
+
+  /** Whether the file is there but the sandbox refuses it */
+  private async isBlocked(filePath: string): Promise<boolean> {
+    try {
+      await stat(filePath);
+      return false;
+    } catch (error) {
+      return isAccessDenied(error);
     }
   }
 

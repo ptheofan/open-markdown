@@ -3670,6 +3670,63 @@ pre.sync-merge-cell {
   color: var(--text-muted);
 }
 
+.doc-browser-tile-missing {
+  color: var(--error-text, var(--text-muted));
+}
+
+.doc-browser-grid-pinned {
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+}
+
+.doc-browser-tile-pinned {
+  gap: 2px;
+  padding: 10px 36px 10px 12px;
+}
+
+.doc-browser-tile {
+  position: relative;
+}
+
+/* Pin toggle in a tile's corner: shown on hover or selection, always when on */
+.doc-browser-pin {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--text-muted);
+  background-color: var(--toolbar-bg);
+  border: 1px solid var(--border-color);
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+
+.doc-browser-pin svg {
+  fill: currentColor;
+}
+
+.doc-browser-tile:hover .doc-browser-pin,
+.doc-browser-tile-selected .doc-browser-pin,
+.doc-browser-pin-on {
+  opacity: 1;
+}
+
+.doc-browser-pin:hover {
+  color: var(--text-color);
+}
+
+.doc-browser-pin-on {
+  color: var(--link-color);
+  border-color: transparent;
+  background-color: transparent;
+}
+
 /* ===== Open Path bar ===== */
 
 .open-path-bar {

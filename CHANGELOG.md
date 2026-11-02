@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-11-02
+
+### Added
+
+- **Pinned documents**: every tile in the document browser has a pin toggle. Pinned documents sit in a Pinned section at the top with their last-modified date and time and how long ago that was, survive "Clear recent", and show in Quick Switch (#87).
+
+### Fixed
+
+- Mac App Store build: recent files, the remembered folder, pins and relative images keep working across launches. Files the sandbox has not been granted are no longer reported as "not found": Open Path, links and recent files ask for access to the folder instead, and a link the sandbox blocks is not marked broken (#86).
+- `~` expands to the real home folder in Open Path, links, file references and images, including inside the sandbox; a folder passed on the command line is no longer dropped.
+- Windows paths in Open Path: backslashes are kept, `file://` URLs and `~\` resolve, and the toolbar and Quick Switch show the file name.
+- Edit mode keeps unchanged blocks byte-for-byte: tight lists stay tight, list items keep their continuation lines and nested lists, and CRLF files stay CRLF.
+- Merging outside changes: two inserts at the same spot collapse when identical and become a conflict when they differ.
+- A document that fails to load no longer stops the one on screen from live-reloading, and Back/Forward keep their place.
+- File watching: one close listener per window, and a watch started twice or cancelled during startup no longer leaks a watcher.
+
 ## [1.6.0] - 2026-10-04
 
 ### Added

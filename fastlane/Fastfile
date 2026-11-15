@@ -30,13 +30,13 @@ PROVISIONING_PROFILE = ENV["PROVISIONING_PROFILE_PATH"] || "./resources/provisio
 platform :mac do
   desc "Build, sign, and package the MAS app"
   lane :build do
-    sh "rm -rf ../out/Open\\ Markdown-mas-arm64"
+    sh "rm -rf ../out/Open\\ Markdown-mas-universal"
 
     sh(
       "cd .. && MAS_BUILD=1 MAS_TYPE=distribution " \
       "MAS_IDENTITY='#{DIST_IDENTITY}' " \
       "MAS_PROVISIONING_PROFILE='#{PROVISIONING_PROFILE}' " \
-      "npx electron-forge package --platform mas"
+      "npx electron-forge package --platform mas --arch universal"
     )
 
     UI.success "MAS app built and signed"
@@ -44,7 +44,7 @@ platform :mac do
 
   desc "Create .pkg installer for App Store upload"
   lane :pkg do
-    app_path = "../out/Open Markdown-mas-arm64/Open Markdown.app"
+    app_path = "../out/Open Markdown-mas-universal/Open Markdown.app"
     pkg_path = "../out/Open Markdown.pkg"
 
     sh "rm -f '#{pkg_path}'"
@@ -86,14 +86,14 @@ platform :mac do
 
   desc "Build and package for local testing (development signed)"
   lane :dev do
-    sh "rm -rf ../out/Open\\ Markdown-mas-arm64"
+    sh "rm -rf ../out/Open\\ Markdown-mas-universal"
 
     sh(
       "cd .. && MAS_BUILD=1 " \
       "MAS_IDENTITY='20CC2E65C086D7A959F47F7059BC36CE1C6C7C29' " \
-      "npx electron-forge package --platform mas"
+      "npx electron-forge package --platform mas --arch universal"
     )
 
-    UI.success "MAS dev app built at out/Open Markdown-mas-arm64/"
+    UI.success "MAS dev app built at out/Open Markdown-mas-universal/"
   end
 end

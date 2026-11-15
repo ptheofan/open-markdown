@@ -39,7 +39,7 @@ A fast, native macOS/Windows/Linux desktop app for viewing Markdown files with l
 
 Or download the latest release from the [Releases](https://github.com/ptheofan/open-markdown/releases) page:
 
-- **macOS**: `.dmg` or `.zip`
+- **macOS**: `.dmg` or `.zip`, `arm64` for Apple Silicon or `x64` for Intel Macs
 - **Windows**: `.exe` installer
 - **Linux**: `.deb` or `.rpm`
 

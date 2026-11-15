@@ -27,6 +27,7 @@ describe('PreferencesService.updatePreferences', () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await fs.rm(dir, { recursive: true, force: true });
   });
 
@@ -48,6 +49,60 @@ describe('PreferencesService.updatePreferences', () => {
 
     expect(writeFile).not.toHaveBeenCalled();
     expect(listener).not.toHaveBeenCalled();
-    writeFile.mockRestore();
+  });
+
+  // A failed write must not leave the change looking saved, or retrying the
+  // same change would be skipped as a no-op and never reach disk or other windows
+  it('saves the same change again after a failed write', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.spyOn(fs, 'writeFile').mockRejectedValueOnce(new Error('disk full'));
+    const change = { plugins: { 'front-matter': { expanded: false } } };
+
+    await expect(service.updatePreferences(change)).rejects.toThrow('disk full');
+    expect(listener).not.toHaveBeenCalled();
+
+    await service.updatePreferences(change);
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    const saved = JSON.parse(await fs.readFile(service.getPreferencesPath(), 'utf-8'));
+    expect(saved.plugins['front-matter'].expanded).toBe(false);
+  });
+});
+
+describe('PreferencesService.setPluginPreferences', () => {
+  let dir: string;
+  let service: PreferencesService;
+
+  beforeEach(async () => {
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), 'prefs-test-'));
+    service = new PreferencesService(dir);
+    await service.initialize();
+  });
+
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await fs.rm(dir, { recursive: true, force: true });
+  });
+
+  it('neither writes nor notifies when the plugin preferences are unchanged', async () => {
+    await service.setPluginPreferences('front-matter', { expanded: false });
+    const listener = vi.fn();
+    service.onPreferencesChange(listener);
+    const writeFile = vi.spyOn(fs, 'writeFile');
+
+    await service.setPluginPreferences('front-matter', { expanded: false });
+
+    expect(writeFile).not.toHaveBeenCalled();
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('writes and notifies when they change', async () => {
+    const listener = vi.fn();
+    service.onPreferencesChange(listener);
+
+    await service.setPluginPreferences('front-matter', { expanded: false });
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(service.getPluginPreferences('front-matter')).toEqual({ expanded: false });
   });
 });

@@ -66,15 +66,29 @@ export class PreferencesService {
     // Ensure version is maintained
     merged.version = PREFERENCES_VERSION;
 
-    // Nothing changed: skip the write, and the broadcast that would make every
-    // window re-render its document
-    if (isDeepStrictEqual(merged, this.preferences)) return;
-    this.preferences = merged;
+    await this.commit(merged);
+  }
 
-    // Save to disk
-    await this.savePreferences();
+  /**
+   * Make `next` the current preferences: save them and notify listeners.
+   *
+   * Unchanged preferences are neither written nor broadcast; every broadcast
+   * re-renders the open documents (#90). A failed write restores the previous
+   * preferences, so retrying the same change is not mistaken for a no-op.
+   */
+  private async commit(next: AppPreferences): Promise<void> {
+    if (isDeepStrictEqual(next, this.preferences)) return;
 
-    // Notify listeners
+    const previous = this.preferences;
+    this.preferences = next;
+    try {
+      await this.savePreferences();
+    } catch (error) {
+      // Leave a newer change that landed during the write alone
+      if (this.preferences === next) this.preferences = previous;
+      throw error;
+    }
+
     this.notifyListeners();
   }
 
@@ -115,9 +129,10 @@ export class PreferencesService {
    * Set plugin-specific preferences
    */
   async setPluginPreferences<T>(pluginId: string, prefs: T): Promise<void> {
-    this.preferences.plugins[pluginId] = prefs;
-    await this.savePreferences();
-    this.notifyListeners();
+    await this.commit({
+      ...this.preferences,
+      plugins: { ...this.preferences.plugins, [pluginId]: prefs },
+    });
   }
 
   /**

@@ -112,6 +112,12 @@ export class MarkdownViewer {
     | ((filePath: string, line: number | null, column: number | null) => void)
     | null = null;
   private onFrontMatterToggle: ((expanded: boolean) => void) | null = null;
+  /**
+   * Open state of the front matter block as last rendered or reported. A
+   * block inserted with `open` fires `toggle` with nothing changed, so only a
+   * `toggle` that differs from this is the reader's doing.
+   */
+  private frontMatterOpen: boolean | null = null;
   /** Bumped per render, so a slow reference lookup cannot decorate a newer document */
   private renderGeneration = 0;
 
@@ -229,6 +235,8 @@ export class MarkdownViewer {
       // Render markdown to HTML
       const html = this.pluginManager.render(markdown);
       this.container.innerHTML = html;
+      this.frontMatterOpen =
+        this.container.querySelector<HTMLDetailsElement>('details.front-matter')?.open ?? null;
       this.applyTaskListInteractivity();
       const generation = ++this.renderGeneration;
       void this.resolveFileReferences(generation);
@@ -735,8 +743,10 @@ export class MarkdownViewer {
         if (
           details instanceof HTMLDetailsElement &&
           details.classList.contains('front-matter') &&
-          !this.isEditMode
+          !this.isEditMode &&
+          details.open !== this.frontMatterOpen
         ) {
+          this.frontMatterOpen = details.open;
           this.onFrontMatterToggle?.(details.open);
         }
       },

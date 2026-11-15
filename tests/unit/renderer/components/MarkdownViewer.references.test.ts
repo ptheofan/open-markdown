@@ -142,6 +142,39 @@ describe('MarkdownViewer front matter', () => {
     expect(onToggle).toHaveBeenLastCalledWith(true);
   });
 
+  // Inserting `<details open>` fires `toggle` with nothing changed. Reporting it
+  // saved the preference, which re-rendered the document, which fired it again (#90).
+  it('ignores the toggle a freshly rendered open block fires on its own', async () => {
+    const onToggle = vi.fn();
+    viewer.setOnFrontMatterToggle(onToggle);
+
+    await viewer.render('---\nname: x\n---\n\n# T', FILE);
+    container
+      .querySelector<HTMLDetailsElement>('details.front-matter')!
+      .dispatchEvent(new Event('toggle'));
+
+    await viewer.render('---\nname: x\n---\n\n# T', FILE);
+    container
+      .querySelector<HTMLDetailsElement>('details.front-matter')!
+      .dispatchEvent(new Event('toggle'));
+
+    expect(onToggle).not.toHaveBeenCalled();
+  });
+
+  it('reports every real change, even before the preference catches up', async () => {
+    const onToggle = vi.fn();
+    viewer.setOnFrontMatterToggle(onToggle);
+    await viewer.render('---\nname: x\n---\n\n# T', FILE);
+    const details = container.querySelector<HTMLDetailsElement>('details.front-matter')!;
+
+    details.open = false;
+    details.dispatchEvent(new Event('toggle'));
+    details.open = true;
+    details.dispatchEvent(new Event('toggle'));
+
+    expect(onToggle.mock.calls).toEqual([[false], [true]]);
+  });
+
   it('follows the plugin preference for the initial state', async () => {
     await viewer.initialize();
     viewer.notifyPluginPreferencesChange('front-matter', { expanded: false });

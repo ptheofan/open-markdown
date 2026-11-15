@@ -708,12 +708,14 @@ class App {
   }
 
   /**
-   * Apply theme to the document
+   * Apply theme to the document: CSS variables, toolbar and rendered content
+   *
+   * @param systemTheme the system theme, when the caller already knows it
    */
-  private async applyTheme(theme: ThemeMode): Promise<void> {
+  private async applyTheme(theme: ThemeMode, systemTheme?: ResolvedTheme): Promise<void> {
     // null means a newer applyTheme() call started while this one waited on
     // the system theme; applying now would undo that newer theme.
-    const resolvedTheme = await this.themeResolver.resolve(theme);
+    const resolvedTheme = await this.themeResolver.resolve(theme, systemTheme);
     if (resolvedTheme === null) return;
 
     // Get plugin theme declarations
@@ -754,17 +756,12 @@ class App {
     );
     this.cleanupFunctions.push(cleanupFileDelete);
 
-    // System theme change listener
+    // System theme change listener. Goes through applyTheme so rendered
+    // content (Mermaid bakes its palette into each SVG) is redrawn too.
     const cleanupThemeChange = window.electronAPI.theme.onSystemChange(
       (event) => {
         if (this.state.currentTheme === 'system') {
-          const pluginDeclarations = this.markdownViewer?.getPluginThemeDeclarations() ?? {};
-          applyThemeCSS(
-            event.theme,
-            pluginDeclarations,
-            this.state.currentPreferences ?? undefined
-          );
-          this.toolbar?.setTheme(event.theme);
+          void this.applyTheme('system', event.theme);
         }
       }
     );

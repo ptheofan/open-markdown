@@ -87,6 +87,21 @@ export class MarkdownViewer {
   private readonly diagramControls = new DiagramControls({
     onOpenLightbox: (svg, caption) => this.onOpenLightbox?.({ svg, caption }),
   });
+  /** Theme the next render draws with (Mermaid fixes it into its SVG) */
+  private theme: 'light' | 'dark' | null = null;
+  /** Each plugin's preferences as last notified, keyed by plugin id */
+  private pluginPreferences: Record<string, unknown> = {};
+  /**
+   * The theme and plugin preferences the document on screen was rendered
+   * with, as `renderInputs()` reported them. Nothing else a preference
+   * holds reaches the rendered document; typography and colours are CSS.
+   */
+  private renderedWith: string | null = null;
+  /**
+   * The project root file references were last resolved against; null until
+   * the app first reports it. Main reads the root itself when resolving.
+   */
+  private projectRoot: string | null = null;
   /** Whether task-list checkboxes toggle their marker in the source */
   private interactiveTaskLists = true;
   private onTaskToggle: ((markdown: string) => void) | null = null;
@@ -97,6 +112,12 @@ export class MarkdownViewer {
     | ((filePath: string, line: number | null, column: number | null) => void)
     | null = null;
   private onFrontMatterToggle: ((expanded: boolean) => void) | null = null;
+  /**
+   * Open state of the front matter block as last rendered or reported. A
+   * block inserted with `open` fires `toggle` with nothing changed, so only a
+   * `toggle` that differs from this is the reader's doing.
+   */
+  private frontMatterOpen: boolean | null = null;
   /** Bumped per render, so a slow reference lookup cannot decorate a newer document */
   private renderGeneration = 0;
 
@@ -208,10 +229,14 @@ export class MarkdownViewer {
       this.state.filePath = filePath;
     }
 
+    this.renderedWith = this.renderInputs();
+
     try {
       // Render markdown to HTML
       const html = this.pluginManager.render(markdown);
       this.container.innerHTML = html;
+      this.frontMatterOpen =
+        this.container.querySelector<HTMLDetailsElement>('details.front-matter')?.open ?? null;
       this.applyTaskListInteractivity();
       const generation = ++this.renderGeneration;
       void this.resolveFileReferences(generation);
@@ -235,6 +260,8 @@ export class MarkdownViewer {
         this.diagramControls.attach(this.container);
       }
     } catch (error) {
+      // Nothing usable was rendered, so the next setTheme should try again
+      this.renderedWith = null;
       console.error('Render error:', error);
       this.container.innerHTML = `
         <div class="render-error">
@@ -322,6 +349,7 @@ export class MarkdownViewer {
    * @param preferences - The updated preferences for that plugin
    */
   notifyPluginPreferencesChange(pluginId: string, preferences: unknown): void {
+    this.pluginPreferences[pluginId] = preferences;
     this.pluginManager.notifyPluginPreferencesChange(pluginId, preferences);
   }
 
@@ -332,7 +360,20 @@ export class MarkdownViewer {
   notifyAllPluginsPreferencesChange(
     preferencesMap: Record<string, unknown>
   ): void {
+    this.pluginPreferences = { ...preferencesMap };
     this.pluginManager.notifyAllPluginsPreferencesChange(preferencesMap);
+  }
+
+  /**
+   * Everything a preference can change about the rendered document, as one
+   * comparable string. Plugins are sorted by id, so the same preferences
+   * arriving in another order don't read as a change.
+   */
+  private renderInputs(): string {
+    const plugins = Object.keys(this.pluginPreferences)
+      .sort()
+      .map((id) => [id, this.pluginPreferences[id]]);
+    return JSON.stringify([this.theme, plugins]);
   }
 
   /**
@@ -404,7 +445,11 @@ export class MarkdownViewer {
 
   /**
    * Set theme for theme-aware plugins (like Mermaid)
-   * Re-renders content if there's any loaded
+   *
+   * Re-renders the loaded content only when the theme or a plugin's
+   * preferences differ from what it was rendered with. The app calls this
+   * after every preference change, and a rebuild drops the reader's
+   * selection, opened `<details>` and diagram zoom.
    */
   async setTheme(theme: 'light' | 'dark'): Promise<void> {
     // Update Mermaid plugin theme
@@ -412,9 +457,9 @@ export class MarkdownViewer {
     if (mermaidPlugin && 'setTheme' in mermaidPlugin) {
       mermaidPlugin.setTheme(theme);
     }
+    this.theme = theme;
 
-    // Re-render if we have content
-    if (this.state.content) {
+    if (this.state.content && this.renderInputs() !== this.renderedWith) {
       await this.render(this.state.content, this.state.filePath ?? undefined);
     }
   }
@@ -582,6 +627,20 @@ export class MarkdownViewer {
   }
 
   /**
+   * Report the project root that file references resolve against. When it
+   * changes, the open document's references are resolved again in place:
+   * main reads the root at resolve time, and a rebuild would cost the
+   * reader their selection and opened sections.
+   */
+  setProjectRoot(root: string): void {
+    const changed = this.projectRoot !== null && root !== this.projectRoot;
+    this.projectRoot = root;
+    if (changed && !this.isEditMode) {
+      void this.resolveFileReferences(this.renderGeneration);
+    }
+  }
+
+  /**
    * Set the callback invoked with the updated markdown after a task-list
    * checkbox is toggled. Whoever receives it persists it.
    */
@@ -684,8 +743,10 @@ export class MarkdownViewer {
         if (
           details instanceof HTMLDetailsElement &&
           details.classList.contains('front-matter') &&
-          !this.isEditMode
+          !this.isEditMode &&
+          details.open !== this.frontMatterOpen
         ) {
+          this.frontMatterOpen = details.open;
           this.onFrontMatterToggle?.(details.open);
         }
       },

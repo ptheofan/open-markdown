@@ -43,6 +43,12 @@ jobs:
           - os: windows-latest
           - os: ubuntu-latest
 
+    # A step's `if` cannot see its own `env`, and `secrets` is not allowed in
+    # a step `if` at all, so whether the Developer ID secrets exist is decided
+    # here, where the secrets context is available.
+    env:
+      HAS_DEVELOPER_ID: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE != '' && secrets.APPLE_ID != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD != '' }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -66,10 +72,16 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y rpm fakeroot dpkg
 
       # Developer ID signing + notarization. Without these secrets the macOS
-      # build is ad-hoc signed and Squirrel.Mac will refuse to install it, so
-      # the updater only works for releases built with them.
+      # build is ad-hoc signed: Gatekeeper blocks the download and Squirrel.Mac
+      # refuses to install it as an update. Fail rather than publish that.
+      - name: Require Developer ID secrets
+        if: runner.os == 'macOS' && env.HAS_DEVELOPER_ID != 'true'
+        run: |
+          echo "::error::MACOS_DEVELOPER_ID_CERTIFICATE, APPLE_ID and APPLE_APP_SPECIFIC_PASSWORD must be set; an unsigned Mac build cannot be installed or auto-updated."
+          exit 1
+
       - name: Setup macOS signing
-        if: runner.os == 'macOS' && env.MACOS_DEVELOPER_ID_CERTIFICATE != ''
+        if: runner.os == 'macOS'
         env:
           MACOS_DEVELOPER_ID_CERTIFICATE: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE }}
           MACOS_DEVELOPER_ID_CERTIFICATE_PWD: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_PWD }}

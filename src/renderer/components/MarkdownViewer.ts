@@ -87,6 +87,16 @@ export class MarkdownViewer {
   private readonly diagramControls = new DiagramControls({
     onOpenLightbox: (svg, caption) => this.onOpenLightbox?.({ svg, caption }),
   });
+  /** Theme the next render draws with (Mermaid fixes it into its SVG) */
+  private theme: 'light' | 'dark' | null = null;
+  /** Each plugin's preferences as last notified, keyed by plugin id */
+  private pluginPreferences: Record<string, unknown> = {};
+  /**
+   * The theme and plugin preferences the document on screen was rendered
+   * with, as `renderInputs()` reported them. Nothing else a preference
+   * holds reaches the rendered document; typography and colours are CSS.
+   */
+  private renderedWith: string | null = null;
   /** Whether task-list checkboxes toggle their marker in the source */
   private interactiveTaskLists = true;
   private onTaskToggle: ((markdown: string) => void) | null = null;
@@ -208,6 +218,8 @@ export class MarkdownViewer {
       this.state.filePath = filePath;
     }
 
+    this.renderedWith = this.renderInputs();
+
     try {
       // Render markdown to HTML
       const html = this.pluginManager.render(markdown);
@@ -322,6 +334,7 @@ export class MarkdownViewer {
    * @param preferences - The updated preferences for that plugin
    */
   notifyPluginPreferencesChange(pluginId: string, preferences: unknown): void {
+    this.pluginPreferences[pluginId] = preferences;
     this.pluginManager.notifyPluginPreferencesChange(pluginId, preferences);
   }
 
@@ -332,7 +345,16 @@ export class MarkdownViewer {
   notifyAllPluginsPreferencesChange(
     preferencesMap: Record<string, unknown>
   ): void {
+    this.pluginPreferences = { ...preferencesMap };
     this.pluginManager.notifyAllPluginsPreferencesChange(preferencesMap);
+  }
+
+  /**
+   * Everything a preference can change about the rendered document, as one
+   * comparable string
+   */
+  private renderInputs(): string {
+    return JSON.stringify([this.theme, this.pluginPreferences]);
   }
 
   /**
@@ -404,7 +426,11 @@ export class MarkdownViewer {
 
   /**
    * Set theme for theme-aware plugins (like Mermaid)
-   * Re-renders content if there's any loaded
+   *
+   * Re-renders the loaded content only when the theme or a plugin's
+   * preferences differ from what it was rendered with. The app calls this
+   * after every preference change, and a rebuild drops the reader's
+   * selection, opened `<details>` and diagram zoom.
    */
   async setTheme(theme: 'light' | 'dark'): Promise<void> {
     // Update Mermaid plugin theme
@@ -412,9 +438,9 @@ export class MarkdownViewer {
     if (mermaidPlugin && 'setTheme' in mermaidPlugin) {
       mermaidPlugin.setTheme(theme);
     }
+    this.theme = theme;
 
-    // Re-render if we have content
-    if (this.state.content) {
+    if (this.state.content && this.renderInputs() !== this.renderedWith) {
       await this.render(this.state.content, this.state.filePath ?? undefined);
     }
   }

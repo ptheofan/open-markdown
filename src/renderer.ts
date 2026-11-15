@@ -655,6 +655,7 @@ class App {
       this.updateExternalEditorLabel(preferences.core.externalEditor.editor);
       this.applyExperimentalFeatures(preferences.core.experimental);
       this.markdownViewer?.setInteractiveTaskLists(preferences.core.viewer.interactiveTaskLists);
+      this.markdownViewer?.setProjectRoot(preferences.core.viewer.projectRoot);
       this.markdownViewer?.setTablePadding(preferences.core.editor.padTables);
       await this.applyTheme(this.state.currentTheme);
 
@@ -682,6 +683,7 @@ class App {
           this.applyExperimentalFeatures(prefs.core.experimental);
 
           this.markdownViewer?.setInteractiveTaskLists(prefs.core.viewer.interactiveTaskLists);
+          this.markdownViewer?.setProjectRoot(prefs.core.viewer.projectRoot);
 
           this.markdownViewer?.setTablePadding(prefs.core.editor.padTables);
 
@@ -1877,6 +1879,7 @@ class App {
       this.updateExternalEditorLabel(updatedPrefs.core.externalEditor.editor);
 
       this.markdownViewer?.setInteractiveTaskLists(updatedPrefs.core.viewer.interactiveTaskLists);
+      this.markdownViewer?.setProjectRoot(updatedPrefs.core.viewer.projectRoot);
 
       this.markdownViewer?.setTablePadding(updatedPrefs.core.editor.padTables);
 

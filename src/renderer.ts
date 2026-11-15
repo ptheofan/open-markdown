@@ -69,6 +69,7 @@ import {
   DiffService,
   FindService,
   NavigationHistory,
+  ThemeResolver,
   type DocumentCopyService,
   type CopyDocumentType,
 } from './renderer/services';
@@ -192,6 +193,9 @@ class App {
 
   private cleanupFunctions: Array<() => void> = [];
   private contentRenderTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly themeResolver = new ThemeResolver(() =>
+    window.electronAPI.theme.getSystem()
+  );
 
   /**
    * Initialize the application
@@ -688,7 +692,10 @@ class App {
           // Notify plugins of preference changes
           this.markdownViewer?.notifyAllPluginsPreferencesChange(prefs.plugins);
 
-          // Re-apply theme with updated preferences
+          // Follow the theme mode too, so a change saved elsewhere (another
+          // window, or the toolbar toggle before its invoke reply lands) is
+          // not re-applied with a stale mode.
+          this.state.currentTheme = prefs.core.theme.mode;
           void this.applyTheme(this.state.currentTheme);
         }
       );
@@ -702,17 +709,10 @@ class App {
    * Apply theme to the document
    */
   private async applyTheme(theme: ThemeMode): Promise<void> {
-    let resolvedTheme: ResolvedTheme;
-
-    if (theme === 'system') {
-      try {
-        resolvedTheme = await window.electronAPI.theme.getSystem();
-      } catch {
-        resolvedTheme = 'light';
-      }
-    } else {
-      resolvedTheme = theme;
-    }
+    // null means a newer applyTheme() call started while this one waited on
+    // the system theme; applying now would undo that newer theme.
+    const resolvedTheme = await this.themeResolver.resolve(theme);
+    if (resolvedTheme === null) return;
 
     // Get plugin theme declarations
     const pluginDeclarations = this.markdownViewer?.getPluginThemeDeclarations() ?? {};

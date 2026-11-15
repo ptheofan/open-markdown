@@ -64,4 +64,32 @@ describe('ThemeResolver', () => {
     await expect(explicit).resolves.toBe('light');
     await expect(latest).resolves.toBe('dark');
   });
+
+  it('uses a system theme the caller already knows, without asking', async () => {
+    // The OS appearance change event carries the new theme with it.
+    const getSystem = vi.fn(() => Promise.resolve<ResolvedTheme>('light'));
+    const resolver = new ThemeResolver(getSystem);
+
+    await expect(resolver.resolve('system', 'dark')).resolves.toBe('dark');
+    expect(getSystem).not.toHaveBeenCalled();
+  });
+
+  it('lets a known system theme overtake an earlier system lookup', async () => {
+    // Startup asks for the system theme; the OS flips to dark before it answers.
+    const system = deferredSystemTheme();
+    const resolver = new ThemeResolver(system.getSystem);
+
+    const stale = resolver.resolve('system');
+    const fresh = resolver.resolve('system', 'dark');
+    system.reply('light');
+
+    await expect(fresh).resolves.toBe('dark');
+    await expect(stale).resolves.toBeNull();
+  });
+
+  it('ignores a known system theme when the mode is explicit', async () => {
+    const resolver = new ThemeResolver(() => Promise.resolve('dark'));
+
+    await expect(resolver.resolve('light', 'dark')).resolves.toBe('light');
+  });
 });

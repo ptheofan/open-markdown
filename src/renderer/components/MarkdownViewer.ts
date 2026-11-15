@@ -97,6 +97,11 @@ export class MarkdownViewer {
    * holds reaches the rendered document; typography and colours are CSS.
    */
   private renderedWith: string | null = null;
+  /**
+   * The project root file references were last resolved against; null until
+   * the app first reports it. Main reads the root itself when resolving.
+   */
+  private projectRoot: string | null = null;
   /** Whether task-list checkboxes toggle their marker in the source */
   private interactiveTaskLists = true;
   private onTaskToggle: ((markdown: string) => void) | null = null;
@@ -247,6 +252,8 @@ export class MarkdownViewer {
         this.diagramControls.attach(this.container);
       }
     } catch (error) {
+      // Nothing usable was rendered, so the next setTheme should try again
+      this.renderedWith = null;
       console.error('Render error:', error);
       this.container.innerHTML = `
         <div class="render-error">
@@ -351,10 +358,14 @@ export class MarkdownViewer {
 
   /**
    * Everything a preference can change about the rendered document, as one
-   * comparable string
+   * comparable string. Plugins are sorted by id, so the same preferences
+   * arriving in another order don't read as a change.
    */
   private renderInputs(): string {
-    return JSON.stringify([this.theme, this.pluginPreferences]);
+    const plugins = Object.keys(this.pluginPreferences)
+      .sort()
+      .map((id) => [id, this.pluginPreferences[id]]);
+    return JSON.stringify([this.theme, plugins]);
   }
 
   /**
@@ -604,6 +615,20 @@ export class MarkdownViewer {
     this.interactiveTaskLists = enabled;
     if (!this.isEditMode) {
       this.applyTaskListInteractivity();
+    }
+  }
+
+  /**
+   * Report the project root that file references resolve against. When it
+   * changes, the open document's references are resolved again in place:
+   * main reads the root at resolve time, and a rebuild would cost the
+   * reader their selection and opened sections.
+   */
+  setProjectRoot(root: string): void {
+    const changed = this.projectRoot !== null && root !== this.projectRoot;
+    this.projectRoot = root;
+    if (changed && !this.isEditMode) {
+      void this.resolveFileReferences(this.renderGeneration);
     }
   }
 

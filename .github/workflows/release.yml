@@ -5,8 +5,9 @@ name: Release
 # published. The Mac App Store build has its own workflow (release-mas.yml).
 #
 # Assets per platform:
-#   macOS   .dmg and .zip  (the .zip is what update.electronjs.org serves to
-#           Squirrel.Mac; it must be signed and notarized to be accepted)
+#   macOS   .dmg and .zip for arm64 and for x64 (the .zip is what
+#           update.electronjs.org serves to Squirrel.Mac; it must be signed
+#           and notarized to be accepted)
 #   Windows Setup.exe, RELEASES and .nupkg (Squirrel.Windows)
 #   Linux   .deb and .rpm  (no in-place update; the app announces new versions)
 
@@ -24,12 +25,23 @@ permissions:
 
 jobs:
   publish:
-    name: Publish (${{ matrix.os }})
+    name: Publish (${{ matrix.os }}${{ matrix.arch && format(' {0}', matrix.arch) || '' }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+        # macOS ships one build per architecture rather than a universal one,
+        # so each Mac downloads (and auto-updates) only its own binaries.
+        # update.electronjs.org routes a "-darwin-arm64" zip to Apple Silicon
+        # and any other "-darwin" zip to Intel. The x64 build is cross-packaged
+        # on the Apple Silicon runner; the app has no native modules.
+        include:
+          - os: macos-latest
+            arch: arm64
+          - os: macos-latest
+            arch: x64
+          - os: windows-latest
+          - os: ubuntu-latest
 
     steps:
       - name: Checkout
@@ -86,7 +98,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
-        run: pnpm run publish
+        run: pnpm run publish ${{ matrix.arch && format('--arch={0}', matrix.arch) || '' }}
 
       - name: Cleanup keychain
         if: always() && runner.os == 'macOS'

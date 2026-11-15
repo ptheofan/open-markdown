@@ -7,6 +7,7 @@
 import { app } from 'electron';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { isDeepStrictEqual } from 'util';
 
 import type { AppPreferences, DeepPartial, ThemeMode } from '@shared/types';
 import {
@@ -60,10 +61,15 @@ export class PreferencesService {
    */
   async updatePreferences(updates: DeepPartial<AppPreferences>): Promise<void> {
     // Deep merge updates into current preferences
-    this.preferences = deepMerge(this.preferences, updates as Partial<AppPreferences>);
+    const merged = deepMerge(this.preferences, updates as Partial<AppPreferences>);
 
     // Ensure version is maintained
-    this.preferences.version = PREFERENCES_VERSION;
+    merged.version = PREFERENCES_VERSION;
+
+    // Nothing changed: skip the write, and the broadcast that would make every
+    // window re-render its document
+    if (isDeepStrictEqual(merged, this.preferences)) return;
+    this.preferences = merged;
 
     // Save to disk
     await this.savePreferences();

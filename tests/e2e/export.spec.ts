@@ -22,13 +22,16 @@ const test = base.extend<{ exportDir: string; electronApp: ElectronApplication; 
     await fs.rm(dir, { recursive: true, force: true });
   },
   electronApp: async ({ exportDir }, use) => {
+    // A throwaway profile: the export choices a test confirms are persisted
+    const userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'open-markdown-e2e-'));
     const app = await electron.launch({
-      args: [path.join(__dirname, '../../.vite/build/index.js')],
+      args: [path.join(__dirname, '../../.vite/build/index.js'), `--user-data-dir=${userDataDir}`],
       env: { ...process.env, OPEN_MARKDOWN_E2E_EXPORT_DIR: exportDir },
       timeout: 30000,
     });
     await use(app);
     await app.close();
+    await fs.rm(userDataDir, { recursive: true, force: true });
   },
   mainWindow: async ({ electronApp }, use) => {
     await electronApp.firstWindow();

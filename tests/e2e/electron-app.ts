@@ -3,6 +3,8 @@
  *
  * Provides utilities for launching and interacting with the Electron app in E2E tests.
  */
+import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 
 import { test as base, type ElectronApplication, type Page } from '@playwright/test';
@@ -17,9 +19,11 @@ export const test = base.extend<{
   electronApp: async ({}, use) => {
     // Launch Electron using the development build
     const mainPath = path.join(__dirname, '../../.vite/build/index.js');
+    // A throwaway profile per test: prefs a test saves must not leak into the next run
+    const userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'open-markdown-e2e-'));
 
     const app = await electron.launch({
-      args: [mainPath],
+      args: [mainPath, `--user-data-dir=${userDataDir}`],
       timeout: 30000,
     });
 
@@ -27,6 +31,7 @@ export const test = base.extend<{
 
     // Cleanup
     await app.close();
+    await fs.rm(userDataDir, { recursive: true, force: true });
   },
 
   mainWindow: async ({ electronApp }, use) => {

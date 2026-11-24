@@ -5,6 +5,8 @@
  */
 import { test as base, expect, type Page } from '@playwright/test';
 import { _electron as electron, type ElectronApplication } from 'playwright';
+import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 
 // Custom fixture that launches electron
@@ -15,12 +17,14 @@ const test = base.extend<{
   // eslint-disable-next-line no-empty-pattern
   electronApp: async ({}, use) => {
     const mainPath = path.join(__dirname, '../../.vite/build/index.js');
+    const userDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'open-markdown-e2e-'));
     const app = await electron.launch({
-      args: [mainPath],
+      args: [mainPath, `--user-data-dir=${userDataDir}`],
       timeout: 30000,
     });
     await use(app);
     await app.close();
+    await fs.rm(userDataDir, { recursive: true, force: true });
   },
   mainWindow: async ({ electronApp }, use) => {
     const window = await electronApp.firstWindow();

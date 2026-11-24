@@ -35,6 +35,10 @@ export class SecurityBookmarkService {
   private readonly startAccess: (bookmark: string) => void;
   /** Path to bookmark, oldest first */
   private bookmarks = new Map<string, string>();
+  /** Where the last dialog was showing, for dialogs that name no start */
+  // ponytail: kept for this launch only; persist in preferences if the first
+  // dialog after a restart opening in Downloads bothers anyone
+  private lastDirectory: string | undefined;
 
   constructor(deps: SecurityBookmarkDeps = {}) {
     this.enabled = deps.enabled ?? Boolean(process.mas);
@@ -115,6 +119,11 @@ export class SecurityBookmarkService {
     parentWindow: BrowserWindow | undefined,
     options: Electron.OpenDialogOptions
   ): Promise<Electron.OpenDialogReturnValue> {
+    // Electron 43+ starts a dialog without defaultPath in Downloads, where the
+    // OS used to reopen the last folder; do that ourselves
+    if (options.defaultPath === undefined && this.lastDirectory) {
+      options = { ...options, defaultPath: this.lastDirectory };
+    }
     const withBookmarks: Electron.OpenDialogOptions = this.enabled
       ? { ...options, securityScopedBookmarks: true }
       : options;
@@ -122,6 +131,8 @@ export class SecurityBookmarkService {
       ? await dialog.showOpenDialog(parentWindow, withBookmarks)
       : await dialog.showOpenDialog(withBookmarks);
     if (!result.canceled) {
+      const [first] = result.filePaths;
+      if (first) this.lastDirectory = path.dirname(first);
       try {
         await this.remember(result.filePaths, result.bookmarks);
       } catch (error) {

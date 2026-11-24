@@ -17,25 +17,19 @@ export function registerClipboardHandlers(): void {
   // Handle write text to clipboard
   ipcMain.handle(
     IPC_CHANNELS.CLIPBOARD.WRITE_TEXT,
-    (_event, text: string): void => {
-      clipboardService.writeText(text);
-    }
+    (_event, text: string): Promise<void> => clipboardService.writeText(text)
   );
 
   // Handle write HTML to clipboard
   ipcMain.handle(
     IPC_CHANNELS.CLIPBOARD.WRITE_HTML,
-    (_event, html: string, text?: string): void => {
-      clipboardService.writeHtml(html, text);
-    }
+    (_event, html: string, text?: string): Promise<void> => clipboardService.writeHtml(html, text)
   );
 
   // Handle write image to clipboard
   ipcMain.handle(
     IPC_CHANNELS.CLIPBOARD.WRITE_IMAGE,
-    (_event, base64: string): void => {
-      clipboardService.writeImage(base64);
-    }
+    (_event, base64: string): Promise<void> => clipboardService.writeImage(base64)
   );
 
   // Handle save file with dialog

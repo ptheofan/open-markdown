@@ -3,31 +3,7 @@
  *
  * Tests the core SVG to PNG conversion functionality
  */
-import { test as base, expect, type Page } from '@playwright/test';
-import { _electron as electron, type ElectronApplication } from 'playwright';
-import path from 'node:path';
-
-// Custom fixture that launches electron
-const test = base.extend<{
-  electronApp: ElectronApplication;
-  mainWindow: Page;
-}>({
-  // eslint-disable-next-line no-empty-pattern
-  electronApp: async ({}, use) => {
-    const mainPath = path.join(__dirname, '../../.vite/build/index.js');
-    const app = await electron.launch({
-      args: [mainPath],
-      timeout: 30000,
-    });
-    await use(app);
-    await app.close();
-  },
-  mainWindow: async ({ electronApp }, use) => {
-    const window = await electronApp.firstWindow();
-    await window.waitForLoadState('domcontentloaded');
-    await use(window);
-  },
-});
+import { test, expect } from './electron-app';
 
 test.describe('SVG to PNG Conversion', () => {
   test('should convert simple SVG to PNG', async ({ mainWindow }) => {

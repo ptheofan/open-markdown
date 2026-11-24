@@ -138,7 +138,6 @@ export class ExportService {
           landscape: options.landscape,
           printBackground: options.printBackground,
           preferCSSPageSize: false,
-          margins: { marginType: 'default' },
         });
       });
       await writeFile(target, pdf);

@@ -30,29 +30,35 @@ export const test = base.extend<{
   },
 
   mainWindow: async ({ electronApp }, use) => {
-    // The dev build opens DevTools (WindowManager, `if (IS_DEV)`), and that
-    // window can win the race for firstWindow() — which lands every test on a
-    // page titled "DevTools" instead of the renderer. Pick by URL, not by order.
-    await electronApp.firstWindow();
-
-    const isRenderer = (page: Page): boolean =>
-      !page.url().startsWith('devtools://');
-
-    let window = electronApp.windows().find(isRenderer);
-    const deadline = Date.now() + 15000;
-    while (!window && Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      window = electronApp.windows().find(isRenderer);
-    }
-    if (!window) {
-      throw new Error('Renderer window never opened (only DevTools was found)');
-    }
-
-    // Wait for the app to be ready
-    await window.waitForLoadState('domcontentloaded');
-
-    await use(window);
+    await use(await rendererWindow(electronApp));
   },
 });
+
+/**
+ * The app's renderer window, loaded. The dev build opens DevTools
+ * (WindowManager, `if (IS_DEV)`), and that window can win the race for
+ * firstWindow(), so pick by URL, not by order. And since Electron 45
+ * firstWindow() can hand back the window while it is still on its blank
+ * initial page: domcontentloaded fires for that, then loading index.html
+ * destroys the context under the test. So wait for a real URL first.
+ */
+export async function rendererWindow(electronApp: ElectronApplication): Promise<Page> {
+  await electronApp.firstWindow();
+
+  const isRenderer = (page: Page): boolean => /^(file|https?):/.test(page.url());
+
+  let window = electronApp.windows().find(isRenderer);
+  const deadline = Date.now() + 15000;
+  while (!window && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    window = electronApp.windows().find(isRenderer);
+  }
+  if (!window) {
+    throw new Error('Renderer window never opened (only DevTools or a blank page was found)');
+  }
+
+  await window.waitForLoadState('domcontentloaded');
+  return window;
+}
 
 export { expect } from '@playwright/test';

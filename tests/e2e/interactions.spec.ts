@@ -32,10 +32,11 @@ async function openFile(electronApp: ElectronApplication, filePath: string): Pro
 }
 
 async function readClipboard(electronApp: ElectronApplication): Promise<{ text: string; html: string }> {
-  return electronApp.evaluate(({ clipboard }) => ({
-    text: clipboard.readText(),
-    html: clipboard.readHTML(),
-  }));
+  return electronApp.evaluate(async ({ clipboard }) => {
+    const [item] = await clipboard.read();
+    const html = item?.types.includes('text/html') ? await (await item.getType('text/html')).text() : '';
+    return { text: await clipboard.readText(), html };
+  });
 }
 
 async function waitForFile(filePath: string, predicate: (content: string) => boolean): Promise<string> {

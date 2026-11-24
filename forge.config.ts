@@ -89,7 +89,7 @@ const config: ForgeConfig = {
       ElectronTeamID: 'KGRHL55T3R',
       NSRequiresAquaSystemAppearance: false,
       ITSAppUsesNonExemptEncryption: false,
-      LSMinimumSystemVersion: '12.0',
+      LSMinimumSystemVersion: '13.0',
     },
   },
   rebuildConfig: {},

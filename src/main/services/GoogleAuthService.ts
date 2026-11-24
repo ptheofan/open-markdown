@@ -503,8 +503,8 @@ export class GoogleAuthService {
       const dir = path.dirname(this.tokenPath);
       await fs.mkdir(dir, { recursive: true });
 
-      if (safeStorage.isEncryptionAvailable()) {
-        const encrypted = safeStorage.encryptString(JSON.stringify(this.tokens));
+      if (await safeStorage.isAsyncEncryptionAvailable()) {
+        const encrypted = await safeStorage.encryptStringAsync(JSON.stringify(this.tokens));
         await fs.writeFile(this.tokenPath, encrypted);
       } else {
         // Fallback: write as plain JSON (not recommended in production)
@@ -522,9 +522,11 @@ export class GoogleAuthService {
     try {
       const data = await fs.readFile(this.tokenPath);
 
+      // decryptStringAsync also reads files written by the removed sync encryptString().
       let json: string;
-      if (safeStorage.isEncryptionAvailable()) {
-        json = safeStorage.decryptString(data);
+      let shouldReEncrypt = false;
+      if (await safeStorage.isAsyncEncryptionAvailable()) {
+        ({ result: json, shouldReEncrypt } = await safeStorage.decryptStringAsync(data));
       } else {
         json = data.toString('utf-8');
       }
@@ -532,6 +534,8 @@ export class GoogleAuthService {
       const parsed = JSON.parse(json) as StoredTokens;
       if (parsed.access_token && parsed.refresh_token) {
         this.tokens = parsed;
+        // The OS key rotated: rewrite the file under the current key.
+        if (shouldReEncrypt) await this.saveTokens();
       }
     } catch {
       // No saved tokens or file corrupt — start fresh

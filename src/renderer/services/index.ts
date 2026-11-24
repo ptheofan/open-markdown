@@ -26,3 +26,4 @@ export type { StandaloneHtmlOptions, StandaloneHtmlResult } from './DocumentExpo
 export { NavigationHistory } from './NavigationHistory';
 export type { HistoryEntry } from './NavigationHistory';
 export { fuzzyMatch, rankByFuzzy } from './fuzzy';
+export { ThemeResolver } from './ThemeResolver';

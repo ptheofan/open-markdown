@@ -7,6 +7,7 @@
 import { app } from 'electron';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { isDeepStrictEqual } from 'util';
 
 import type { AppPreferences, DeepPartial, ThemeMode } from '@shared/types';
 import {
@@ -60,15 +61,34 @@ export class PreferencesService {
    */
   async updatePreferences(updates: DeepPartial<AppPreferences>): Promise<void> {
     // Deep merge updates into current preferences
-    this.preferences = deepMerge(this.preferences, updates as Partial<AppPreferences>);
+    const merged = deepMerge(this.preferences, updates as Partial<AppPreferences>);
 
     // Ensure version is maintained
-    this.preferences.version = PREFERENCES_VERSION;
+    merged.version = PREFERENCES_VERSION;
 
-    // Save to disk
-    await this.savePreferences();
+    await this.commit(merged);
+  }
 
-    // Notify listeners
+  /**
+   * Make `next` the current preferences: save them and notify listeners.
+   *
+   * Unchanged preferences are neither written nor broadcast; every broadcast
+   * re-renders the open documents (#90). A failed write restores the previous
+   * preferences, so retrying the same change is not mistaken for a no-op.
+   */
+  private async commit(next: AppPreferences): Promise<void> {
+    if (isDeepStrictEqual(next, this.preferences)) return;
+
+    const previous = this.preferences;
+    this.preferences = next;
+    try {
+      await this.savePreferences();
+    } catch (error) {
+      // Leave a newer change that landed during the write alone
+      if (this.preferences === next) this.preferences = previous;
+      throw error;
+    }
+
     this.notifyListeners();
   }
 
@@ -109,9 +129,10 @@ export class PreferencesService {
    * Set plugin-specific preferences
    */
   async setPluginPreferences<T>(pluginId: string, prefs: T): Promise<void> {
-    this.preferences.plugins[pluginId] = prefs;
-    await this.savePreferences();
-    this.notifyListeners();
+    await this.commit({
+      ...this.preferences,
+      plugins: { ...this.preferences.plugins, [pluginId]: prefs },
+    });
   }
 
   /**

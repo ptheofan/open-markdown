@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Intel Macs: the Mac App Store build is now universal, so the store no longer says it requires an Apple silicon Mac and Intel Macs can install it. The Releases page has separate Apple silicon and Intel downloads, and each Mac auto-updates to its own build. Setting Open Markdown as the default app for markdown files now works on macOS 12–15 and on Intel (#89, #92).
+- A document with expanded front matter no longer saves the preferences and re-renders every ~300 ms while it is open. A preference change that changes nothing is no longer saved or broadcast, and a save that fails can be retried (#90, #91).
+- Moving or resizing a window, exporting, or changing a setting that doesn't affect rendering no longer rebuilds the document, so the selection, opened `<details>` and diagram zoom are kept. Changing the project root updates file references without a rebuild (#93).
+- From system mode in dark, the first toolbar theme toggle switches to light instead of staying dark, and other open windows follow theme changes (#94).
+- In System mode, Mermaid diagrams redraw in the new palette when the OS switches between light and dark (#95).
 - Mac App Store build: recent files, the remembered folder, pins and relative images keep working across launches. Files the sandbox has not been granted are no longer reported as "not found": Open Path, links and recent files ask for access to the folder instead, and a link the sandbox blocks is not marked broken (#86).
 - `~` expands to the real home folder in Open Path, links, file references and images, including inside the sandbox; a folder passed on the command line is no longer dropped.
 - Windows paths in Open Path: backslashes are kept, `file://` URLs and `~\` resolve, and the toolbar and Quick Switch show the file name.

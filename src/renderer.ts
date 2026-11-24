@@ -69,6 +69,7 @@ import {
   DiffService,
   FindService,
   NavigationHistory,
+  ThemeResolver,
   type DocumentCopyService,
   type CopyDocumentType,
 } from './renderer/services';
@@ -192,6 +193,9 @@ class App {
 
   private cleanupFunctions: Array<() => void> = [];
   private contentRenderTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly themeResolver = new ThemeResolver(() =>
+    window.electronAPI.theme.getSystem()
+  );
 
   /**
    * Initialize the application
@@ -655,6 +659,7 @@ class App {
       this.updateExternalEditorLabel(preferences.core.externalEditor.editor);
       this.applyExperimentalFeatures(preferences.core.experimental);
       this.markdownViewer?.setInteractiveTaskLists(preferences.core.viewer.interactiveTaskLists);
+      this.markdownViewer?.setProjectRoot(preferences.core.viewer.projectRoot);
       this.markdownViewer?.setTablePadding(preferences.core.editor.padTables);
       await this.applyTheme(this.state.currentTheme);
 
@@ -682,13 +687,17 @@ class App {
           this.applyExperimentalFeatures(prefs.core.experimental);
 
           this.markdownViewer?.setInteractiveTaskLists(prefs.core.viewer.interactiveTaskLists);
+          this.markdownViewer?.setProjectRoot(prefs.core.viewer.projectRoot);
 
           this.markdownViewer?.setTablePadding(prefs.core.editor.padTables);
 
           // Notify plugins of preference changes
           this.markdownViewer?.notifyAllPluginsPreferencesChange(prefs.plugins);
 
-          // Re-apply theme with updated preferences
+          // Follow the theme mode too, so a change saved elsewhere (another
+          // window, or the toolbar toggle before its invoke reply lands) is
+          // not re-applied with a stale mode.
+          this.state.currentTheme = prefs.core.theme.mode;
           void this.applyTheme(this.state.currentTheme);
         }
       );
@@ -699,20 +708,15 @@ class App {
   }
 
   /**
-   * Apply theme to the document
+   * Apply theme to the document: CSS variables, toolbar and rendered content
+   *
+   * @param systemTheme the system theme, when the caller already knows it
    */
-  private async applyTheme(theme: ThemeMode): Promise<void> {
-    let resolvedTheme: ResolvedTheme;
-
-    if (theme === 'system') {
-      try {
-        resolvedTheme = await window.electronAPI.theme.getSystem();
-      } catch {
-        resolvedTheme = 'light';
-      }
-    } else {
-      resolvedTheme = theme;
-    }
+  private async applyTheme(theme: ThemeMode, systemTheme?: ResolvedTheme): Promise<void> {
+    // null means a newer applyTheme() call started while this one waited on
+    // the system theme; applying now would undo that newer theme.
+    const resolvedTheme = await this.themeResolver.resolve(theme, systemTheme);
+    if (resolvedTheme === null) return;
 
     // Get plugin theme declarations
     const pluginDeclarations = this.markdownViewer?.getPluginThemeDeclarations() ?? {};
@@ -752,17 +756,12 @@ class App {
     );
     this.cleanupFunctions.push(cleanupFileDelete);
 
-    // System theme change listener
+    // System theme change listener. Goes through applyTheme so rendered
+    // content (Mermaid bakes its palette into each SVG) is redrawn too.
     const cleanupThemeChange = window.electronAPI.theme.onSystemChange(
       (event) => {
         if (this.state.currentTheme === 'system') {
-          const pluginDeclarations = this.markdownViewer?.getPluginThemeDeclarations() ?? {};
-          applyThemeCSS(
-            event.theme,
-            pluginDeclarations,
-            this.state.currentPreferences ?? undefined
-          );
-          this.toolbar?.setTheme(event.theme);
+          void this.applyTheme('system', event.theme);
         }
       }
     );
@@ -1877,6 +1876,7 @@ class App {
       this.updateExternalEditorLabel(updatedPrefs.core.externalEditor.editor);
 
       this.markdownViewer?.setInteractiveTaskLists(updatedPrefs.core.viewer.interactiveTaskLists);
+      this.markdownViewer?.setProjectRoot(updatedPrefs.core.viewer.projectRoot);
 
       this.markdownViewer?.setTablePadding(updatedPrefs.core.editor.padTables);
 

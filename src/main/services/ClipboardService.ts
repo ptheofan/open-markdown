@@ -1,7 +1,7 @@
 /**
  * ClipboardService - Handles clipboard operations in the main process
  */
-import { clipboard, dialog, nativeImage, BrowserWindow } from 'electron';
+import { clipboard, ClipboardItem, dialog, nativeImage, BrowserWindow } from 'electron';
 import { writeFile } from 'node:fs/promises';
 
 import type { SaveFileResult } from '@shared/types';
@@ -13,8 +13,8 @@ export class ClipboardService {
   /**
    * Write plain text to clipboard
    */
-  writeText(text: string): void {
-    clipboard.writeText(text);
+  writeText(text: string): Promise<void> {
+    return clipboard.writeText(text);
   }
 
   /**
@@ -22,17 +22,19 @@ export class ClipboardService {
    * take no HTML. Callers that have a better plain text than the tags
    * stripped out (the markdown itself, say) pass it in.
    */
-  writeHtml(html: string, text?: string): void {
-    clipboard.write({
-      html,
-      text: text ?? html.replace(/<[^>]*>/g, ''),
-    });
+  writeHtml(html: string, text?: string): Promise<void> {
+    return clipboard.write([
+      new ClipboardItem({
+        'text/html': html,
+        'text/plain': text ?? html.replace(/<[^>]*>/g, ''),
+      }),
+    ]);
   }
 
   /**
    * Write PNG image to clipboard from base64 data
    */
-  writeImage(base64: string): void {
+  async writeImage(base64: string): Promise<void> {
     // Handle data URL format or raw base64
     const base64Data = base64.startsWith('data:')
       ? base64.split(',')[1] ?? ''
@@ -45,7 +47,8 @@ export class ClipboardService {
       throw new Error('Failed to create image from base64 data');
     }
 
-    clipboard.writeImage(image);
+    const png = new Blob([new Uint8Array(image.toPNG())], { type: 'image/png' });
+    await clipboard.write([new ClipboardItem({ 'image/png': png })]);
   }
 
   /**

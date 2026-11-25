@@ -60,4 +60,21 @@ describe('SecurityBookmarkService', () => {
     expect(dialog.showOpenDialog).toHaveBeenCalledWith({ properties: ['openFile'] });
     expect(service.covers('/Users/me/notes/a.md')).toBe(false);
   });
+
+  // Electron 43+ opens a dialog with no defaultPath in Downloads, not where
+  // the user last was
+  it('starts the next dialog where the last pick was', async () => {
+    const { dialog } = await import('electron');
+    const service = new SecurityBookmarkService({ enabled: false, dataDir, startAccess: vi.fn() });
+
+    await service.showOpenDialog(undefined, { properties: ['openFile'] });
+    vi.mocked(dialog.showOpenDialog).mockClear();
+    await service.showOpenDialog(undefined, { properties: ['openFile'] });
+    await service.showOpenDialog(undefined, { defaultPath: '/elsewhere', properties: ['openFile'] });
+
+    const starts = vi.mocked(dialog.showOpenDialog).mock.calls.map(
+      ([options]) => options.defaultPath
+    );
+    expect(starts).toEqual(['/Users/me', '/elsewhere']);
+  });
 });

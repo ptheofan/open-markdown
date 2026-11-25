@@ -12,6 +12,8 @@ import path from 'node:path';
 import { test as base, expect, type ElectronApplication, type Page } from '@playwright/test';
 import { _electron as electron } from 'playwright';
 
+import { rendererWindow } from './electron-app';
+
 const FIXTURE = path.join(__dirname, '../../examples/llm-markdown.md');
 
 const test = base.extend<{ exportDir: string; electronApp: ElectronApplication; mainWindow: Page }>({
@@ -31,17 +33,7 @@ const test = base.extend<{ exportDir: string; electronApp: ElectronApplication; 
     await app.close();
   },
   mainWindow: async ({ electronApp }, use) => {
-    await electronApp.firstWindow();
-    const isRenderer = (page: Page): boolean => !page.url().startsWith('devtools://');
-    let window = electronApp.windows().find(isRenderer);
-    const deadline = Date.now() + 15000;
-    while (!window && Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      window = electronApp.windows().find(isRenderer);
-    }
-    if (!window) throw new Error('Renderer window never opened');
-    await window.waitForLoadState('domcontentloaded');
-    await use(window);
+    await use(await rendererWindow(electronApp));
   },
 });
 

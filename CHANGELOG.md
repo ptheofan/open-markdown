@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Electron 45.4.1 (from 40, which reached end of support on 2026-07-01). Open dialogs still start in the folder of the last file picked instead of Downloads, and Copy Section as Rich Text and a diagram's Copy as Image keep working with the new clipboard API (#98).
+- Google Docs sign-in is stored with Electron's asynchronous encryption, which Electron 46 requires. Existing sign-ins keep loading and are re-encrypted when the system key changes (#100).
+
+### Removed
+
+- macOS 12 Monterey is no longer supported; Electron 44 and later need macOS 13 Ventura or newer (#98).
+
+### Fixed
+
+- Mac builds on the Releases page are signed with the Developer ID, so Gatekeeper opens them and automatic updates can install them. 1.7.0's Mac downloads were only ad-hoc signed (#96).
+
+### Security
+
+- Mermaid 11.17.2 (from 11.12.2) fixes GHSA-6m6c-36f7-fhxh, GHSA-ghcm-xqfw-q4vr, GHSA-87f9-hvmw-gh4p, GHSA-xcj9-5m2h-648r, GHSA-3rrr-jr9j-h3q3, GHSA-rhh3-jpg6-66xh, GHSA-2v8p-3f2j-5mp7, GHSA-c4c3-pg64-4m4v and GHSA-6x64-9x62-f2gx (#98).
+
 ## [1.7.0] - 2026-11-02
 
 ### Added

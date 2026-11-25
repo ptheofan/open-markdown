@@ -3,19 +3,31 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 
-// Mock Electron so the import doesn't fail at load time
-vi.mock('electron', () => ({
-  app: { getPath: () => '/tmp/mock-userdata' },
-  safeStorage: {
-    isEncryptionAvailable: () => true,
-    encryptString: (s: string) => Buffer.from(`enc:${s}`),
-    decryptString: (b: Buffer) => b.toString().replace('enc:', ''),
-  },
-  shell: { openExternal: vi.fn().mockResolvedValue(undefined) },
-}));
+// Mock Electron so the import doesn't fail at load time. "enc:" stands in for
+// the keychain ciphertext. The sync safeStorage methods are removed in
+// Electron 46, so they throw here: any call to them fails the test.
+vi.mock('electron', () => {
+  const removedInElectron46 = (): never => {
+    throw new Error('sync safeStorage API is removed in Electron 46');
+  };
+  return {
+    app: { getPath: () => '/tmp/mock-userdata' },
+    safeStorage: {
+      isAsyncEncryptionAvailable: vi.fn(() => Promise.resolve(true)),
+      encryptStringAsync: vi.fn((s: string) => Promise.resolve(Buffer.from(`enc:${s}`))),
+      decryptStringAsync: vi.fn((b: Buffer) =>
+        Promise.resolve({ result: b.toString().replace('enc:', ''), shouldReEncrypt: false })
+      ),
+      isEncryptionAvailable: vi.fn(removedInElectron46),
+      encryptString: vi.fn(removedInElectron46),
+      decryptString: vi.fn(removedInElectron46),
+    },
+    shell: { openExternal: vi.fn().mockResolvedValue(undefined) },
+  };
+});
 
 import http from 'http';
-import { shell } from 'electron';
+import { safeStorage, shell } from 'electron';
 import {
   GoogleAuthService,
   createGoogleAuthService,
@@ -30,6 +42,7 @@ describe('GoogleAuthService', () => {
   let tempDir: string;
 
   beforeEach(async () => {
+    vi.clearAllMocks();
     resetGoogleAuthService();
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'gauth-test-'));
     service = createGoogleAuthService(tempDir);
@@ -108,6 +121,28 @@ describe('GoogleAuthService', () => {
       const pending = service.pickDocument();
       await respondOnCallback('code=auth-code');
       await expect(pending).resolves.toBeNull();
+    });
+
+    it('should persist tokens encrypted and load them in a fresh service', async () => {
+      const pending = service.pickDocument();
+      await respondOnCallback('code=auth-code&picked_file_ids=DOC');
+      await pending;
+
+      const onDisk = await fs.readFile(path.join(tempDir, 'google-auth-tokens'), 'utf-8');
+      expect(onDisk.startsWith('enc:')).toBe(true);
+
+      const reloaded = createGoogleAuthService(tempDir);
+      await reloaded.initialize();
+      expect(reloaded.getAuthState()).toEqual({
+        isAuthenticated: true,
+        userEmail: 'picker@example.com',
+      });
+      await expect(reloaded.getAccessToken()).resolves.toBe('picked-access');
+      reloaded.destroy();
+
+      expect(safeStorage.isEncryptionAvailable).not.toHaveBeenCalled();
+      expect(safeStorage.encryptString).not.toHaveBeenCalled();
+      expect(safeStorage.decryptString).not.toHaveBeenCalled();
     });
   });
 
@@ -190,6 +225,37 @@ describe('GoogleAuthService', () => {
       const state = service.getAuthState();
       expect(state.isAuthenticated).toBe(true);
       expect(state.userEmail).toBe('user@example.com');
+    });
+
+    it('should rewrite the token file when safeStorage asks to re-encrypt', async () => {
+      const tokens = { access_token: 'a', refresh_token: 'r', expires_at: Date.now() + 3600 * 1000 };
+      const tokenPath = path.join(tempDir, 'google-auth-tokens');
+      await fs.writeFile(tokenPath, Buffer.from('old-key-ciphertext'));
+      vi.mocked(safeStorage.decryptStringAsync).mockResolvedValueOnce({
+        result: JSON.stringify(tokens),
+        shouldReEncrypt: true,
+      });
+
+      await service.initialize();
+
+      expect(service.getAuthState().isAuthenticated).toBe(true);
+      expect(await fs.readFile(tokenPath, 'utf-8')).toBe(`enc:${JSON.stringify(tokens)}`);
+    });
+
+    it('should store and load plain JSON when encryption is unavailable', async () => {
+      vi.mocked(safeStorage.isAsyncEncryptionAvailable).mockResolvedValue(false);
+      try {
+        const tokens = { access_token: 'a', refresh_token: 'r', expires_at: Date.now() + 3600 * 1000 };
+        const tokenPath = path.join(tempDir, 'google-auth-tokens');
+        await fs.writeFile(tokenPath, JSON.stringify(tokens), 'utf-8');
+
+        await service.initialize();
+
+        expect(service.getAuthState().isAuthenticated).toBe(true);
+        expect(safeStorage.decryptStringAsync).not.toHaveBeenCalled();
+      } finally {
+        vi.mocked(safeStorage.isAsyncEncryptionAvailable).mockResolvedValue(true);
+      }
     });
 
     it('should handle missing token file gracefully', async () => {
